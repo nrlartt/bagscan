@@ -1,6 +1,6 @@
 -- CreateTable
 CREATE TABLE "TokenSnapshot" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "tokenMint" TEXT NOT NULL,
     "poolAddress" TEXT,
     "name" TEXT,
@@ -10,22 +10,24 @@ CREATE TABLE "TokenSnapshot" (
     "creatorDisplay" TEXT,
     "provider" TEXT,
     "providerUser" TEXT,
-    "fdvUsd" REAL,
-    "priceUsd" REAL,
-    "liquidityUsd" REAL,
-    "volume24hUsd" REAL,
-    "lifetimeFees" REAL,
+    "fdvUsd" DOUBLE PRECISION,
+    "priceUsd" DOUBLE PRECISION,
+    "liquidityUsd" DOUBLE PRECISION,
+    "volume24hUsd" DOUBLE PRECISION,
+    "lifetimeFees" DOUBLE PRECISION,
     "claimCount" INTEGER,
-    "claimVolume" REAL,
+    "claimVolume" DOUBLE PRECISION,
     "rawJson" TEXT,
-    "capturedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "capturedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "TokenSnapshot_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "TokenRegistry" (
-    "tokenMint" TEXT NOT NULL PRIMARY KEY,
-    "firstSeenAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "lastSeenAt" DATETIME NOT NULL,
+    "tokenMint" TEXT NOT NULL,
+    "firstSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastSeenAt" TIMESTAMP(3) NOT NULL,
     "poolAddress" TEXT,
     "name" TEXT,
     "symbol" TEXT,
@@ -39,18 +41,20 @@ CREATE TABLE "TokenRegistry" (
     "provider" TEXT,
     "providerUser" TEXT,
     "launchSource" TEXT,
-    "latestPriceUsd" REAL,
-    "latestFdvUsd" REAL,
-    "latestLiquidityUsd" REAL,
-    "latestLifetimeFees" REAL,
+    "latestPriceUsd" DOUBLE PRECISION,
+    "latestFdvUsd" DOUBLE PRECISION,
+    "latestLiquidityUsd" DOUBLE PRECISION,
+    "latestLifetimeFees" DOUBLE PRECISION,
     "latestClaimCount" INTEGER,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "rawJson" TEXT
+    "rawJson" TEXT,
+
+    CONSTRAINT "TokenRegistry_pkey" PRIMARY KEY ("tokenMint")
 );
 
 -- CreateTable
 CREATE TABLE "LaunchDraft" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "walletAddress" TEXT,
     "name" TEXT NOT NULL,
     "symbol" TEXT NOT NULL,
@@ -63,17 +67,21 @@ CREATE TABLE "LaunchDraft" (
     "tokenMetadata" TEXT,
     "feeShareConfig" TEXT,
     "partnerIncluded" BOOLEAN NOT NULL DEFAULT false,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "LaunchDraft_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "PartnerSnapshot" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "partnerWallet" TEXT NOT NULL,
-    "claimedFees" REAL,
-    "unclaimedFees" REAL,
+    "claimedFees" DOUBLE PRECISION,
+    "unclaimedFees" DOUBLE PRECISION,
     "rawJson" TEXT,
-    "capturedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "capturedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PartnerSnapshot_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
