@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getPartnerStats } from "@/lib/bags/client";
 import { prisma } from "@/lib/db";
-import type { PartnerSnapshot } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
     try {
@@ -61,7 +60,7 @@ export async function GET(req: NextRequest) {
                 partnerConfig,
                 stats,
                 launchCount,
-                snapshots: partnerSnapshots.map((s: PartnerSnapshot) => ({
+                snapshots: partnerSnapshots.map((s: { capturedAt: Date; claimedFees: number | null; unclaimedFees: number | null }) => ({
                     capturedAt: s.capturedAt.toISOString(),
                     claimedFees: s.claimedFees,
                     unclaimedFees: s.unclaimedFees,
