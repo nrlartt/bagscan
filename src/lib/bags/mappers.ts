@@ -239,7 +239,7 @@ export function mergeDexScreenerData(
         pairAddress: pair.pairAddress ?? token.pairAddress,
         dexId: pair.dexId ?? token.dexId,
         priceChange24h: safeNum(pair.priceChange?.h24) ?? token.priceChange24h,
-        txCount24h: safeNum(pair.txns?.h24?.buys) + safeNum(pair.txns?.h24?.sells) || token.txCount24h,
+        txCount24h: (safeNum(pair.txns?.h24?.buys) ?? 0) + (safeNum(pair.txns?.h24?.sells) ?? 0) || token.txCount24h,
         buyCount24h: safeNum(pair.txns?.h24?.buys) ?? token.buyCount24h,
         sellCount24h: safeNum(pair.txns?.h24?.sells) ?? token.sellCount24h,
         pairCreatedAt: pair.pairCreatedAt ?? token.pairCreatedAt,
