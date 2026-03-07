@@ -1,0 +1,806 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+@import "tailwindcss";
+
+/* ══════════════════════════════════════════════
+   BAGSCAN TERMINAL – NOSTROMO CRT INTERFACE
+   ══════════════════════════════════════════════ */
+
+:root {
+  --crt-green: #00ff41;
+  --crt-green-dim: #00cc33;
+  --crt-amber: #ffaa00;
+  --crt-red: #ff4400;
+  --crt-blue: #00aaff;
+  --bg-primary: #000000;
+  --bg-panel: rgba(0, 0, 0, 0.80);
+  --bg-panel-hover: rgba(0, 255, 65, 0.04);
+  --border-green: rgba(0, 255, 65, 0.5);
+  --border-green-bright: #00ff41;
+  --glow-green: rgba(0, 255, 65, 0.15);
+  --glow-amber: rgba(255, 170, 0, 0.15);
+  --glow-red: rgba(255, 68, 0, 0.15);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: #000000;
+  color: var(--crt-green);
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.03em;
+  background-image:
+    linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* ── CRT Scan Lines Overlay ───────────────── */
+.crt-scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 65, 0.03) 2px,
+    rgba(0, 255, 65, 0.03) 4px
+  );
+}
+
+.crt-flicker {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0, 255, 65, 0.06) 0%, transparent 70%);
+  animation: flicker 4s ease-in-out infinite;
+}
+
+/* ── Scrollbar ──────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000000;
+  border-left: 1px solid rgba(0, 255, 65, 0.15);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 65, 0.25);
+  border: 1px solid rgba(0, 255, 65, 0.4);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 255, 65, 0.4);
+}
+
+/* ═══ WALLET ADAPTER – CRT OVERRIDES ══════════ */
+
+.wallet-adapter-button {
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  font-size: 10px !important;
+  border-radius: 0 !important;
+  transition: all 0.3s ease !important;
+}
+
+.wallet-adapter-button-trigger {
+  background: rgba(0, 0, 0, 0.8) !important;
+  border: 2px solid rgba(0, 255, 65, 0.4) !important;
+  color: #00ff41 !important;
+  height: 32px !important;
+  padding: 0 12px !important;
+  border-radius: 0 !important;
+}
+
+.wallet-adapter-button-trigger:hover {
+  background: rgba(0, 255, 65, 0.08) !important;
+  border-color: rgba(0, 255, 65, 0.7) !important;
+  box-shadow: 0 0 12px rgba(0, 255, 65, 0.1), inset 0 0 12px rgba(0, 255, 65, 0.03) !important;
+}
+
+.wallet-adapter-button-trigger:active {
+  background: rgba(0, 255, 65, 0.12) !important;
+}
+
+/* Connected state */
+.wallet-adapter-button[data-state="connected"],
+.wallet-adapter-button-trigger[style*="pointer"] {
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.3);
+}
+
+/* Modal overlay */
+.wallet-adapter-modal-wrapper {
+  background: rgba(0, 0, 0, 0.92) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+/* Modal container */
+.wallet-adapter-modal-container {
+  background: #000000 !important;
+  border: 2px solid rgba(0, 255, 65, 0.5) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 0 40px rgba(0, 255, 65, 0.08), 0 0 80px rgba(0, 255, 65, 0.03) !important;
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+}
+
+/* Modal title */
+.wallet-adapter-modal-title {
+  color: #00ff41 !important;
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+  font-size: 13px !important;
+  letter-spacing: 0.15em !important;
+  text-transform: uppercase !important;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.3) !important;
+  font-weight: normal !important;
+}
+
+/* Close button */
+.wallet-adapter-modal-button-close {
+  background: transparent !important;
+  border: 1px solid rgba(0, 255, 65, 0.2) !important;
+  border-radius: 0 !important;
+  color: #00ff41 !important;
+  opacity: 0.5 !important;
+  transition: all 0.2s ease !important;
+}
+
+.wallet-adapter-modal-button-close:hover {
+  opacity: 1 !important;
+  border-color: rgba(0, 255, 65, 0.6) !important;
+  background: rgba(0, 255, 65, 0.05) !important;
+}
+
+.wallet-adapter-modal-button-close svg {
+  fill: #00ff41 !important;
+}
+
+/* Wallet list */
+.wallet-adapter-modal-list {
+  margin: 0 !important;
+}
+
+.wallet-adapter-modal-list li {
+  border: none !important;
+  margin: 0 !important;
+}
+
+/* Wallet list item buttons */
+.wallet-adapter-modal-list .wallet-adapter-button {
+  background: rgba(0, 0, 0, 0.6) !important;
+  border: 1px solid rgba(0, 255, 65, 0.12) !important;
+  border-radius: 0 !important;
+  color: rgba(0, 255, 65, 0.6) !important;
+  padding: 10px 16px !important;
+  font-size: 11px !important;
+  height: auto !important;
+  justify-content: flex-start !important;
+  transition: all 0.2s ease !important;
+  margin-bottom: 2px !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button:hover {
+  background: rgba(0, 255, 65, 0.05) !important;
+  border-color: rgba(0, 255, 65, 0.4) !important;
+  color: #00ff41 !important;
+  box-shadow: inset 0 0 20px rgba(0, 255, 65, 0.02) !important;
+}
+
+/* Wallet icon in list */
+.wallet-adapter-button .wallet-adapter-button-start-icon,
+.wallet-adapter-button img {
+  border-radius: 0 !important;
+  border: 1px solid rgba(0, 255, 65, 0.15) !important;
+}
+
+/* "More options" / collapse button */
+.wallet-adapter-modal-list-more {
+  color: rgba(0, 255, 65, 0.3) !important;
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+  font-size: 10px !important;
+  letter-spacing: 0.15em !important;
+  text-transform: uppercase !important;
+  cursor: pointer !important;
+  transition: color 0.2s ease !important;
+}
+
+.wallet-adapter-modal-list-more:hover {
+  color: rgba(0, 255, 65, 0.7) !important;
+}
+
+.wallet-adapter-modal-list-more svg {
+  fill: rgba(0, 255, 65, 0.3) !important;
+  transition: fill 0.2s ease !important;
+}
+
+.wallet-adapter-modal-list-more:hover svg {
+  fill: rgba(0, 255, 65, 0.7) !important;
+}
+
+/* Middle section / message */
+.wallet-adapter-modal-middle {
+  border: 1px solid rgba(0, 255, 65, 0.1) !important;
+  background: rgba(0, 255, 65, 0.02) !important;
+  border-radius: 0 !important;
+  padding: 16px !important;
+}
+
+.wallet-adapter-modal-middle-button {
+  background: rgba(0, 255, 65, 0.1) !important;
+  border: 1px solid rgba(0, 255, 65, 0.3) !important;
+  border-radius: 0 !important;
+  color: #00ff41 !important;
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+  font-size: 10px !important;
+  letter-spacing: 0.15em !important;
+  text-transform: uppercase !important;
+  transition: all 0.2s ease !important;
+}
+
+.wallet-adapter-modal-middle-button:hover {
+  background: rgba(0, 255, 65, 0.18) !important;
+  border-color: rgba(0, 255, 65, 0.6) !important;
+}
+
+/* Dropdown menu (connected wallet) */
+.wallet-adapter-dropdown-list {
+  background: #000000 !important;
+  border: 2px solid rgba(0, 255, 65, 0.4) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 0 20px rgba(0, 255, 65, 0.08) !important;
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+  padding: 4px !important;
+}
+
+.wallet-adapter-dropdown-list li {
+  border: none !important;
+}
+
+.wallet-adapter-dropdown-list-item {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 0 !important;
+  color: rgba(0, 255, 65, 0.5) !important;
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+  font-size: 10px !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  padding: 8px 12px !important;
+  transition: all 0.2s ease !important;
+}
+
+.wallet-adapter-dropdown-list-item:hover {
+  background: rgba(0, 255, 65, 0.05) !important;
+  border-color: rgba(0, 255, 65, 0.2) !important;
+  color: #00ff41 !important;
+}
+
+/* Tooltip */
+.wallet-adapter-tooltip {
+  background: #000000 !important;
+  border: 1px solid rgba(0, 255, 65, 0.3) !important;
+  border-radius: 0 !important;
+  color: #00ff41 !important;
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+  font-size: 10px !important;
+  letter-spacing: 0.1em !important;
+}
+
+/* Collapse button icon */
+.wallet-adapter-modal .wallet-adapter-button svg,
+.wallet-adapter-collapse-button svg {
+  fill: rgba(0, 255, 65, 0.3) !important;
+}
+
+/* Notification / status text */
+.wallet-adapter-modal p {
+  color: rgba(0, 255, 65, 0.35) !important;
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+  font-size: 10px !important;
+  letter-spacing: 0.1em !important;
+}
+
+/* ── Selection ──────────────────────────────── */
+::selection {
+  background: rgba(0, 255, 65, 0.3);
+  color: #00ff41;
+}
+
+/* ═══ ANIMATIONS ═══════════════════════════════ */
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.9) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px var(--glow-green), 0 0 20px transparent; }
+  50% { box-shadow: 0 0 16px var(--glow-green), 0 0 40px rgba(0, 255, 65, 0.08); }
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes price-flash-green {
+  0% { background-color: rgba(0, 255, 65, 0.15); }
+  100% { background-color: transparent; }
+}
+
+@keyframes price-flash-red {
+  0% { background-color: rgba(255, 68, 0, 0.15); }
+  100% { background-color: transparent; }
+}
+
+@keyframes border-glow {
+  0%, 100% { border-color: rgba(0, 255, 65, 0.15); }
+  50% { border-color: rgba(0, 255, 65, 0.4); }
+}
+
+@keyframes new-token-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-24px) scale(0.9);
+    box-shadow: 0 0 40px rgba(0, 255, 65, 0.3);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.02);
+    box-shadow: 0 0 20px rgba(0, 255, 65, 0.15);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    box-shadow: none;
+  }
+}
+
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bg-aurora {
+  0% { background-position: 0% 50%; }
+  25% { background-position: 50% 0%; }
+  50% { background-position: 100% 50%; }
+  75% { background-position: 50% 100%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes crt-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes terminal-type {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@keyframes data-stream {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 -40px; }
+}
+
+/* ═══ ANIMATION UTILITIES ══════════════════════ */
+
+.animate-fade-in {
+  animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-in-scale {
+  animation: fadeInScale 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-gradient-shift {
+  background-size: 200% 200%;
+  animation: gradient-shift 4s ease infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-ticker {
+  animation: ticker-scroll 30s linear infinite;
+}
+
+.animate-new-token {
+  animation: new-token-enter 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-border-glow {
+  animation: border-glow 2s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+.animate-bg-aurora {
+  background-size: 400% 400%;
+  animation: bg-aurora 15s ease infinite;
+}
+
+.animate-crt-blink {
+  animation: crt-blink 1s step-end infinite;
+}
+
+.flash-green {
+  animation: price-flash-green 0.6s ease-out;
+}
+
+.flash-red {
+  animation: price-flash-red 0.6s ease-out;
+}
+
+/* Staggered children animation */
+.stagger-children > * {
+  opacity: 0;
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 350ms; }
+
+/* ═══ CRT PANEL SYSTEM ═════════════════════════ */
+
+.glass-card {
+  background: rgba(0, 0, 0, 0.80);
+  border: 1px solid rgba(0, 255, 65, 0.25);
+  border-radius: 2px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  background: rgba(0, 255, 65, 0.04);
+  border-color: rgba(0, 255, 65, 0.6);
+  box-shadow: 0 0 20px rgba(0, 255, 65, 0.08), inset 0 0 30px rgba(0, 255, 65, 0.02);
+  transform: translateY(-1px);
+}
+
+.glass-card-static {
+  background: rgba(0, 0, 0, 0.80);
+  border: 1px solid rgba(0, 255, 65, 0.2);
+  border-radius: 2px;
+}
+
+.crt-panel {
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid rgba(0, 255, 65, 0.5);
+  border-radius: 2px;
+  position: relative;
+}
+
+.crt-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 65, 0.015) 2px,
+    rgba(0, 255, 65, 0.015) 4px
+  );
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+.crt-panel-amber {
+  border-color: rgba(255, 170, 0, 0.5);
+}
+
+.crt-panel-red {
+  border-color: rgba(255, 68, 0, 0.5);
+}
+
+/* ═══ GLOW EFFECTS ═════════════════════════════ */
+
+.glow-green {
+  box-shadow: 0 0 12px rgba(0, 255, 65, 0.2), 0 0 40px rgba(0, 255, 65, 0.05);
+}
+
+.glow-amber {
+  box-shadow: 0 0 12px rgba(255, 170, 0, 0.2), 0 0 40px rgba(255, 170, 0, 0.05);
+}
+
+.glow-red {
+  box-shadow: 0 0 12px rgba(255, 68, 0, 0.2), 0 0 40px rgba(255, 68, 0, 0.05);
+}
+
+.glow-purple {
+  box-shadow: 0 0 12px rgba(0, 255, 65, 0.15), 0 0 40px rgba(0, 255, 65, 0.05);
+}
+
+/* ═══ TEXT STYLES ══════════════════════════════ */
+
+.text-gradient-purple {
+  color: #00ff41;
+  text-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+}
+
+.text-gradient-green {
+  color: #00ff41;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.4);
+}
+
+.text-gradient-alpha {
+  color: #ffaa00;
+  text-shadow: 0 0 10px rgba(255, 170, 0, 0.5);
+}
+
+.text-crt {
+  color: #00ff41;
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.text-crt-amber {
+  color: #ffaa00;
+  text-shadow: 0 0 6px rgba(255, 170, 0, 0.4);
+}
+
+.text-crt-red {
+  color: #ff4400;
+  text-shadow: 0 0 6px rgba(255, 68, 0, 0.4);
+}
+
+/* ═══ TICKER BAR ══════════════════════════════ */
+
+.ticker-container {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
+}
+
+/* ═══ TERMINAL PANEL HEADERS ════════════════════ */
+
+.panel-header {
+  color: #00ff41;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.4);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(0, 255, 65, 0.3);
+  margin-bottom: 0.75rem;
+}
+
+/* ═══ STATUS DOTS ═════════════════════════════ */
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot-green {
+  background: #00ff41;
+  box-shadow: 0 0 6px #00ff41, 0 0 12px rgba(0, 255, 65, 0.3);
+}
+
+.status-dot-amber {
+  background: #ffaa00;
+  box-shadow: 0 0 6px #ffaa00, 0 0 12px rgba(255, 170, 0, 0.3);
+}
+
+.status-dot-red {
+  background: #ff4400;
+  box-shadow: 0 0 6px #ff4400, 0 0 12px rgba(255, 68, 0, 0.3);
+  animation: crt-blink 1.5s step-end infinite;
+}
+
+.status-dot-blue {
+  background: #00aaff;
+  box-shadow: 0 0 6px #00aaff, 0 0 12px rgba(0, 170, 255, 0.3);
+}
+
+/* ═══ DATA BARS ═══════════════════════════════ */
+
+.data-bar {
+  height: 6px;
+  background: rgba(0, 255, 65, 0.1);
+  border: 1px solid rgba(0, 255, 65, 0.2);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.data-bar-fill {
+  height: 100%;
+  transition: width 1s ease-out;
+}
+
+.data-bar-fill-green {
+  background: #00ff41;
+  box-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+}
+
+.data-bar-fill-amber {
+  background: #ffaa00;
+  box-shadow: 0 0 8px rgba(255, 170, 0, 0.5);
+}
+
+.data-bar-fill-red {
+  background: #ff4400;
+  box-shadow: 0 0 8px rgba(255, 68, 0, 0.5);
+}
+
+/* ═══ AURORA / BG ═════════════════════════════ */
+
+.bg-aurora {
+  background: linear-gradient(-45deg,
+    rgba(0, 255, 65, 0.04),
+    rgba(0, 170, 255, 0.03),
+    rgba(255, 170, 0, 0.02),
+    rgba(0, 255, 65, 0.03));
+}
+
+/* ═══ SELECT ══════════════════════════════════ */
+
+select option {
+  background: #000000;
+  color: #00ff41;
+}
+
+/* ═══ FOCUS ═══════════════════════════════════ */
+
+*:focus-visible {
+  outline: 2px solid rgba(0, 255, 65, 0.5);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ═══ NEW LAUNCH ANIMATIONS ══════════════════ */
+
+@keyframes new-launch-glow {
+  0%, 100% { box-shadow: 0 0 0px rgba(255, 184, 0, 0), inset 0 0 0 rgba(255, 184, 0, 0); }
+  50% { box-shadow: 0 0 12px rgba(255, 184, 0, 0.15), inset 0 0 8px rgba(255, 184, 0, 0.03); }
+}
+
+@keyframes new-launch-border {
+  0%, 100% { border-color: rgba(255, 184, 0, 0.15); }
+  50% { border-color: rgba(255, 184, 0, 0.4); }
+}
+
+@keyframes new-badge-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.05); }
+}
+
+@keyframes radar-sweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes signal-ping {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes scanline-move {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(200%); }
+}
+
+@keyframes text-glitch {
+  0%, 100% { opacity: 1; transform: translate(0); }
+  20% { opacity: 0.8; transform: translate(-1px, 1px); }
+  40% { opacity: 1; transform: translate(1px, -1px); }
+  60% { opacity: 0.9; transform: translate(-1px, 0); }
+  80% { opacity: 1; transform: translate(0, 1px); }
+}
+
+.new-launch-card {
+  opacity: 1 !important;
+  animation: new-launch-glow 3s ease-in-out infinite, new-launch-border 3s ease-in-out infinite;
+}
+
+.new-launch-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 184, 0, 0.5), transparent);
+  animation: scanline-move 4s linear infinite;
+  z-index: 1;
+}
+
+.new-badge-animated {
+  animation: new-badge-pulse 2s ease-in-out infinite;
+}
+
+.signal-ping {
+  position: relative;
+}
+
+.signal-ping::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 184, 0, 0.4);
+  animation: signal-ping 2s ease-out infinite;
+}

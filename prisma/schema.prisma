@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model TokenSnapshot {
+  id             String   @id @default(cuid())
+  tokenMint      String
+  poolAddress    String?
+  name           String?
+  symbol         String?
+  image          String?
+  creatorWallet  String?
+  creatorDisplay String?
+  provider       String?
+  providerUser   String?
+  fdvUsd         Float?
+  priceUsd       Float?
+  liquidityUsd   Float?
+  volume24hUsd   Float?
+  lifetimeFees   Float?
+  claimCount     Int?
+  claimVolume    Float?
+  rawJson        String?
+  capturedAt     DateTime @default(now())
+
+  @@index([tokenMint])
+  @@index([capturedAt])
+}
+
+model TokenRegistry {
+  tokenMint          String   @id
+  firstSeenAt        DateTime @default(now())
+  lastSeenAt         DateTime @updatedAt
+  poolAddress        String?
+  name               String?
+  symbol             String?
+  image              String?
+  description        String?
+  website            String?
+  twitter            String?
+  telegram           String?
+  creatorWallet      String?
+  creatorDisplay     String?
+  provider           String?
+  providerUser       String?
+  launchSource       String?
+  latestPriceUsd     Float?
+  latestFdvUsd       Float?
+  latestLiquidityUsd Float?
+  latestLifetimeFees Float?
+  latestClaimCount   Int?
+  isActive           Boolean  @default(true)
+  rawJson            String?
+}
+
+model LaunchDraft {
+  id              String   @id @default(cuid())
+  walletAddress   String?
+  name            String
+  symbol          String
+  description     String
+  imageUrl        String?
+  website         String?
+  twitter         String?
+  telegram        String?
+  tokenMint       String?
+  tokenMetadata   String?
+  feeShareConfig  String?
+  partnerIncluded Boolean  @default(false)
+  createdAt       DateTime @default(now())
+}
+
+model PartnerSnapshot {
+  id            String   @id @default(cuid())
+  partnerWallet String
+  claimedFees   Float?
+  unclaimedFees Float?
+  rawJson       String?
+  capturedAt    DateTime @default(now())
+}
