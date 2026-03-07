@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { VersionedTransaction } from "@solana/web3.js";
+import bs58 from "bs58";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -196,10 +197,9 @@ export default function LaunchPage() {
                     ...(feeResult.bundles?.flat() || []),
                 ];
 
-                const bs58decode = await import("bs58").then((m) => m.default?.decode ?? m.decode);
                 for (const txObj of allTxs) {
                     setTxStatus("signing");
-                    const txBytes = bs58decode(txObj.transaction);
+                    const txBytes = bs58.decode(txObj.transaction);
                     const tx = VersionedTransaction.deserialize(txBytes);
                     const signed = await signTransaction(tx);
                     await sendSignedTransaction(signed);
@@ -232,8 +232,7 @@ export default function LaunchPage() {
             const launchTxData = typeof launchData.data === "string" ? launchData.data : launchData.data?.transaction || launchData.data?.serializedTransaction;
             if (launchTxData) {
                 setTxStatus("signing");
-                const bs58decode = await import("bs58").then((m) => m.default?.decode ?? m.decode);
-                const txBytes = bs58decode(launchTxData);
+                const txBytes = bs58.decode(launchTxData);
                 const tx = VersionedTransaction.deserialize(txBytes);
                 const signed = await signTransaction(tx);
                 await sendSignedTransaction(signed);
