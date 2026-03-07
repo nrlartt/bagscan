@@ -67,7 +67,7 @@ export interface BagsCreatorV3 {
     royaltyBps: number;
     isCreator: boolean;
     wallet: string;
-    provider?: SocialProvider | null;
+    provider?: string | null;
     providerUsername?: string | null;
     twitterUsername?: string;
     bagsUsername?: string;
@@ -94,7 +94,7 @@ export interface BagsClaimStatEntry {
     royaltyBps: number;
     isCreator: boolean;
     wallet: string;
-    provider?: SocialProvider | null;
+    provider?: string | null;
     providerUsername?: string | null;
     twitterUsername?: string;
     bagsUsername?: string;
