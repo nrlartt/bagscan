@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
+/**
+ * Tokenomics API – uses Helius DAS (same source as Solscan) for accurate supply data.
+ * Falls back to getTokenSupply RPC if Helius fails.
+ */
+
 const DEAD_WALLETS = [
     "1nc1nerator11111111111111111111111111111111",
     "11111111111111111111111111111111",
@@ -11,27 +16,54 @@ function getRpcUrl(): string {
     return process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
 }
 
-async function rpcCall<T>(method: string, params: unknown[]): Promise<T> {
-    const res = await fetch(getRpcUrl(), {
+async function heliusRpc(body: object): Promise<unknown> {
+    const url = getRpcUrl();
+    const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: "tokenomics", ...body }),
     });
     const json = await res.json();
     if (json.error) throw new Error(json.error.message);
     return json.result;
 }
 
-interface TokenSupplyResult {
-    value: { amount: string; decimals: number; uiAmount: number };
+interface HeliusAsset {
+    id?: string;
+    token_info?: {
+        supply?: number;
+        decimals?: number;
+        symbol?: string;
+    };
 }
 
-interface TokenAccountResult {
-    value: Array<{
-        account: {
-            data: { parsed: { info: { tokenAmount: { uiAmount: number; amount: string } } } };
+interface TokenSupplyValue {
+    amount: string;
+    decimals: number;
+    uiAmount: number | null;
+    uiAmountString?: string;
+}
+
+interface TokenAccountEntry {
+    account: {
+        data: {
+            parsed: {
+                info: { tokenAmount: { uiAmount: number | null; amount: string } };
+            };
         };
-    }>;
+    };
+}
+
+function parseSupply(
+    rawAmount: string | number,
+    decimals: number
+): number {
+    const str = String(rawAmount);
+    const num = Number(str);
+    if (Number.isFinite(num) && num >= 0) {
+        return num / Math.pow(10, decimals);
+    }
+    return 0;
 }
 
 export async function GET(
@@ -41,50 +73,92 @@ export async function GET(
     const { mint } = await params;
 
     try {
-        const supplyResult = await rpcCall<TokenSupplyResult>("getTokenSupply", [mint]);
-        const currentSupply = supplyResult.value.uiAmount;
-        const decimals = supplyResult.value.decimals;
+        let totalSupply = 0;
+        let decimals = 9;
 
+        // 1) Primary: Helius getAsset (same data source as Solscan)
+        try {
+            const asset = await heliusRpc({
+                method: "getAsset",
+                params: { id: mint },
+            }) as HeliusAsset | null;
+
+            if (asset?.token_info?.supply != null) {
+                decimals = asset.token_info.decimals ?? 9;
+                totalSupply = parseSupply(asset.token_info.supply, decimals);
+            }
+        } catch {
+            // fallback below
+        }
+
+        // 2) Fallback: getTokenSupply RPC
+        if (totalSupply <= 0) {
+            const supplyResult = await heliusRpc({
+                method: "getTokenSupply",
+                params: [mint],
+            }) as { value: TokenSupplyValue } | null;
+
+            if (supplyResult?.value) {
+                const v = supplyResult.value;
+                decimals = v.decimals;
+                // uiAmount can be null for large numbers – use uiAmountString or parse amount
+                if (v.uiAmount != null && Number.isFinite(v.uiAmount)) {
+                    totalSupply = v.uiAmount;
+                } else if (typeof v.uiAmountString === "string") {
+                    totalSupply = parseFloat(v.uiAmountString) || parseSupply(v.amount, decimals);
+                } else {
+                    totalSupply = parseSupply(v.amount, decimals);
+                }
+            }
+        }
+
+        // 3) Tokens in dead wallets (sent to burn-like addresses)
         let burnedInDeadWallets = 0;
-        const deadWalletChecks = DEAD_WALLETS.map(async (wallet) => {
+        for (const wallet of DEAD_WALLETS) {
             try {
-                const result = await rpcCall<TokenAccountResult>(
-                    "getTokenAccountsByOwner",
-                    [
-                        wallet,
-                        { mint },
-                        { encoding: "jsonParsed" },
-                    ]
-                );
-                for (const acc of result.value) {
-                    burnedInDeadWallets += acc.account.data.parsed.info.tokenAmount.uiAmount;
+                const result = await heliusRpc({
+                    method: "getTokenAccountsByOwner",
+                    params: [wallet, { mint }, { encoding: "jsonParsed" }],
+                }) as { value: TokenAccountEntry[] } | null;
+
+                for (const acc of result?.value ?? []) {
+                    const amt = acc.account?.data?.parsed?.info?.tokenAmount;
+                    if (amt) {
+                        if (amt.uiAmount != null) {
+                            burnedInDeadWallets += amt.uiAmount;
+                        } else {
+                            burnedInDeadWallets += parseSupply(amt.amount, decimals);
+                        }
+                    }
                 }
             } catch {
-                // wallet may not hold this token
+                // skip
             }
-        });
-        await Promise.all(deadWalletChecks);
+        }
 
-        const initialSupply = currentSupply + burnedInDeadWallets;
-        const totalBurned = burnedInDeadWallets;
-        const burnPct = initialSupply > 0
-            ? ((totalBurned / initialSupply) * 100).toFixed(2)
-            : "0.00";
+        const circulatingSupply = Math.max(0, totalSupply - burnedInDeadWallets);
+        const burnPct =
+            totalSupply > 0
+                ? ((burnedInDeadWallets / totalSupply) * 100).toFixed(2)
+                : "0.00";
 
-        return NextResponse.json({
-            success: true,
-            data: {
-                totalBurned,
-                totalSupply: initialSupply,
-                circulatingSupply: currentSupply,
-                burnPct,
-                decimals,
+        return NextResponse.json(
+            {
+                success: true,
+                data: {
+                    totalBurned: burnedInDeadWallets,
+                    totalSupply,
+                    circulatingSupply,
+                    burnPct,
+                    decimals,
+                },
             },
-        }, {
-            headers: {
-                "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
-            },
-        });
+            {
+                headers: {
+                    "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+                },
+            }
+        );
     } catch (err) {
         console.error("[tokenomics]", err);
         return NextResponse.json(
