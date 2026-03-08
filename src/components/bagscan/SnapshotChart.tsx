@@ -42,6 +42,14 @@ export function SnapshotChart({ data, className }: SnapshotChartProps) {
         price: d.priceUsd ?? null,
     }));
 
+    const hasFdv = chartData.some((d) => d.fdv !== null);
+    const hasPrice = chartData.some((d) => d.price !== null);
+
+    const timeSpanMs = chartData.length >= 2
+        ? chartData[chartData.length - 1].time - chartData[0].time
+        : 0;
+    const timeFormat = timeSpanMs > 48 * 3600_000 ? "MMM d" : timeSpanMs > 3600_000 ? "MMM d, HH:mm" : "HH:mm";
+
     return (
         <div className={className}>
             <ResponsiveContainer width="100%" height={200}>
@@ -51,13 +59,17 @@ export function SnapshotChart({ data, className }: SnapshotChartProps) {
                             <stop offset="5%" stopColor="#00ff41" stopOpacity={0.2} />
                             <stop offset="95%" stopColor="#00ff41" stopOpacity={0} />
                         </linearGradient>
+                        <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#ffbf00" stopOpacity={0.2} />
+                            <stop offset="95%" stopColor="#ffbf00" stopOpacity={0} />
+                        </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,65,0.05)" />
                     <XAxis
                         dataKey="time"
                         type="number"
                         domain={["auto", "auto"]}
-                        tickFormatter={(v: number) => format(new Date(v), "HH:mm")}
+                        tickFormatter={(v: number) => format(new Date(v), timeFormat)}
                         tick={{ fill: "rgba(0,255,65,0.3)", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}
                         stroke="rgba(0,255,65,0.08)"
                     />
@@ -77,19 +89,40 @@ export function SnapshotChart({ data, className }: SnapshotChartProps) {
                             color: "#00ff41",
                         }}
                         labelFormatter={(v: any) => format(new Date(v as number), "MMM d, HH:mm")}
-                        formatter={(v: any) => [formatCurrency(v as number), "FDV"]}
+                        formatter={(v: any, name: any) => [
+                            formatCurrency(v as number),
+                            name === "fdv" ? "FDV" : "PRICE",
+                        ]}
                     />
-                    <Area
-                        type="monotone"
-                        dataKey="fdv"
-                        stroke="#00ff41"
-                        strokeWidth={2}
-                        fill="url(#fdvGrad)"
-                        dot={false}
-                        connectNulls
-                    />
+                    {hasFdv && (
+                        <Area
+                            type="monotone"
+                            dataKey="fdv"
+                            stroke="#00ff41"
+                            strokeWidth={2}
+                            fill="url(#fdvGrad)"
+                            dot={chartData.length <= 10}
+                            connectNulls
+                        />
+                    )}
+                    {hasPrice && (
+                        <Area
+                            type="monotone"
+                            dataKey="price"
+                            stroke="#ffbf00"
+                            strokeWidth={hasFdv ? 1 : 2}
+                            fill={hasFdv ? "none" : "url(#priceGrad)"}
+                            dot={chartData.length <= 10}
+                            connectNulls
+                        />
+                    )}
                 </AreaChart>
             </ResponsiveContainer>
+            {chartData.length <= 5 && (
+                <div className="text-center text-[9px] text-[#00ff41]/20 mt-1 tracking-wider">
+                    ESTIMATED FROM DEXSCREENER — MORE DATA POINTS WILL APPEAR OVER TIME
+                </div>
+            )}
         </div>
     );
 }
