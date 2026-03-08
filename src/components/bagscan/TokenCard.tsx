@@ -5,7 +5,21 @@ import Image from "next/image";
 import { formatCurrency, formatNumber, shortenAddress, cn } from "@/lib/utils";
 import { ProviderBadge } from "./Badges";
 import type { NormalizedToken } from "@/lib/bags/types";
-import { TrendingUp, Activity, ArrowUpDown, Zap, ArrowRightLeft, Radio } from "lucide-react";
+import { TrendingUp, Activity, ArrowUpDown, Zap, ArrowRightLeft, Radio, Clock } from "lucide-react";
+
+function timeAgo(dateStr?: string): string | null {
+    if (!dateStr) return null;
+    const ms = Date.now() - new Date(dateStr).getTime();
+    if (ms < 0) return null;
+    const sec = Math.floor(ms / 1000);
+    if (sec < 60) return `${sec}s AGO`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m AGO`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h AGO`;
+    const day = Math.floor(hr / 24);
+    return `${day}d AGO`;
+}
 
 interface TokenCardProps {
     token: NormalizedToken;
@@ -18,6 +32,7 @@ export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
     const hasMarketData = !!(token.priceUsd || token.fdvUsd || token.volume24hUsd);
     const isMigrated = !!token.isMigrated;
     const isNew = isNewLaunch && !hasMarketData;
+    const launchTime = timeAgo(token.pairCreatedAt);
 
     return (
         <Link
@@ -159,18 +174,26 @@ export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
                 <span className={cn("text-[9px] tracking-wider", isNew ? "text-[#ffb800]/15" : "text-[#00ff41]/15")}>
                     {shortenAddress(token.tokenMint)}
                 </span>
-                {token.txCount24h !== undefined && token.txCount24h > 0 ? (
-                    <span className="inline-flex items-center gap-1 text-[9px] text-[#00ff41]/25 tracking-wider">
-                        <ArrowUpDown className="w-2.5 h-2.5" />
-                        {formatNumber(token.txCount24h)} TXS
-                    </span>
-                ) : token.priceUsd ? (
-                    <span className="text-[9px] text-[#00ff41]/25 tracking-wider">
-                        ${token.priceUsd < 0.0001 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}
-                    </span>
-                ) : isNew ? (
-                    <span className="text-[8px] text-[#ffb800]/20 tracking-[0.15em]">JUST LAUNCHED</span>
-                ) : null}
+                <div className="flex items-center gap-2">
+                    {isNewLaunch && launchTime && (
+                        <span className="inline-flex items-center gap-1 text-[9px] text-[#ffb800]/40 tracking-wider">
+                            <Clock className="w-2.5 h-2.5" />
+                            {launchTime}
+                        </span>
+                    )}
+                    {token.txCount24h !== undefined && token.txCount24h > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[9px] text-[#00ff41]/25 tracking-wider">
+                            <ArrowUpDown className="w-2.5 h-2.5" />
+                            {formatNumber(token.txCount24h)} TXS
+                        </span>
+                    ) : token.priceUsd ? (
+                        <span className="text-[9px] text-[#00ff41]/25 tracking-wider">
+                            ${token.priceUsd < 0.0001 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}
+                        </span>
+                    ) : isNew && !launchTime ? (
+                        <span className="text-[8px] text-[#ffb800]/20 tracking-[0.15em]">JUST LAUNCHED</span>
+                    ) : null}
+                </div>
             </div>
         </Link>
     );

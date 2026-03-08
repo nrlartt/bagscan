@@ -427,7 +427,7 @@ export async function getDexScreenerNewBagsPairs(): Promise<any[]> {
     try {
         const pairs = await getDexScreenerSearch("bags");
         return pairs
-            .filter((p: any) => p.dexId === "bags" && p.baseToken?.address)
+            .filter((p: any) => p.dexId === "bags" && p.baseToken?.address && p.pairCreatedAt)
             .sort((a: any, b: any) => (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0));
     } catch (e) {
         console.error("[dexscreener] new bags pairs error:", e);

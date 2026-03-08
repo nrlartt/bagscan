@@ -57,8 +57,7 @@ let metadataCache = new Map<string, NormalizedToken>();
 
 const POOLS_TTL = 3 * 60_000;
 const TRENDING_TTL = 60_000;
-const NEW_LAUNCH_TTL = 45_000;
-const NEW_LAUNCH_COUNT = 60;
+const NEW_LAUNCH_TTL = 20_000;
 
 // ═══════════════════════════════════════════════
 // Pool index (for search)
@@ -352,87 +351,6 @@ export async function getPlatformStats(): Promise<PlatformStats> {
 // NEW LAUNCHES – Newest pools + on-chain metadata
 // ═══════════════════════════════════════════════
 
-async function newLaunchesFromBagsPools(): Promise<NormalizedToken[] | null> {
-    try {
-        const freshPools = await getBagsPools();
-        const allPools: PoolEntry[] = freshPools.map((p: any) => ({
-            tokenMint: p.tokenMint,
-            dbcConfigKey: p.dbcConfigKey,
-            dbcPoolKey: p.dbcPoolKey,
-            dammV2PoolKey: p.dammV2PoolKey,
-            name: p.name,
-            symbol: p.symbol,
-            image: p.image,
-            priceUsd: Number(p.tokenPriceUsd) || Number(p.priceUsd) || undefined,
-            fdvUsd: Number(p.fdvUsd) || Number(p.fdv) || undefined,
-            liquidityUsd: Number(p.liquidityUsd) || Number(p.liquidity) || undefined,
-            volume24hUsd: Number(p.volume24hUsd) || Number(p.volume24h) || undefined,
-            creatorWallet: p.creatorWallet,
-            creatorDisplay: p.creatorDisplayName || p.creatorUsername,
-        }));
-        allPoolsCache = { pools: allPools, ts: Date.now() };
-        const newest = [...allPools].reverse().slice(0, NEW_LAUNCH_COUNT);
-        const mints = newest.map((p) => p.tokenMint);
-
-        const [metaMap, dexPairs] = await Promise.all([
-            getTokenMetadataBatch(mints),
-            getDexScreenerPairs(mints.slice(0, 30)),
-        ]);
-
-        const dexMap = new Map<string, any>();
-        for (const p of dexPairs) {
-            const addr = p.baseToken?.address;
-            if (addr) dexMap.set(addr, p);
-        }
-
-        const imageUris = new Map<string, string>();
-        for (const [mint, meta] of metaMap) {
-            if (meta.uri && meta.uri.startsWith("http")) {
-                imageUris.set(mint, meta.uri);
-            }
-        }
-        const images = await fetchMetadataImages(imageUris);
-
-        return newest.map((pool) => {
-            const meta = metaMap.get(pool.tokenMint);
-            const img = images.get(pool.tokenMint);
-            const cached = metadataCache.get(pool.tokenMint);
-            const dex = dexMap.get(pool.tokenMint);
-
-            const t: NormalizedToken = {
-                tokenMint: pool.tokenMint,
-                dbcConfigKey: pool.dbcConfigKey,
-                dbcPoolKey: pool.dbcPoolKey,
-                dammV2PoolKey: pool.dammV2PoolKey,
-                isMigrated: !!pool.dammV2PoolKey,
-                name: dex?.baseToken?.name || pool.name || meta?.name || cached?.name || undefined,
-                symbol: dex?.baseToken?.symbol || pool.symbol || meta?.symbol || cached?.symbol || undefined,
-                image: dex?.info?.imageUrl || pool.image || img || cached?.image || undefined,
-                priceUsd: Number(dex?.priceUsd) || pool.priceUsd || cached?.priceUsd,
-                fdvUsd: Number(dex?.fdv) || pool.fdvUsd || cached?.fdvUsd,
-                marketCap: Number(dex?.marketCap) || cached?.marketCap,
-                liquidityUsd: Number(dex?.liquidity?.usd) || pool.liquidityUsd || cached?.liquidityUsd,
-                volume24hUsd: Number(dex?.volume?.h24) || pool.volume24hUsd || cached?.volume24hUsd,
-                priceChange24h: Number(dex?.priceChange?.h24) || cached?.priceChange24h,
-                txCount24h: dex
-                    ? ((Number(dex.txns?.h24?.buys) || 0) + (Number(dex.txns?.h24?.sells) || 0)) || undefined
-                    : cached?.txCount24h,
-                buyCount24h: Number(dex?.txns?.h24?.buys) || cached?.buyCount24h,
-                sellCount24h: Number(dex?.txns?.h24?.sells) || cached?.sellCount24h,
-                website: dex?.info?.websites?.[0]?.url || cached?.website,
-                creatorWallet: pool.creatorWallet || cached?.creatorWallet,
-                creatorDisplay: pool.creatorDisplay || cached?.creatorDisplay,
-            };
-
-            if (t.name) metadataCache.set(pool.tokenMint, t);
-            return t;
-        });
-    } catch (e) {
-        console.error("[sync] bags pools fetch failed, will use DexScreener fallback:", e);
-        return null;
-    }
-}
-
 function dexPairToToken(p: any): NormalizedToken {
     return {
         tokenMint: p.baseToken.address,
@@ -463,33 +381,17 @@ export async function syncNewLaunches(): Promise<NormalizedToken[]> {
     }
 
     try {
-        // Try both sources in parallel; Bags API might timeout
-        const [bagsResult, dexPairs] = await Promise.all([
-            newLaunchesFromBagsPools(),
-            getDexScreenerNewBagsPairs(),
-        ]);
+        // DexScreener is the primary source — fast, reliable, has pairCreatedAt
+        const dexPairs = await getDexScreenerNewBagsPairs();
 
-        let tokens: NormalizedToken[];
-
-        if (bagsResult && bagsResult.length > 0) {
-            tokens = bagsResult;
-
-            // Merge any DexScreener pairs that aren't in the Bags result
-            const existingMints = new Set(tokens.map((t) => t.tokenMint));
-            for (const p of dexPairs) {
-                if (!existingMints.has(p.baseToken.address)) {
-                    tokens.push(dexPairToToken(p));
-                }
-            }
-        } else {
-            // Bags API failed — use DexScreener as primary source
-            console.log("[sync] using DexScreener fallback for new launches");
-            tokens = dexPairs.map(dexPairToToken);
-        }
+        const tokens: NormalizedToken[] = dexPairs.map(dexPairToToken);
 
         for (const t of tokens) {
             if (t.name) metadataCache.set(t.tokenMint, t);
         }
+
+        // Fire-and-forget: refresh pool index cache in background
+        Promise.resolve().then(() => getAllPools().catch(() => {})).catch(() => {});
 
         newLaunchCache = { tokens, ts: Date.now() };
         return tokens;

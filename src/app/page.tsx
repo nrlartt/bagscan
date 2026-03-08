@@ -107,7 +107,8 @@ export default function HomePage() {
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
-    refetchInterval: isSearching ? false : (tab === "new" ? 20_000 : 30_000),
+    refetchInterval: isSearching ? false : (tab === "new" ? 15_000 : 30_000),
+    staleTime: tab === "new" ? 0 : 10_000,
   });
 
   const meta = data?.meta;
