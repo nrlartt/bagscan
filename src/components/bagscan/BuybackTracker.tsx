@@ -21,7 +21,10 @@ async function fetchBurnData(tokenMint: string): Promise<BurnData> {
     return json.data;
 }
 
-function formatTokenAmount(n: number): string {
+function formatTokenAmount(n: number, exact = false): string {
+    if (exact || n < 1e6) {
+        return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
     if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
     if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
     if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
@@ -51,7 +54,7 @@ export function BuybackTracker({ tokenMint }: BuybackTrackerProps) {
                 <StatBox
                     icon={<Flame className="w-4 h-4 text-[#ff4400]" />}
                     label="TOTAL BURNED"
-                    value={data ? formatTokenAmount(data.totalBurned) : "—"}
+                    value={data ? formatTokenAmount(data.totalBurned, true) : "—"}
                     sub={data ? `${data.burnPct}% OF SUPPLY` : ""}
                     color="#ff4400"
                     loading={isLoading}
@@ -59,7 +62,7 @@ export function BuybackTracker({ tokenMint }: BuybackTrackerProps) {
                 <StatBox
                     icon={<TrendingDown className="w-4 h-4 text-[#ffaa00]" />}
                     label="CIRCULATING"
-                    value={data ? formatTokenAmount(data.circulatingSupply) : "—"}
+                    value={data ? formatTokenAmount(data.circulatingSupply, true) : "—"}
                     sub="AFTER BURNS"
                     color="#ffaa00"
                     loading={isLoading}
@@ -67,7 +70,7 @@ export function BuybackTracker({ tokenMint }: BuybackTrackerProps) {
                 <StatBox
                     icon={<Lock className="w-4 h-4 text-[#00ff41]" />}
                     label="TOTAL SUPPLY"
-                    value={data ? formatTokenAmount(data.totalSupply) : "—"}
+                    value={data ? formatTokenAmount(data.totalSupply, true) : "—"}
                     sub="INITIAL MINT"
                     color="#00ff41"
                     loading={isLoading}
