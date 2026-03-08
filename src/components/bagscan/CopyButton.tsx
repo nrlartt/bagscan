@@ -1,43 +1,44 @@
 "use client";
 
-import { useState } from "react";
 import { Copy, Check } from "lucide-react";
-import { copyToClipboard, cn } from "@/lib/utils";
+import { useState } from "react";
 
 interface CopyButtonProps {
-    value: string;
+    text?: string;
+    value?: string;
     label?: string;
-    className?: string;
 }
 
-export function CopyButton({ value, label, className }: CopyButtonProps) {
+export function CopyButton({ text, value, label }: CopyButtonProps) {
     const [copied, setCopied] = useState(false);
+    const copyText = text ?? value ?? "";
 
-    const handleCopy = async () => {
-        const ok = await copyToClipboard(value);
-        if (ok) {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        }
+    const handleCopy = () => {
+        navigator.clipboard?.writeText(copyText);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
+
+    if (label) {
+        return (
+            <button
+                onClick={handleCopy}
+                className="inline-flex items-center gap-1.5 px-2 py-1 border border-[#00ff41]/15 text-[10px] text-[#00ff41]/40 tracking-wider hover:text-[#00ff41] hover:border-[#00ff41]/40 transition-colors"
+                title={`Copy: ${copyText}`}
+            >
+                {copied ? <Check className="w-3 h-3 text-[#00ff41]" /> : <Copy className="w-3 h-3" />}
+                {label}
+            </button>
+        );
+    }
 
     return (
         <button
             onClick={handleCopy}
-            className={cn(
-                "inline-flex items-center gap-1.5 px-2 py-1 text-[10px] tracking-wider",
-                "bg-black/40 hover:bg-[#00ff41]/5 text-[#00ff41]/40 hover:text-[#00ff41]/70",
-                "transition-all duration-200 border border-[#00ff41]/10 hover:border-[#00ff41]/25",
-                className
-            )}
-            title={`Copy ${label ?? value}`}
+            className="flex-shrink-0 p-1.5 border border-[#00ff41]/15 text-[#00ff41]/30 hover:text-[#00ff41] hover:border-[#00ff41]/40 transition-colors"
+            title="Copy"
         >
-            {label && <span>{label}</span>}
-            {copied ? (
-                <Check className="w-3 h-3 text-[#00ff41]" />
-            ) : (
-                <Copy className="w-3 h-3" />
-            )}
+            {copied ? <Check className="w-3 h-3 text-[#00ff41]" /> : <Copy className="w-3 h-3" />}
         </button>
     );
 }

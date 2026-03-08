@@ -98,7 +98,7 @@ export function TopNav() {
 
                     {/* Right section */}
                     <div className="flex items-center gap-3">
-                        {/* $BGSCAN token link */}
+                        {/* $SCAN token link */}
                         <a
                             href="https://bags.fm/BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS"
                             target="_blank"
@@ -106,7 +106,7 @@ export function TopNav() {
                             className="hidden md:flex items-center gap-1.5 px-2.5 py-1 border border-[#00ff41]/20 hover:border-[#00ff41]/50 bg-[#00ff41]/[0.03] hover:bg-[#00ff41]/[0.08] transition-all group"
                         >
                             <span className="w-1.5 h-1.5 rounded-full bg-[#00ff41]/50 group-hover:bg-[#00ff41] transition-colors" style={{ boxShadow: '0 0 4px rgba(0,255,65,0.3)' }} />
-                            <span className="text-[9px] text-[#00ff41]/50 group-hover:text-[#00ff41] tracking-[0.12em] transition-colors">$BGSCAN</span>
+                            <span className="text-[9px] text-[#00ff41]/50 group-hover:text-[#00ff41] tracking-[0.12em] transition-colors">$SCAN</span>
                         </a>
                         {/* Alert status — fixed width to prevent layout shift */}
                         <div className={cn(

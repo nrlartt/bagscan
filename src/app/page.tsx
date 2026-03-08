@@ -165,7 +165,7 @@ export default function HomePage() {
                   rel="noopener noreferrer"
                   className="hidden sm:inline text-[#00ff41]/40 hover:text-[#00ff41]/70 transition-colors"
                 >
-                  POWERED BY <span className="text-[#00ff41]/60">$BGSCAN</span>
+                  POWERED BY <span className="text-[#00ff41]/60">$SCAN</span>
                 </a>
               </p>
             </div>

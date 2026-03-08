@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BagLogo } from "./BagLogo";
 
-const BGSCAN_CA = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
+const SCAN_CA = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
 
 export function Footer() {
     return (
@@ -10,7 +10,7 @@ export function Footer() {
                 {/* Token banner */}
                 <div className="flex items-center justify-center gap-3 mb-4 pb-4 border-b border-[#00ff41]/10">
                     <a
-                        href={`https://bags.fm/${BGSCAN_CA}`}
+                        href={`https://bags.fm/${SCAN_CA}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="group flex items-center gap-2.5 px-4 py-2 border border-[#00ff41]/15 hover:border-[#00ff41]/40 bg-[#00ff41]/[0.02] hover:bg-[#00ff41]/[0.05] transition-all"
@@ -20,10 +20,10 @@ export function Footer() {
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00ff41]/60" />
                         </span>
                         <span className="text-[10px] text-[#00ff41]/60 tracking-[0.15em] group-hover:text-[#00ff41] transition-colors">
-                            $BGSCAN
+                            $SCAN
                         </span>
                         <span className="text-[8px] text-[#00ff41]/20 tracking-wider hidden sm:inline">
-                            {BGSCAN_CA.slice(0, 4)}...{BGSCAN_CA.slice(-4)}
+                            {SCAN_CA.slice(0, 4)}...{SCAN_CA.slice(-4)}
                         </span>
                         <span className="text-[8px] text-[#00ff41]/25 tracking-wider border border-[#00ff41]/15 px-1.5 py-px group-hover:text-[#00ff41]/50 transition-colors">
                             TRADE ON BAGS
