@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Scan, TrendingUp, Users, Coins, Shield, Zap, Rocket, ExternalLink } from "lucide-react";
+import { Scan, TrendingUp, Users, Coins, Shield, Zap, Rocket, ExternalLink, Flame, Lock, ArrowDownCircle, RefreshCw } from "lucide-react";
 import { CopyButton } from "@/components/bagscan/CopyButton";
+import { BuybackTracker } from "@/components/bagscan/BuybackTracker";
 
 export const metadata: Metadata = {
     title: "About — BagScan",
@@ -95,6 +96,61 @@ export default function AboutPage() {
                 </div>
             </div>
 
+            {/* Buyback & Burn */}
+            <div className="mb-12 border-2 border-[#ff4400]/20 bg-black/80 overflow-hidden" style={{ boxShadow: '0 0 25px rgba(255,68,0,0.03)' }}>
+                <div className="px-6 py-3 border-b border-[#ff4400]/15 bg-[#ff4400]/[0.02] flex items-center gap-2">
+                    <Flame className="w-4 h-4 text-[#ff4400]/60" />
+                    <span className="text-[11px] text-[#ff4400]/70 tracking-[0.2em]">╔══ BUYBACK &amp; BURN ══╗</span>
+                </div>
+                <div className="p-6">
+                    <p className="text-[10px] text-[#00ff41]/35 leading-relaxed tracking-wider mb-6">
+                        BAGSCAN ALLOCATES A PORTION OF ALL PLATFORM REVENUE (PARTNER FEE SHARE FROM TOKEN LAUNCHES)
+                        TO SYSTEMATICALLY BUY BACK <span className="text-[#00ff41]/60">$SCAN</span> TOKENS FROM THE OPEN MARKET
+                        AND PERMANENTLY BURN THEM. THIS CREATES CONTINUOUS DEFLATIONARY PRESSURE AND DIRECTLY
+                        REWARDS HOLDERS.
+                    </p>
+
+                    {/* How it works */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+                        <div className="p-4 border border-[#ff4400]/10 bg-[#ff4400]/[0.02] text-center">
+                            <div className="w-10 h-10 mx-auto border border-[#ffaa00]/20 flex items-center justify-center text-[#ffaa00]/50 mb-2">
+                                <ArrowDownCircle className="w-5 h-5" />
+                            </div>
+                            <div className="text-[9px] text-[#ffaa00]/60 tracking-[0.15em] mb-1">STEP 1</div>
+                            <div className="text-[9px] text-[#00ff41]/35 tracking-wider">REVENUE COLLECTED FROM PARTNER FEE SHARE</div>
+                        </div>
+                        <div className="p-4 border border-[#ff4400]/10 bg-[#ff4400]/[0.02] text-center">
+                            <div className="w-10 h-10 mx-auto border border-[#ffaa00]/20 flex items-center justify-center text-[#ffaa00]/50 mb-2">
+                                <RefreshCw className="w-5 h-5" />
+                            </div>
+                            <div className="text-[9px] text-[#ffaa00]/60 tracking-[0.15em] mb-1">STEP 2</div>
+                            <div className="text-[9px] text-[#00ff41]/35 tracking-wider">$SCAN BOUGHT FROM OPEN MARKET</div>
+                        </div>
+                        <div className="p-4 border border-[#ff4400]/10 bg-[#ff4400]/[0.02] text-center">
+                            <div className="w-10 h-10 mx-auto border border-[#ff4400]/20 flex items-center justify-center text-[#ff4400]/50 mb-2">
+                                <Flame className="w-5 h-5" />
+                            </div>
+                            <div className="text-[9px] text-[#ff4400]/60 tracking-[0.15em] mb-1">STEP 3</div>
+                            <div className="text-[9px] text-[#00ff41]/35 tracking-wider">TOKENS SENT TO BURN ADDRESS — PERMANENTLY REMOVED</div>
+                        </div>
+                    </div>
+
+                    {/* Live tracker */}
+                    <BuybackTracker tokenMint={SCAN_CA} />
+
+                    {/* Revenue allocation */}
+                    <div className="mt-5 p-4 border border-[#00ff41]/10 bg-black/60">
+                        <div className="text-[9px] text-[#00ff41]/40 tracking-[0.2em] mb-3">REVENUE ALLOCATION</div>
+                        <div className="space-y-2">
+                            <AllocationBar label="BUYBACK & BURN" pct={40} color="#ff4400" />
+                            <AllocationBar label="DEVELOPMENT" pct={30} color="#00ff41" />
+                            <AllocationBar label="OPERATIONS" pct={20} color="#ffaa00" />
+                            <AllocationBar label="COMMUNITY" pct={10} color="#00aaff" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* Features */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-12">
                 <FeatureCard icon={<TrendingUp className="w-5 h-5" />} title="FDV, NOT MARKET CAP" description="BagScan shows Fully Diluted Valuation (FDV) rather than market cap when circulating supply cannot be verified. FDV = price × total supply." />
@@ -107,7 +163,7 @@ export default function AboutPage() {
             <div className="crt-panel p-6 mb-8">
                 <div className="panel-header">╔══ ROADMAP ══╗</div>
                 <div className="space-y-3 mt-2">
-                    <RoadmapItem phase="PHASE 1" status="LIVE" items={["Token Discovery Terminal", "Real-time Trending & New Launches", "Creator Analytics & Fee Tracking", "Alpha Signal Feed", "Token Launch Interface"]} />
+                    <RoadmapItem phase="PHASE 1" status="LIVE" items={["Token Discovery Terminal", "Real-time Trending & New Launches", "Creator Analytics & Fee Tracking", "Alpha Signal Feed", "Token Launch Interface", "$SCAN Buyback & Burn System"]} />
                     <RoadmapItem phase="PHASE 2" status="IN DEVELOPMENT" items={["Portfolio Tracker & PnL", "Smart Alert Notifications", "Wallet Tracking", "Advanced Charting"]} />
                     <RoadmapItem phase="PHASE 3" status="PLANNED" items={["AI-Powered Token Scoring", "Creator Reputation System", "Mobile App", "$SCAN Holder Benefits"]} />
                 </div>
@@ -130,8 +186,9 @@ export default function AboutPage() {
                 <p className="text-[10px] text-[#00ff41]/35 leading-relaxed tracking-wider">
                     BAGSCAN USES BAGS&apos; NATIVE PARTNER CONFIGURATION SYSTEM. WHEN A CREATOR
                     LAUNCHES A TOKEN THROUGH BAGSCAN, A PORTION OF ONGOING FEES ARE DIRECTED
-                    TO BAGSCAN&apos;S PARTNER WALLET. TRANSPARENT, ON-CHAIN, FULLY NATIVE TO THE
-                    BAGS ECOSYSTEM.
+                    TO BAGSCAN&apos;S PARTNER WALLET. <span className="text-[#ff4400]/50">40% OF ALL REVENUE IS ALLOCATED TO
+                    $SCAN BUYBACK &amp; BURN</span>, CREATING CONTINUOUS DEFLATIONARY PRESSURE.
+                    TRANSPARENT, ON-CHAIN, FULLY NATIVE TO THE BAGS ECOSYSTEM.
                 </p>
             </div>
 
@@ -186,6 +243,21 @@ function RoadmapItem({ phase, status, items }: { phase: string; status: string; 
                     ))}
                 </ul>
             </div>
+        </div>
+    );
+}
+
+function AllocationBar({ label, pct, color }: { label: string; pct: number; color: string }) {
+    return (
+        <div className="flex items-center gap-3">
+            <span className="text-[9px] text-[#00ff41]/30 tracking-wider w-28 flex-shrink-0">{label}</span>
+            <div className="flex-1 h-2 border border-[#00ff41]/10 bg-black/60 overflow-hidden">
+                <div
+                    className="h-full transition-all duration-1000"
+                    style={{ width: `${pct}%`, background: color, boxShadow: `0 0 6px ${color}40` }}
+                />
+            </div>
+            <span className="text-[9px] tracking-wider w-8 text-right" style={{ color }}>{pct}%</span>
         </div>
     );
 }
