@@ -10,7 +10,7 @@ import { TokenCardSkeleton, TokenTableSkeleton } from "@/components/bagscan/Skel
 import { formatCurrency, formatNumber, cn } from "@/lib/utils";
 import type { NormalizedToken } from "@/lib/bags/types";
 import {
-  Flame, Rocket, Trophy, Search, X, LayoutGrid, List,
+  Flame, Rocket, Trophy, Search, SearchX, X, LayoutGrid, List,
   DollarSign, BarChart3, Layers, Cpu, AppWindow, ExternalLink, Radio,
 } from "lucide-react";
 import Link from "next/link";
@@ -103,12 +103,23 @@ export default function HomePage() {
   const { data, isLoading, error, refetch } = useQuery<TokensResponse>({
     queryKey: ["tokens", params],
     queryFn: async () => {
-      const res = await fetch(`/api/tokens?${params}`);
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
+      try {
+        const res = await fetch(`/api/tokens?${params}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || "API error");
+        return json;
+      } finally {
+        clearTimeout(timeout);
+      }
     },
     refetchInterval: isSearching ? false : (tab === "new" ? 15_000 : 30_000),
     staleTime: tab === "new" ? 0 : 10_000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    refetchOnWindowFocus: true,
   });
 
   const meta = data?.meta;
@@ -292,10 +303,23 @@ export default function HomePage() {
           <LeaderboardList entries={leaderboardEntries} />
         )
       ) : tokens.length === 0 ? (
-        <EmptyState
-          title={isSearching ? "NO TOKENS FOUND" : "NO TOKENS AVAILABLE"}
-          description={isSearching ? "TRY A DIFFERENT QUERY OR PASTE A FULL MINT ADDRESS." : "AWAITING DATA..."}
-        />
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <SearchX className="w-10 h-10 text-[#00ff41]/20 mb-4" />
+          <h3 className="text-sm text-[#00ff41]/50 tracking-[0.15em]">
+            {isSearching ? "NO TOKENS FOUND" : "CONNECTING TO DATA FEED..."}
+          </h3>
+          <p className="text-[10px] text-[#00ff41]/25 mt-2 max-w-md tracking-wider">
+            {isSearching ? "TRY A DIFFERENT QUERY OR PASTE A FULL MINT ADDRESS." : "DATA FEED IS BEING ESTABLISHED. AUTO-RETRYING..."}
+          </p>
+          {!isSearching && (
+            <button
+              onClick={() => refetch()}
+              className="mt-4 px-4 py-2 text-[10px] tracking-wider border border-[#00ff41]/30 text-[#00ff41]/60 hover:text-[#00ff41] hover:bg-[#00ff41]/5 transition-colors"
+            >
+              RETRY NOW
+            </button>
+          )}
+        </div>
       ) : (
         <>
           {!isSearching && tab === "new" && (

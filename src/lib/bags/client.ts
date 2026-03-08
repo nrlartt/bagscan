@@ -62,6 +62,26 @@ async function unwrap<T>(res: Response): Promise<T> {
     return json.response as T;
 }
 
+async function fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    retries = 2,
+    delayMs = 500
+): Promise<Response> {
+    let lastError: Error | null = null;
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const res = await fetch(url, init);
+            if (res.ok || res.status < 500) return res;
+            lastError = new Error(`HTTP ${res.status}`);
+        } catch (e) {
+            lastError = e instanceof Error ? e : new Error(String(e));
+        }
+        if (i < retries) await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+    throw lastError ?? new Error("fetchWithRetry failed");
+}
+
 async function bagsGet<T>(
     path: string,
     opts?: { revalidate?: number; tags?: string[]; cache?: RequestCache; timeoutMs?: number }
@@ -82,7 +102,7 @@ async function bagsGet<T>(
         };
     }
 
-    const res = await fetch(url, init);
+    const res = await fetchWithRetry(url, init);
     return unwrap<T>(res);
 }
 
@@ -394,7 +414,10 @@ export async function getDexScreenerPairs(mints: string[]): Promise<any[]> {
     if (mints.length === 0) return [];
     try {
         const url = `https://api.dexscreener.com/latest/dex/tokens/${mints.join(",")}`;
-        const res = await fetch(url, { cache: "no-store" });
+        const res = await fetchWithRetry(url, {
+            cache: "no-store",
+            signal: AbortSignal.timeout(10_000),
+        });
         if (!res.ok) return [];
         const json = await res.json();
         return json.pairs || [];
@@ -410,10 +433,10 @@ export const getDexScreenerMetadata = getDexScreenerPairs;
 export async function getDexScreenerSearch(query: string): Promise<any[]> {
     try {
         const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
-        const res = await fetch(url, {
+        const res = await fetchWithRetry(url, {
             cache: "no-store",
             signal: AbortSignal.timeout(10_000),
-        });
+        }, 2, 300);
         if (!res.ok) return [];
         const json = await res.json();
         return (json.pairs || []).filter((p: any) => p.chainId === "solana");

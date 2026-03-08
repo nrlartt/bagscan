@@ -1,4 +1,6 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 25;
+
 import { NextRequest, NextResponse } from "next/server";
 import {
     syncTrendingTokens,
@@ -6,11 +8,16 @@ import {
     syncLeaderboard,
     syncHackathonApps,
     searchAllTokens,
-    getTotalPoolCount,
     getPlatformStats,
 } from "@/lib/sync";
 import { tokensQuerySchema } from "@/lib/validators";
 import type { NormalizedToken } from "@/lib/bags/types";
+
+function jsonOk(data: unknown) {
+    return NextResponse.json(data, {
+        headers: { "Cache-Control": "public, s-maxage=10, stale-while-revalidate=30" },
+    });
+}
 
 export async function GET(req: NextRequest) {
     try {
@@ -20,7 +27,7 @@ export async function GET(req: NextRequest) {
 
         if (query.search) {
             const results = await searchAllTokens(query.search, 50);
-            return NextResponse.json({
+            return jsonOk({
                 success: true,
                 data: results,
                 meta: {
@@ -35,7 +42,7 @@ export async function GET(req: NextRequest) {
 
         if (query.tab === "hackathon") {
             const apps = await syncHackathonApps();
-            return NextResponse.json({
+            return jsonOk({
                 success: true,
                 data: apps,
                 meta: {
@@ -49,11 +56,17 @@ export async function GET(req: NextRequest) {
         }
 
         if (query.tab === "leaderboard") {
-            const [leaderboard, stats] = await Promise.all([
-                syncLeaderboard(),
-                getPlatformStats(),
-            ]);
-            return NextResponse.json({
+            let leaderboard: Awaited<ReturnType<typeof syncLeaderboard>> = [];
+            let stats: Awaited<ReturnType<typeof getPlatformStats>> | null = null;
+            try {
+                [leaderboard, stats] = await Promise.all([
+                    syncLeaderboard(),
+                    getPlatformStats(),
+                ]);
+            } catch (e) {
+                console.error("[api/tokens] leaderboard error:", e);
+            }
+            return jsonOk({
                 success: true,
                 data: leaderboard,
                 stats,
@@ -63,7 +76,7 @@ export async function GET(req: NextRequest) {
                     pageSize: leaderboard.length,
                     totalPages: 1,
                     tab: "leaderboard",
-                    totalPools: stats.totalProjects,
+                    totalPools: stats?.totalProjects,
                 },
             });
         }
@@ -82,20 +95,7 @@ export async function GET(req: NextRequest) {
         const start = (query.page - 1) * query.pageSize;
         const paged = tokens.slice(start, start + query.pageSize);
 
-        // Pool count is non-critical; don't let it block the response
-        let totalPools: number | undefined;
-        try {
-            totalPools = await Promise.race([
-                getTotalPoolCount(),
-                new Promise<number>((_, reject) =>
-                    setTimeout(() => reject(new Error("pool count timeout")), 5_000)
-                ),
-            ]);
-        } catch {
-            totalPools = total;
-        }
-
-        return NextResponse.json({
+        return jsonOk({
             success: true,
             data: paged,
             meta: {
@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
                 pageSize: query.pageSize,
                 totalPages: Math.ceil(total / query.pageSize),
                 tab: query.tab,
-                totalPools,
+                totalPools: total,
             },
         });
     } catch (e) {

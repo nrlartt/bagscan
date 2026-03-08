@@ -55,9 +55,15 @@ let trendingCache: { tokens: NormalizedToken[]; ts: number } | null = null;
 let newLaunchCache: { tokens: NormalizedToken[]; ts: number } | null = null;
 let metadataCache = new Map<string, NormalizedToken>();
 
+// Locks to prevent concurrent revalidation
+let trendingRevalidating = false;
+let newLaunchRevalidating = false;
+
 const POOLS_TTL = 3 * 60_000;
 const TRENDING_TTL = 60_000;
+const TRENDING_STALE_TTL = 5 * 60_000; // Serve stale for up to 5 min
 const NEW_LAUNCH_TTL = 20_000;
+const NEW_LAUNCH_STALE_TTL = 3 * 60_000;
 
 // ═══════════════════════════════════════════════
 // Pool index (for search)
@@ -96,77 +102,98 @@ async function getAllPools(): Promise<PoolEntry[]> {
 // TRENDING – DexScreener pairs with real market data
 // ═══════════════════════════════════════════════
 
+async function fetchTrendingFromDex(): Promise<NormalizedToken[]> {
+    const pairs = await getDexScreenerSearch("bags");
+
+    const tokens: NormalizedToken[] = pairs
+        .filter((p: any) => p.baseToken?.address)
+        .map((p: any): NormalizedToken => ({
+            tokenMint: p.baseToken.address,
+            poolAddress: p.pairAddress,
+            name: p.baseToken.name,
+            symbol: p.baseToken.symbol,
+            image: p.info?.imageUrl,
+            priceUsd: Number(p.priceUsd) || undefined,
+            fdvUsd: Number(p.fdv) || undefined,
+            marketCap: Number(p.marketCap) || undefined,
+            liquidityUsd: Number(p.liquidity?.usd) || undefined,
+            volume24hUsd: Number(p.volume?.h24) || undefined,
+            pairAddress: p.pairAddress,
+            dexId: p.dexId,
+            priceChange24h: Number(p.priceChange?.h24) || undefined,
+            txCount24h:
+                ((Number(p.txns?.h24?.buys) || 0) +
+                    (Number(p.txns?.h24?.sells) || 0)) ||
+                undefined,
+            buyCount24h: Number(p.txns?.h24?.buys) || undefined,
+            sellCount24h: Number(p.txns?.h24?.sells) || undefined,
+            website: p.info?.websites?.[0]?.url,
+        }));
+
+    if (tokens.length === 0) throw new Error("DexScreener returned 0 trending pairs");
+
+    for (const t of tokens) {
+        metadataCache.set(t.tokenMint, t);
+    }
+
+    trendingCache = { tokens, ts: Date.now() };
+
+    // Fire-and-forget DB upserts
+    Promise.resolve().then(async () => {
+        for (const t of tokens.slice(0, 30)) {
+            if (!t.tokenMint || !t.name) continue;
+            prisma.tokenRegistry
+                .upsert({
+                    where: { tokenMint: t.tokenMint },
+                    create: {
+                        tokenMint: t.tokenMint,
+                        poolAddress: t.poolAddress,
+                        name: t.name,
+                        symbol: t.symbol,
+                        image: t.image,
+                        latestPriceUsd: t.priceUsd,
+                        latestFdvUsd: t.fdvUsd,
+                        latestLiquidityUsd: t.liquidityUsd,
+                        launchSource: "bags",
+                    },
+                    update: {
+                        name: t.name,
+                        symbol: t.symbol,
+                        image: t.image,
+                        latestPriceUsd: t.priceUsd,
+                        latestFdvUsd: t.fdvUsd,
+                        latestLiquidityUsd: t.liquidityUsd,
+                    },
+                })
+                .catch(() => {});
+        }
+    }).catch(() => {});
+
+    return tokens;
+}
+
 export async function syncTrendingTokens(): Promise<NormalizedToken[]> {
-    if (trendingCache && Date.now() - trendingCache.ts < TRENDING_TTL) {
+    const age = trendingCache ? Date.now() - trendingCache.ts : Infinity;
+
+    // Fresh cache — return immediately
+    if (age < TRENDING_TTL) {
+        return trendingCache!.tokens;
+    }
+
+    // Stale cache — return stale data and revalidate in background
+    if (age < TRENDING_STALE_TTL && trendingCache && trendingCache.tokens.length > 0) {
+        if (!trendingRevalidating) {
+            trendingRevalidating = true;
+            fetchTrendingFromDex()
+                .catch((e) => console.error("[sync] trending bg-revalidate error:", e))
+                .finally(() => { trendingRevalidating = false; });
+        }
         return trendingCache.tokens;
     }
 
+    // No cache or too old — fetch synchronously
     try {
-        const pairs = await getDexScreenerSearch("bags");
-
-        const tokens: NormalizedToken[] = pairs
-            .filter((p: any) => p.baseToken?.address)
-            .map((p: any): NormalizedToken => ({
-                tokenMint: p.baseToken.address,
-                poolAddress: p.pairAddress,
-                name: p.baseToken.name,
-                symbol: p.baseToken.symbol,
-                image: p.info?.imageUrl,
-                priceUsd: Number(p.priceUsd) || undefined,
-                fdvUsd: Number(p.fdv) || undefined,
-                marketCap: Number(p.marketCap) || undefined,
-                liquidityUsd: Number(p.liquidity?.usd) || undefined,
-                volume24hUsd: Number(p.volume?.h24) || undefined,
-                pairAddress: p.pairAddress,
-                dexId: p.dexId,
-                priceChange24h: Number(p.priceChange?.h24) || undefined,
-                txCount24h:
-                    ((Number(p.txns?.h24?.buys) || 0) +
-                        (Number(p.txns?.h24?.sells) || 0)) ||
-                    undefined,
-                buyCount24h: Number(p.txns?.h24?.buys) || undefined,
-                sellCount24h: Number(p.txns?.h24?.sells) || undefined,
-                website: p.info?.websites?.[0]?.url,
-            }));
-
-        for (const t of tokens) {
-            metadataCache.set(t.tokenMint, t);
-        }
-
-        trendingCache = { tokens, ts: Date.now() };
-
-        // Fire-and-forget DB upserts — never block the response
-        Promise.resolve().then(async () => {
-            for (const t of tokens.slice(0, 30)) {
-                if (!t.tokenMint || !t.name) continue;
-                prisma.tokenRegistry
-                    .upsert({
-                        where: { tokenMint: t.tokenMint },
-                        create: {
-                            tokenMint: t.tokenMint,
-                            poolAddress: t.poolAddress,
-                            name: t.name,
-                            symbol: t.symbol,
-                            image: t.image,
-                            latestPriceUsd: t.priceUsd,
-                            latestFdvUsd: t.fdvUsd,
-                            latestLiquidityUsd: t.liquidityUsd,
-                            launchSource: "bags",
-                        },
-                        update: {
-                            name: t.name,
-                            symbol: t.symbol,
-                            image: t.image,
-                            latestPriceUsd: t.priceUsd,
-                            latestFdvUsd: t.fdvUsd,
-                            latestLiquidityUsd: t.liquidityUsd,
-                        },
-                    })
-                    .catch(() => {});
-            }
-        }).catch(() => {});
-
-        return tokens;
+        return await fetchTrendingFromDex();
     } catch (e) {
         console.error("[sync] trending error:", e);
         return trendingCache?.tokens ?? [];
@@ -331,11 +358,19 @@ export interface PlatformStats {
 }
 
 export async function getPlatformStats(): Promise<PlatformStats> {
-    const [poolCount, leaderboard, trending] = await Promise.all([
-        getTotalPoolCount(),
+    const [leaderboard, trending] = await Promise.all([
         syncLeaderboard(),
         syncTrendingTokens(),
     ]);
+
+    // Pool count is slow (Bags API) — use cached value or skip
+    let poolCount = allPoolsCache?.pools.length ?? trending.length;
+    try {
+        poolCount = await Promise.race([
+            getTotalPoolCount(),
+            new Promise<number>((_, rej) => setTimeout(() => rej("timeout"), 3_000)),
+        ]);
+    } catch {}
 
     const totalCreatorEarnings = leaderboard.reduce((s, e) => s + e.earnedUsd, 0);
     const totalVolume = trending.reduce((s, t) => s + (t.volume24hUsd ?? 0), 0);
@@ -375,26 +410,42 @@ function dexPairToToken(p: any): NormalizedToken {
     };
 }
 
+async function fetchNewLaunchesFromDex(): Promise<NormalizedToken[]> {
+    const dexPairs = await getDexScreenerNewBagsPairs();
+    if (dexPairs.length === 0) throw new Error("DexScreener returned 0 new launches");
+
+    const tokens: NormalizedToken[] = dexPairs.map(dexPairToToken);
+
+    for (const t of tokens) {
+        if (t.name) metadataCache.set(t.tokenMint, t);
+    }
+
+    // Fire-and-forget: refresh pool index cache in background
+    Promise.resolve().then(() => getAllPools().catch(() => {})).catch(() => {});
+
+    newLaunchCache = { tokens, ts: Date.now() };
+    return tokens;
+}
+
 export async function syncNewLaunches(): Promise<NormalizedToken[]> {
-    if (newLaunchCache && Date.now() - newLaunchCache.ts < NEW_LAUNCH_TTL) {
+    const age = newLaunchCache ? Date.now() - newLaunchCache.ts : Infinity;
+
+    if (age < NEW_LAUNCH_TTL) {
+        return newLaunchCache!.tokens;
+    }
+
+    if (age < NEW_LAUNCH_STALE_TTL && newLaunchCache && newLaunchCache.tokens.length > 0) {
+        if (!newLaunchRevalidating) {
+            newLaunchRevalidating = true;
+            fetchNewLaunchesFromDex()
+                .catch((e) => console.error("[sync] new launches bg-revalidate error:", e))
+                .finally(() => { newLaunchRevalidating = false; });
+        }
         return newLaunchCache.tokens;
     }
 
     try {
-        // DexScreener is the primary source — fast, reliable, has pairCreatedAt
-        const dexPairs = await getDexScreenerNewBagsPairs();
-
-        const tokens: NormalizedToken[] = dexPairs.map(dexPairToToken);
-
-        for (const t of tokens) {
-            if (t.name) metadataCache.set(t.tokenMint, t);
-        }
-
-        // Fire-and-forget: refresh pool index cache in background
-        Promise.resolve().then(() => getAllPools().catch(() => {})).catch(() => {});
-
-        newLaunchCache = { tokens, ts: Date.now() };
-        return tokens;
+        return await fetchNewLaunchesFromDex();
     } catch (e) {
         console.error("[sync] new launches error:", e);
         return newLaunchCache?.tokens ?? [];
