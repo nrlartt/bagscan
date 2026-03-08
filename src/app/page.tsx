@@ -158,6 +158,15 @@ export default function HomePage() {
                 {totalPools ? (
                   <span> — <span className="text-[#00ff41]/60">{totalPools.toLocaleString()}</span> TOKENS INDEXED</span>
                 ) : null}
+                <span className="hidden sm:inline"> — </span>
+                <a
+                  href="https://bags.fm/BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hidden sm:inline text-[#00ff41]/40 hover:text-[#00ff41]/70 transition-colors"
+                >
+                  POWERED BY <span className="text-[#00ff41]/60">$BGSCAN</span>
+                </a>
               </p>
             </div>
           </div>
