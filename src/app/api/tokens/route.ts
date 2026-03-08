@@ -82,7 +82,18 @@ export async function GET(req: NextRequest) {
         const start = (query.page - 1) * query.pageSize;
         const paged = tokens.slice(start, start + query.pageSize);
 
-        const totalPools = await getTotalPoolCount();
+        // Pool count is non-critical; don't let it block the response
+        let totalPools: number | undefined;
+        try {
+            totalPools = await Promise.race([
+                getTotalPoolCount(),
+                new Promise<number>((_, reject) =>
+                    setTimeout(() => reject(new Error("pool count timeout")), 5_000)
+                ),
+            ]);
+        } catch {
+            totalPools = total;
+        }
 
         return NextResponse.json({
             success: true,

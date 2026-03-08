@@ -14,6 +14,7 @@ import {
     getClaimStatsDetailed,
     getDexScreenerPairs,
     getDexScreenerSearch,
+    getDexScreenerNewBagsPairs,
     getHeliusAsset,
     getHeliusHolderCount,
     getSolPriceUsd,
@@ -67,24 +68,29 @@ async function getAllPools(): Promise<PoolEntry[]> {
     if (allPoolsCache && Date.now() - allPoolsCache.ts < POOLS_TTL) {
         return allPoolsCache.pools;
     }
-    const raw = await getBagsPools();
-    const pools: PoolEntry[] = raw.map((p: any) => ({
-        tokenMint: p.tokenMint,
-        dbcConfigKey: p.dbcConfigKey,
-        dbcPoolKey: p.dbcPoolKey,
-        dammV2PoolKey: p.dammV2PoolKey,
-        name: p.name,
-        symbol: p.symbol,
-        image: p.image,
-        priceUsd: Number(p.tokenPriceUsd) || Number(p.priceUsd) || undefined,
-        fdvUsd: Number(p.fdvUsd) || Number(p.fdv) || undefined,
-        liquidityUsd: Number(p.liquidityUsd) || Number(p.liquidity) || undefined,
-        volume24hUsd: Number(p.volume24hUsd) || Number(p.volume24h) || undefined,
-        creatorWallet: p.creatorWallet,
-        creatorDisplay: p.creatorDisplayName || p.creatorUsername,
-    }));
-    allPoolsCache = { pools, ts: Date.now() };
-    return pools;
+    try {
+        const raw = await getBagsPools();
+        const pools: PoolEntry[] = raw.map((p: any) => ({
+            tokenMint: p.tokenMint,
+            dbcConfigKey: p.dbcConfigKey,
+            dbcPoolKey: p.dbcPoolKey,
+            dammV2PoolKey: p.dammV2PoolKey,
+            name: p.name,
+            symbol: p.symbol,
+            image: p.image,
+            priceUsd: Number(p.tokenPriceUsd) || Number(p.priceUsd) || undefined,
+            fdvUsd: Number(p.fdvUsd) || Number(p.fdv) || undefined,
+            liquidityUsd: Number(p.liquidityUsd) || Number(p.liquidity) || undefined,
+            volume24hUsd: Number(p.volume24hUsd) || Number(p.volume24h) || undefined,
+            creatorWallet: p.creatorWallet,
+            creatorDisplay: p.creatorDisplayName || p.creatorUsername,
+        }));
+        allPoolsCache = { pools, ts: Date.now() };
+        return pools;
+    } catch (e) {
+        console.error("[sync] getAllPools error:", e);
+        return allPoolsCache?.pools ?? [];
+    }
 }
 
 // ═══════════════════════════════════════════════
@@ -130,33 +136,36 @@ export async function syncTrendingTokens(): Promise<NormalizedToken[]> {
 
         trendingCache = { tokens, ts: Date.now() };
 
-        for (const t of tokens.slice(0, 30)) {
-            if (!t.tokenMint || !t.name) continue;
-            prisma.tokenRegistry
-                .upsert({
-                    where: { tokenMint: t.tokenMint },
-                    create: {
-                        tokenMint: t.tokenMint,
-                        poolAddress: t.poolAddress,
-                        name: t.name,
-                        symbol: t.symbol,
-                        image: t.image,
-                        latestPriceUsd: t.priceUsd,
-                        latestFdvUsd: t.fdvUsd,
-                        latestLiquidityUsd: t.liquidityUsd,
-                        launchSource: "bags",
-                    },
-                    update: {
-                        name: t.name,
-                        symbol: t.symbol,
-                        image: t.image,
-                        latestPriceUsd: t.priceUsd,
-                        latestFdvUsd: t.fdvUsd,
-                        latestLiquidityUsd: t.liquidityUsd,
-                    },
-                })
-                .catch(() => {});
-        }
+        // Fire-and-forget DB upserts — never block the response
+        Promise.resolve().then(async () => {
+            for (const t of tokens.slice(0, 30)) {
+                if (!t.tokenMint || !t.name) continue;
+                prisma.tokenRegistry
+                    .upsert({
+                        where: { tokenMint: t.tokenMint },
+                        create: {
+                            tokenMint: t.tokenMint,
+                            poolAddress: t.poolAddress,
+                            name: t.name,
+                            symbol: t.symbol,
+                            image: t.image,
+                            latestPriceUsd: t.priceUsd,
+                            latestFdvUsd: t.fdvUsd,
+                            latestLiquidityUsd: t.liquidityUsd,
+                            launchSource: "bags",
+                        },
+                        update: {
+                            name: t.name,
+                            symbol: t.symbol,
+                            image: t.image,
+                            latestPriceUsd: t.priceUsd,
+                            latestFdvUsd: t.fdvUsd,
+                            latestLiquidityUsd: t.liquidityUsd,
+                        },
+                    })
+                    .catch(() => {});
+            }
+        }).catch(() => {});
 
         return tokens;
     } catch (e) {
@@ -343,11 +352,7 @@ export async function getPlatformStats(): Promise<PlatformStats> {
 // NEW LAUNCHES – Newest pools + on-chain metadata
 // ═══════════════════════════════════════════════
 
-export async function syncNewLaunches(): Promise<NormalizedToken[]> {
-    if (newLaunchCache && Date.now() - newLaunchCache.ts < NEW_LAUNCH_TTL) {
-        return newLaunchCache.tokens;
-    }
-
+async function newLaunchesFromBagsPools(): Promise<NormalizedToken[] | null> {
     try {
         const freshPools = await getBagsPools();
         const allPools: PoolEntry[] = freshPools.map((p: any) => ({
@@ -388,7 +393,7 @@ export async function syncNewLaunches(): Promise<NormalizedToken[]> {
         }
         const images = await fetchMetadataImages(imageUris);
 
-        const tokens: NormalizedToken[] = newest.map((pool) => {
+        return newest.map((pool) => {
             const meta = metaMap.get(pool.tokenMint);
             const img = images.get(pool.tokenMint);
             const cached = metadataCache.get(pool.tokenMint);
@@ -420,9 +425,71 @@ export async function syncNewLaunches(): Promise<NormalizedToken[]> {
             };
 
             if (t.name) metadataCache.set(pool.tokenMint, t);
-
             return t;
         });
+    } catch (e) {
+        console.error("[sync] bags pools fetch failed, will use DexScreener fallback:", e);
+        return null;
+    }
+}
+
+function dexPairToToken(p: any): NormalizedToken {
+    return {
+        tokenMint: p.baseToken.address,
+        poolAddress: p.pairAddress,
+        pairAddress: p.pairAddress,
+        name: p.baseToken.name,
+        symbol: p.baseToken.symbol,
+        image: p.info?.imageUrl,
+        dexId: p.dexId,
+        priceUsd: Number(p.priceUsd) || undefined,
+        fdvUsd: Number(p.fdv) || undefined,
+        marketCap: Number(p.marketCap) || undefined,
+        liquidityUsd: Number(p.liquidity?.usd) || undefined,
+        volume24hUsd: Number(p.volume?.h24) || undefined,
+        priceChange24h: Number(p.priceChange?.h24) || undefined,
+        txCount24h:
+            ((Number(p.txns?.h24?.buys) || 0) + (Number(p.txns?.h24?.sells) || 0)) || undefined,
+        buyCount24h: Number(p.txns?.h24?.buys) || undefined,
+        sellCount24h: Number(p.txns?.h24?.sells) || undefined,
+        website: p.info?.websites?.[0]?.url,
+        pairCreatedAt: p.pairCreatedAt ? new Date(p.pairCreatedAt).toISOString() : undefined,
+    };
+}
+
+export async function syncNewLaunches(): Promise<NormalizedToken[]> {
+    if (newLaunchCache && Date.now() - newLaunchCache.ts < NEW_LAUNCH_TTL) {
+        return newLaunchCache.tokens;
+    }
+
+    try {
+        // Try both sources in parallel; Bags API might timeout
+        const [bagsResult, dexPairs] = await Promise.all([
+            newLaunchesFromBagsPools(),
+            getDexScreenerNewBagsPairs(),
+        ]);
+
+        let tokens: NormalizedToken[];
+
+        if (bagsResult && bagsResult.length > 0) {
+            tokens = bagsResult;
+
+            // Merge any DexScreener pairs that aren't in the Bags result
+            const existingMints = new Set(tokens.map((t) => t.tokenMint));
+            for (const p of dexPairs) {
+                if (!existingMints.has(p.baseToken.address)) {
+                    tokens.push(dexPairToToken(p));
+                }
+            }
+        } else {
+            // Bags API failed — use DexScreener as primary source
+            console.log("[sync] using DexScreener fallback for new launches");
+            tokens = dexPairs.map(dexPairToToken);
+        }
+
+        for (const t of tokens) {
+            if (t.name) metadataCache.set(t.tokenMint, t);
+        }
 
         newLaunchCache = { tokens, ts: Date.now() };
         return tokens;

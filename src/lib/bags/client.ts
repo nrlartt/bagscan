@@ -64,12 +64,13 @@ async function unwrap<T>(res: Response): Promise<T> {
 
 async function bagsGet<T>(
     path: string,
-    opts?: { revalidate?: number; tags?: string[]; cache?: RequestCache }
+    opts?: { revalidate?: number; tags?: string[]; cache?: RequestCache; timeoutMs?: number }
 ): Promise<T> {
     const url = `${BASE()}${path}`;
     const init: RequestInit = {
         method: "GET",
         headers: headers(),
+        signal: AbortSignal.timeout(opts?.timeoutMs ?? 15_000),
     };
 
     if (opts?.cache) {
@@ -102,7 +103,8 @@ async function bagsPost<T>(path: string, body: unknown): Promise<T> {
 
 export async function getBagsPools(): Promise<BagsPool[]> {
     const data = await bagsGet<BagsPool[] | BagsPoolsResponse>("/solana/bags/pools", {
-        cache: "no-store"
+        cache: "no-store",
+        timeoutMs: 25_000,
     });
     if (Array.isArray(data)) return data;
     return data.pools ?? data.tokens ?? data.data ?? [];
@@ -408,12 +410,27 @@ export const getDexScreenerMetadata = getDexScreenerPairs;
 export async function getDexScreenerSearch(query: string): Promise<any[]> {
     try {
         const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
-        const res = await fetch(url, { cache: "no-store" });
+        const res = await fetch(url, {
+            cache: "no-store",
+            signal: AbortSignal.timeout(10_000),
+        });
         if (!res.ok) return [];
         const json = await res.json();
         return (json.pairs || []).filter((p: any) => p.chainId === "solana");
     } catch (e) {
         console.error("[dexscreener] search error:", e);
+        return [];
+    }
+}
+
+export async function getDexScreenerNewBagsPairs(): Promise<any[]> {
+    try {
+        const pairs = await getDexScreenerSearch("bags");
+        return pairs
+            .filter((p: any) => p.dexId === "bags" && p.baseToken?.address)
+            .sort((a: any, b: any) => (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0));
+    } catch (e) {
+        console.error("[dexscreener] new bags pairs error:", e);
         return [];
     }
 }
