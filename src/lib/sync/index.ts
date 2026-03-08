@@ -763,9 +763,14 @@ export async function syncTokenDetail(
 }
 
 export async function getTokenSnapshots(tokenMint: string) {
-    return prisma.tokenSnapshot.findMany({
-        where: { tokenMint },
-        orderBy: { capturedAt: "asc" },
-        take: 200,
-    });
+    try {
+        return await prisma.tokenSnapshot.findMany({
+            where: { tokenMint },
+            orderBy: { capturedAt: "asc" },
+            take: 200,
+        });
+    } catch (e) {
+        console.error("[sync] getTokenSnapshots error:", e);
+        return [];
+    }
 }

@@ -2,8 +2,6 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { syncTokenDetail, getTokenSnapshots } from "@/lib/sync";
 import { getClaimEvents } from "@/lib/bags/client";
-import { prisma } from "@/lib/db";
-import type { TokenSnapshot } from "@prisma/client";
 
 export async function GET(
     _req: NextRequest,
@@ -38,7 +36,7 @@ export async function GET(
             data: {
                 token,
                 claimEvents,
-                snapshots: snapshots.map((s: TokenSnapshot) => ({
+                snapshots: snapshots.map((s: { capturedAt: Date; fdvUsd: number | null; priceUsd: number | null; liquidityUsd: number | null; lifetimeFees: number | null; volume24hUsd: number | null }) => ({
                     capturedAt: s.capturedAt.toISOString(),
                     fdvUsd: s.fdvUsd,
                     priceUsd: s.priceUsd,
