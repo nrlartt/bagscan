@@ -12,9 +12,10 @@ import Link from "next/link";
 import Image from "next/image";
 import {
     Rocket, Wallet, Check, Loader2, ArrowRight, ArrowLeft,
-    AlertCircle, Info, Plus, Trash2, ExternalLink, Upload, X, ImageIcon,
+    AlertCircle, Info, Plus, Trash2, ExternalLink, Upload, X,
 } from "lucide-react";
 import { cn, shortenAddress } from "@/lib/utils";
+import { RecentBagscanLaunches } from "@/components/launch/RecentBagscanLaunches";
 
 const metadataSchema = z.object({
     name: z.string().min(1, "Name is required").max(64),
@@ -40,8 +41,6 @@ export default function LaunchPage() {
     const [claimers, setClaimers] = useState<Claimer[]>([{ wallet: "", bps: 10000 }]);
     const [initialBuyLamports, setInitialBuyLamports] = useState(0);
     const [tokenMint, setTokenMint] = useState<string | null>(null);
-    const [tokenMetadataUri, setTokenMetadataUri] = useState<string | null>(null);
-    const [configKey, setConfigKey] = useState<string | null>(null);
     const [txStatus, setTxStatus] = useState<"idle" | "creating-info" | "creating-fees" | "creating-launch" | "signing" | "success" | "error">("idle");
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -148,7 +147,6 @@ export default function LaunchPage() {
             const mint = infoData.data.tokenMint;
             const metadataIpfs = infoData.data.tokenMetadata;
             setTokenMint(mint);
-            setTokenMetadataUri(metadataIpfs);
 
             // Step 2: Create fee share config
             setTxStatus("creating-fees");
@@ -188,7 +186,6 @@ export default function LaunchPage() {
 
             const feeResult = feeData.data;
             const meteoraConfigKey = feeResult.meteoraConfigKey;
-            setConfigKey(meteoraConfigKey);
 
             // Sign and send fee share config transactions if needed
             if (feeResult.needsCreation) {
@@ -547,6 +544,8 @@ export default function LaunchPage() {
                     )}
                 </div>
             )}
+
+            <RecentBagscanLaunches />
         </div>
     );
 }
