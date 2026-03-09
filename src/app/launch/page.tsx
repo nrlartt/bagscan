@@ -32,6 +32,8 @@ type MetadataForm = z.infer<typeof metadataSchema>;
 interface Claimer { wallet: string; bps: number; }
 type LaunchStep = 1 | 2 | 3 | 4;
 
+const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg"];
+
 export default function LaunchPage() {
     const { connected, publicKey, signTransaction } = useWallet();
     const { setVisible } = useWalletModal();
@@ -56,8 +58,8 @@ export default function LaunchPage() {
 
     const handleImageSelect = useCallback((file: File) => {
         setImageError(null);
-        if (!file.type.startsWith("image/")) {
-            setImageError("ONLY IMAGE FILES ALLOWED (PNG, JPG, GIF, WEBP)");
+        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+            setImageError("ONLY PNG/JPG FILES ALLOWED");
             return;
         }
         if (file.size > 5 * 1024 * 1024) {
@@ -323,7 +325,7 @@ export default function LaunchPage() {
                                 <input
                                     ref={fileInputRef}
                                     type="file"
-                                    accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                                    accept="image/png,image/jpeg,image/jpg"
                                     className="hidden"
                                     onChange={(e) => {
                                         const file = e.target.files?.[0];
@@ -339,7 +341,7 @@ export default function LaunchPage() {
                                             DRAG & DROP OR CLICK TO UPLOAD
                                         </p>
                                         <p className="text-[8px] text-[#00ff41]/20 tracking-wider mt-0.5">
-                                            PNG, JPG, GIF, WEBP — MAX 5MB
+                                            PNG/JPG - MAX 5MB
                                         </p>
                                     </div>
                                 </div>
