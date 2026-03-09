@@ -21,8 +21,9 @@ export async function POST(req: NextRequest) {
             await prisma.launchDraft.create({
                 data: {
                     tokenMint: data.tokenMint,
+                    tokenMetadata: data.ipfs,
                     feeShareConfig: data.configKey,
-                    partnerIncluded: !!process.env.BAGSCAN_PARTNER_WALLET,
+                    partnerIncluded: true,
                     name: body.name ?? "Unknown",
                     symbol: body.symbol ?? "???",
                     description: body.description ?? "",

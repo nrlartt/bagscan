@@ -12,10 +12,7 @@ interface NewLaunchesResponse {
     data: NormalizedToken[];
     meta: {
         total: number;
-        page: number;
-        pageSize: number;
-        totalPages: number;
-        tab: string;
+        limit: number;
     };
 }
 
@@ -38,10 +35,12 @@ function timeAgo(dateStr?: string): string | null {
 }
 
 export function RecentBagscanLaunches() {
+    const limit = 8;
+
     const { data, isLoading, isError, refetch, isFetching } = useQuery<NewLaunchesResponse>({
         queryKey: ["launch-recent-bagscan"],
         queryFn: async () => {
-            const res = await fetch("/api/tokens?tab=new&pageSize=8", { cache: "no-store" });
+            const res = await fetch(`/api/launch/recent?limit=${limit}`, { cache: "no-store" });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const json = await res.json();
             if (!json.success) throw new Error(json.error || "API error");
@@ -103,7 +102,7 @@ export function RecentBagscanLaunches() {
             ) : tokens.length === 0 ? (
                 <div className="border border-[#00ff41]/10 bg-black/60 p-4 text-center">
                     <p className="text-[10px] text-[#00ff41]/35 tracking-wider">
-                        NO DEPLOYED TOKENS FOUND YET
+                        NO VERIFIED BAGSCAN DEPLOYS FOUND YET
                     </p>
                 </div>
             ) : (

@@ -46,8 +46,6 @@ export default function LaunchPage() {
 
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
-    const [imageUploadUrl, setImageUploadUrl] = useState<string | null>(null);
-    const [uploadingImage, setUploadingImage] = useState(false);
     const [imageError, setImageError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -56,7 +54,7 @@ export default function LaunchPage() {
         defaultValues: { name: "", symbol: "", description: "", imageUrl: "", website: "", twitter: "", telegram: "" },
     });
 
-    const handleImageSelect = useCallback(async (file: File) => {
+    const handleImageSelect = useCallback((file: File) => {
         setImageError(null);
         if (!file.type.startsWith("image/")) {
             setImageError("ONLY IMAGE FILES ALLOWED (PNG, JPG, GIF, WEBP)");
@@ -67,31 +65,14 @@ export default function LaunchPage() {
             return;
         }
         setImageFile(file);
+        if (imagePreview) URL.revokeObjectURL(imagePreview);
         setImagePreview(URL.createObjectURL(file));
-
-        setUploadingImage(true);
-        try {
-            const formData = new FormData();
-            formData.append("image", file);
-            const res = await fetch("/api/upload", { method: "POST", body: formData });
-            const data = await res.json();
-            if (!data.success) throw new Error(data.error);
-            const fullUrl = `${window.location.origin}${data.data.url}`;
-            setImageUploadUrl(fullUrl);
-            setValue("imageUrl", fullUrl);
-        } catch (e) {
-            setImageError(`UPLOAD FAILED: ${e}`);
-            setImageUploadUrl(null);
-        } finally {
-            setUploadingImage(false);
-        }
-    }, [setValue]);
+    }, [imagePreview]);
 
     const removeImage = useCallback(() => {
         setImageFile(null);
         if (imagePreview) URL.revokeObjectURL(imagePreview);
         setImagePreview(null);
-        setImageUploadUrl(null);
         setImageError(null);
         setValue("imageUrl", "");
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -104,10 +85,9 @@ export default function LaunchPage() {
     }, [handleImageSelect]);
 
     const onMetadataSubmit = useCallback((data: MetadataForm) => {
-        if (imageUploadUrl) data.imageUrl = imageUploadUrl;
         setMetadata(data);
         setStep(2);
-    }, [imageUploadUrl]);
+    }, []);
 
     const addClaimer = () => setClaimers((prev) => [...prev, { wallet: "", bps: 0 }]);
     const removeClaimer = (idx: number) => setClaimers((prev) => prev.filter((_, i) => i !== idx));
@@ -136,11 +116,30 @@ export default function LaunchPage() {
 
         try {
             // Step 1: Create token info & metadata
-            const infoRes = await fetch("/api/launch/create-token-info", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(metadata),
-            });
+            let infoRes: Response;
+
+            if (imageFile) {
+                const formData = new FormData();
+                formData.append("name", metadata.name);
+                formData.append("symbol", metadata.symbol);
+                formData.append("description", metadata.description);
+                formData.append("image", imageFile);
+                if (metadata.imageUrl) formData.append("imageUrl", metadata.imageUrl);
+                if (metadata.website) formData.append("website", metadata.website);
+                if (metadata.twitter) formData.append("twitter", metadata.twitter);
+                if (metadata.telegram) formData.append("telegram", metadata.telegram);
+
+                infoRes = await fetch("/api/launch/create-token-info", {
+                    method: "POST",
+                    body: formData,
+                });
+            } else {
+                infoRes = await fetch("/api/launch/create-token-info", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(metadata),
+                });
+            }
             const infoData = await infoRes.json();
             if (!infoData.success) throw new Error(infoData.error || "Failed to create token info");
 
@@ -236,7 +235,7 @@ export default function LaunchPage() {
             }
             setTxStatus("success");
         } catch (e) { setErrorMsg(String(e)); setTxStatus("error"); }
-    }, [connected, publicKey, signTransaction, metadata, claimers, initialBuyLamports, sendSignedTransaction, setVisible]);
+    }, [connected, publicKey, signTransaction, metadata, imageFile, claimers, initialBuyLamports, sendSignedTransaction, setVisible]);
 
     return (
         <div className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8 py-8">
@@ -296,18 +295,10 @@ export default function LaunchPage() {
                                         <p className="text-[9px] text-[#00ff41]/25 tracking-wider mt-0.5">
                                             {imageFile ? `${(imageFile.size / 1024).toFixed(1)} KB` : ""}
                                         </p>
-                                        {uploadingImage && (
-                                            <div className="flex items-center gap-1.5 mt-1.5">
-                                                <Loader2 className="w-3 h-3 text-[#00ff41]/50 animate-spin" />
-                                                <span className="text-[9px] text-[#00ff41]/40 tracking-wider">UPLOADING...</span>
-                                            </div>
-                                        )}
-                                        {imageUploadUrl && !uploadingImage && (
-                                            <div className="flex items-center gap-1.5 mt-1.5">
-                                                <Check className="w-3 h-3 text-[#00ff41]" />
-                                                <span className="text-[9px] text-[#00ff41]/60 tracking-wider">UPLOADED</span>
-                                            </div>
-                                        )}
+                                        <div className="flex items-center gap-1.5 mt-1.5">
+                                            <Check className="w-3 h-3 text-[#00ff41]" />
+                                            <span className="text-[9px] text-[#00ff41]/60 tracking-wider">WILL UPLOAD ON LAUNCH</span>
+                                        </div>
                                         {imageError && (
                                             <p className="text-[9px] text-[#ff4400]/60 mt-1 tracking-wider">{imageError}</p>
                                         )}
