@@ -468,6 +468,51 @@ function heliusRpcUrl(): string {
     return process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
 }
 
+const HOLDER_COUNT_TTL_MS = 2 * 60_000;
+const HOLDER_PAGE_LIMIT = 1000;
+const HOLDER_MAX_PAGES = 30;
+const holderCountCache = new Map<string, { count: number; ts: number }>();
+
+interface EnhancedTokenAccount {
+    owner?: string;
+    amount?: string | number | null;
+}
+
+async function heliusRpc(method: string, params: unknown): Promise<any> {
+    const res = await fetch(heliusRpcUrl(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: `bagscan-${method}`,
+            method,
+            params,
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(20_000),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) {
+        const reason = json.error?.message ?? `HTTP ${res.status}`;
+        throw new Error(`[helius:${method}] ${reason}`);
+    }
+    return json.result;
+}
+
+function parseRawTokenAmount(value: unknown): bigint | null {
+    if (typeof value === "string") {
+        try {
+            return BigInt(value);
+        } catch {
+            return null;
+        }
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return BigInt(Math.max(0, Math.floor(value)));
+    }
+    return null;
+}
+
 export async function getHeliusAsset(mint: string): Promise<HeliusAsset | null> {
     try {
         const res = await fetch(heliusRpcUrl(), {
@@ -525,23 +570,53 @@ export async function getHeliusAssetBatch(
 }
 
 export async function getHeliusHolderCount(mint: string): Promise<number | null> {
-    try {
-        const res = await fetch(heliusRpcUrl(), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                jsonrpc: "2.0",
-                id: "bagscan-holders",
-                method: "getTokenAccounts",
-                params: { mint, limit: 1, page: 1 },
-            }),
-            cache: "no-store",
-        });
-        const json = await res.json();
-        return json.result?.total ?? null;
-    } catch {
-        return null;
+    const cached = holderCountCache.get(mint);
+    if (cached && Date.now() - cached.ts < HOLDER_COUNT_TTL_MS) {
+        return cached.count;
     }
+
+    try {
+        const holders = new Set<string>();
+        let cursor: string | undefined;
+
+        for (let page = 0; page < HOLDER_MAX_PAGES; page++) {
+            const params: Record<string, unknown> = {
+                mint,
+                limit: HOLDER_PAGE_LIMIT,
+                options: { showZeroBalance: false },
+            };
+            if (cursor) {
+                params.cursor = cursor;
+            }
+
+            const result = await heliusRpc("getTokenAccounts", params);
+            const accounts = Array.isArray(result?.token_accounts) ? result.token_accounts : [];
+
+            for (const acc of accounts as EnhancedTokenAccount[]) {
+                const owner = acc.owner;
+                const amount = parseRawTokenAmount(acc.amount);
+                if (!owner || amount === null || amount <= BigInt(0)) continue;
+                holders.add(owner);
+            }
+
+            const nextCursor =
+                typeof result?.cursor === "string" && result.cursor.length > 0
+                    ? result.cursor
+                    : undefined;
+
+            if (!nextCursor) break;
+            cursor = nextCursor;
+        }
+
+        if (holders.size > 0) {
+            holderCountCache.set(mint, { count: holders.size, ts: Date.now() });
+            return holders.size;
+        }
+    } catch (e) {
+        console.warn("[helius] holder count fetch failed:", e);
+    }
+
+    return null;
 }
 
 // ================================================================
