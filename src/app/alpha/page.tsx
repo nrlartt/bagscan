@@ -17,7 +17,7 @@ import {
 import type { AlphaFeedResponse, AlphaToken, AlphaSignal, AlphaSignalSeverity, RadarTrend } from "@/lib/alpha/types";
 
 const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
-const MIN_SCAN_REQUIRED = BigInt(1_000_000);
+const MIN_SCAN_REQUIRED = BigInt(10_000_000);
 const SCAN_BAGS_URL = `https://bags.fm/${SCAN_MINT}`;
 const SCAN_JUP_URL = `https://jup.ag/swap?sell=So11111111111111111111111111111111111111112&buy=${SCAN_MINT}`;
 
@@ -105,7 +105,7 @@ export default function AlphaPage() {
                     <Shield className="w-12 h-12 text-[#ffaa00] mx-auto mb-5" />
                     <h1 className="text-2xl sm:text-3xl text-[#ffaa00] tracking-[0.12em]">ALPHA ACCESS RESTRICTED</h1>
                     <p className="text-sm sm:text-base text-[#00ff41]/60 tracking-wider mt-4 max-w-2xl mx-auto">
-                        THE ALPHA PAGE IS AVAILABLE ONLY TO WALLETS HOLDING AT LEAST 1,000,000 SCAN TOKENS.
+                        THE ALPHA PAGE IS AVAILABLE ONLY TO WALLETS HOLDING AT LEAST 10,000,000 SCAN TOKENS.
                     </p>
                     <AccessLinks />
                     <button
@@ -155,7 +155,7 @@ export default function AlphaPage() {
                     <Shield className="w-12 h-12 text-[#ffaa00] mx-auto mb-4" />
                     <h1 className="text-2xl sm:text-3xl text-[#ffaa00] tracking-[0.12em]">INSUFFICIENT SCAN BALANCE</h1>
                     <p className="text-sm sm:text-base text-[#00ff41]/60 tracking-wider mt-4">
-                        REQUIRED: {accessData?.requiredUi ?? "1,000,000"} SCAN
+                        REQUIRED: {accessData?.requiredUi ?? "10,000,000"} SCAN
                     </p>
                     <p className="text-sm sm:text-base text-[#00ff41]/60 tracking-wider mt-2">
                         CURRENT WALLET BALANCE: {accessData?.balanceUi ?? "0"} SCAN
