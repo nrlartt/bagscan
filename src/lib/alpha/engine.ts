@@ -1,8 +1,8 @@
-/* ──────────────────────────────────────────────
-   BagsAlpha – Signal Detection Engine
+﻿/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   BagsAlpha â€“ Signal Detection Engine
    Combines Bags API + DexScreener + Xquik data
    to generate alpha signals for each token
-   ────────────────────────────────────────────── */
+   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 import {
     getDexScreenerSearch,
@@ -16,9 +16,16 @@ import {
     getRadarItems,
 } from "@/lib/xquik/client";
 import type { XquikRadarItem } from "@/lib/xquik/types";
-import type { AlphaToken, AlphaSignal, AlphaSignalSeverity, AlphaFeedResponse, RadarTrend } from "./types";
+import type {
+    AlphaToken,
+    AlphaSignal,
+    AlphaSignalSeverity,
+    AlphaFeedResponse,
+    RadarTrend,
+    AlphaRiskLevel,
+} from "./types";
 
-// ── Cache ────────────────────────────────────
+// â”€â”€ Cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let alphaCache: { data: AlphaFeedResponse; ts: number } | null = null;
 const ALPHA_TTL = 90_000;
@@ -34,11 +41,12 @@ const SIGNAL_WEIGHTS: Record<string, number> = {
     new_migration: 8,
     new_launch: 10,
     holder_surge: 10,
+    rug_risk: 18,
 };
 
-// ═══════════════════════════════════════════════
-// Main Alpha Feed – single DexScreener call for speed
-// ═══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Main Alpha Feed â€“ single DexScreener call for speed
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export async function generateAlphaFeed(): Promise<AlphaFeedResponse> {
     if (alphaCache && Date.now() - alphaCache.ts < ALPHA_TTL) {
@@ -69,6 +77,9 @@ export async function generateAlphaFeed(): Promise<AlphaFeedResponse> {
                 volume24hUsd: Number(p.volume?.h24) || undefined,
                 marketCap: Number(p.marketCap) || undefined,
                 liquidityUsd: Number(p.liquidity?.usd) || undefined,
+                pairCreatedAt: p.pairCreatedAt
+                    ? new Date(p.pairCreatedAt).toISOString()
+                    : undefined,
                 alphaScore: 0,
                 signals: [],
                 detectedAt: new Date().toISOString(),
@@ -82,7 +93,7 @@ export async function generateAlphaFeed(): Promise<AlphaFeedResponse> {
             detectOnChainSignals(token, solPrice);
         }
 
-        // Phase 2: Social signal detection (Xquik) – only if API key is configured
+        // Phase 2: Social signal detection (Xquik) â€“ only if API key is configured
         if (isXquikConfigured()) {
             const withSymbol = candidates.filter((t) => t.symbol);
             const socialBatch = withSymbol.slice(0, 10);
@@ -90,6 +101,10 @@ export async function generateAlphaFeed(): Promise<AlphaFeedResponse> {
             await Promise.allSettled(
                 socialBatch.map((token) => enrichWithSocialData(token))
             );
+        }
+
+        for (const token of candidates) {
+            applyRugRiskAssessment(token);
         }
 
         for (const token of candidates) {
@@ -142,11 +157,41 @@ export async function generateAlphaFeed(): Promise<AlphaFeedResponse> {
     }
 }
 
-// ═══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Helpers
-// ═══════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function detectOnChainSignals(token: AlphaToken, solPrice: number) {
+    // New launch timing
+    const launchAgeHours = getLaunchAgeHours(token.pairCreatedAt);
+    if (launchAgeHours !== null) {
+        if (launchAgeHours <= 1) {
+            pushSignal(token, {
+                type: "new_launch",
+                severity: "critical",
+                title: "Fresh Launch",
+                description: "Launched in the last hour",
+                value: "1h",
+            });
+        } else if (launchAgeHours <= 6) {
+            pushSignal(token, {
+                type: "new_launch",
+                severity: "high",
+                title: "New Launch",
+                description: "Launched in the last 6 hours",
+                value: "6h",
+            });
+        } else if (launchAgeHours <= 24) {
+            pushSignal(token, {
+                type: "new_launch",
+                severity: "medium",
+                title: "Recent Launch",
+                description: "Launched in the last 24 hours",
+                value: "24h",
+            });
+        }
+    }
+
     // Volume Spike: volume24h > $10K signals activity
     if (token.volume24hUsd) {
         if (token.volume24hUsd > 100_000) {
@@ -304,7 +349,7 @@ async function enrichWithSocialData(token: AlphaToken) {
             );
         }
 
-        // Social buzz – token mention search
+        // Social buzz â€“ token mention search
         if (token.symbol) {
             promises.push(
                 (async () => {
@@ -357,6 +402,78 @@ async function enrichWithSocialData(token: AlphaToken) {
     }
 }
 
+function applyRugRiskAssessment(token: AlphaToken) {
+    let score = 0;
+    const reasons: string[] = [];
+
+    const liquidity = token.liquidityUsd ?? 0;
+    const volume24h = token.volume24hUsd ?? 0;
+    const marketCap = token.marketCap ?? 0;
+    const change24h = token.priceChange24h ?? 0;
+    const launchAgeHours = getLaunchAgeHours(token.pairCreatedAt);
+
+    if (!token.liquidityUsd || liquidity < 12_000) {
+        score += 28;
+        reasons.push("Low liquidity depth");
+    } else if (liquidity < 25_000) {
+        score += 18;
+        reasons.push("Thin liquidity");
+    }
+
+    if (change24h <= -45) {
+        score += 30;
+        reasons.push("Severe 24h drawdown");
+    } else if (change24h <= -25) {
+        score += 18;
+        reasons.push("Heavy 24h sell pressure");
+    }
+
+    if (marketCap > 500_000 && volume24h < 7_000) {
+        score += 14;
+        reasons.push("Weak volume vs market cap");
+    }
+
+    if (liquidity > 0 && volume24h / liquidity > 12) {
+        score += 10;
+        reasons.push("Unstable turnover profile");
+    }
+
+    if (launchAgeHours !== null && launchAgeHours <= 12 && liquidity < 15_000) {
+        score += 16;
+        reasons.push("Very new pair with low liquidity");
+    }
+
+    if (!token.marketCap) {
+        score += 8;
+        reasons.push("Unverified market cap profile");
+    }
+
+    const finalScore = Math.min(100, score);
+    const riskLevel = scoreToRiskLevel(finalScore);
+
+    token.rugRiskScore = finalScore;
+    token.rugRiskLevel = riskLevel;
+    token.rugRiskReasons = reasons;
+
+    if (finalScore >= 35) {
+        const severity: AlphaSignalSeverity =
+            finalScore >= 65
+                ? "critical"
+                : finalScore >= 50
+                    ? "high"
+                    : "medium";
+
+        pushSignal(token, {
+            type: "rug_risk",
+            severity,
+            title: finalScore >= 65 ? "Rug Risk Alert" : "Rug Risk Watch",
+            description:
+                reasons.slice(0, 2).join(" - ") || "Risk profile elevated",
+            value: `RISK ${finalScore}`,
+        });
+    }
+}
+
 function pushSignal(
     token: AlphaToken,
     signal: Omit<AlphaSignal, "timestamp">
@@ -393,3 +510,19 @@ function formatCompact(n: number): string {
     if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
     return n.toFixed(0);
 }
+
+function getLaunchAgeHours(iso?: string): number | null {
+    if (!iso) return null;
+    const ts = new Date(iso).getTime();
+    if (!Number.isFinite(ts)) return null;
+    const ageMs = Date.now() - ts;
+    if (ageMs <= 0) return 0;
+    return ageMs / (1000 * 60 * 60);
+}
+
+function scoreToRiskLevel(score: number): AlphaRiskLevel {
+    if (score >= 65) return "high";
+    if (score >= 35) return "medium";
+    return "low";
+}
+

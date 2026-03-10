@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Connection, PublicKey } from "@solana/web3.js";
@@ -20,6 +21,9 @@ const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
 const MIN_SCAN_REQUIRED = BigInt(10_000_000);
 const SCAN_BAGS_URL = `https://bags.fm/${SCAN_MINT}`;
 const SCAN_JUP_URL = `https://jup.ag/swap?sell=So11111111111111111111111111111111111111112&buy=${SCAN_MINT}`;
+const BREAKING_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+type QuickFilter = "all" | "rug-check" | "momentum" | "new-launches" | "last-minute";
 
 interface AlphaAccessCheck {
     eligible: boolean;
@@ -86,6 +90,7 @@ export default function AlphaPage() {
     });
 
     const hasAccess = connected && !!accessData?.eligible;
+    const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
 
     const { data, isLoading, error, refetch, isFetching } = useQuery<AlphaFeedResponse>({
         queryKey: ["alpha-feed"],
@@ -97,6 +102,23 @@ export default function AlphaPage() {
         refetchInterval: 90_000,
         enabled: hasAccess,
     });
+
+    const tokens = data?.tokens ?? [];
+    const totalSignals = data?.totalSignals ?? 0;
+    const xquikEnabled = data?.xquikEnabled ?? false;
+    const radarTrends = data?.radarTrends ?? [];
+    const filteredTokens = useMemo(
+        () => applyQuickFilter(tokens, quickFilter),
+        [tokens, quickFilter]
+    );
+    const breakingTrends = useMemo(
+        () => getBreakingTrends(radarTrends),
+        [radarTrends]
+    );
+
+    const criticalTokens = filteredTokens.filter((t) => t.alphaScore >= 60);
+    const hotTokens = filteredTokens.filter((t) => t.alphaScore >= 30 && t.alphaScore < 60);
+    const watchTokens = filteredTokens.filter((t) => t.alphaScore > 0 && t.alphaScore < 30);
 
     if (!connected) {
         return (
@@ -172,15 +194,6 @@ export default function AlphaPage() {
         );
     }
 
-    const tokens = data?.tokens ?? [];
-    const totalSignals = data?.totalSignals ?? 0;
-    const xquikEnabled = data?.xquikEnabled ?? false;
-    const radarTrends = data?.radarTrends ?? [];
-
-    const criticalTokens = tokens.filter((t) => t.alphaScore >= 60);
-    const hotTokens = tokens.filter((t) => t.alphaScore >= 30 && t.alphaScore < 60);
-    const watchTokens = tokens.filter((t) => t.alphaScore > 0 && t.alphaScore < 30);
-
     return (
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
             {/* ╔══ HEADER ══╗ */}
@@ -252,6 +265,18 @@ export default function AlphaPage() {
                 </div>
             )}
 
+            {!isLoading && (
+                <QuickFilterPanel
+                    activeFilter={quickFilter}
+                    onChange={setQuickFilter}
+                    matchedCount={filteredTokens.length}
+                />
+            )}
+
+            {!isLoading && breakingTrends.length > 0 && (
+                <BreakingRadarPanel trends={breakingTrends} />
+            )}
+
             {/* Loading state */}
             {isLoading ? (
                 <AlphaSkeleton />
@@ -269,6 +294,12 @@ export default function AlphaPage() {
                     <Cpu className="w-10 h-10 text-[#00ff41]/30 mx-auto mb-3" />
                     <p className="text-[#00ff41]/70 tracking-wider text-sm">NO ALPHA SIGNALS DETECTED</p>
                     <p className="text-[#00ff41]/30 text-xs mt-2 tracking-wider">AWAITING MARKET ACTIVITY_</p>
+                </div>
+            ) : filteredTokens.length === 0 ? (
+                <div className="crt-panel p-12 text-center">
+                    <Activity className="w-10 h-10 text-[#00ff41]/30 mx-auto mb-3" />
+                    <p className="text-[#00ff41]/70 tracking-wider text-sm">NO TOKENS MATCH THIS QUICK FILTER</p>
+                    <p className="text-[#00ff41]/30 text-xs mt-2 tracking-wider">TRY SWITCHING TO ALL OR MOMENTUM</p>
                 </div>
             ) : (
                 <div className="space-y-6">
@@ -312,7 +343,7 @@ export default function AlphaPage() {
                         <div className="bg-black p-4 border border-[#00ff41]/10 font-mono text-[11px] leading-relaxed">
                             <p className="text-[#00ff41]/70">READY_</p>
                             <p className="text-[#00ff41]/50 mt-1">&gt; QUERY: ALPHA SCAN STATUS</p>
-                            <p className="text-[#00ff41]/70 mt-1">&gt; {tokens.length} TOKENS ANALYZED :: {totalSignals} SIGNALS ACTIVE</p>
+                            <p className="text-[#00ff41]/70 mt-1">&gt; {filteredTokens.length} TOKENS MATCHING {quickFilter.toUpperCase()} :: {totalSignals} SIGNALS ACTIVE</p>
                             <p className="text-[#00ff41]/70 mt-1">&gt; {criticalTokens.length} CRITICAL ALERTS PENDING REVIEW</p>
                             {!xquikEnabled && (
                                 <p className="text-[#ffaa00]/60 mt-1">&gt; WARNING: X/TWITTER FEED DISCONNECTED - SUBSCRIBE AT XQUIK.COM</p>
@@ -352,6 +383,85 @@ function SystemStatusCard({ label, value, status, icon }: {
 }
 
 // ── RadarSection ─────────────────────────────
+
+function QuickFilterPanel({
+    activeFilter,
+    onChange,
+    matchedCount,
+}: {
+    activeFilter: QuickFilter;
+    onChange: (filter: QuickFilter) => void;
+    matchedCount: number;
+}) {
+    const filters: Array<{ key: QuickFilter; label: string }> = [
+        { key: "all", label: "ALL" },
+        { key: "rug-check", label: "RUG-CHECK" },
+        { key: "momentum", label: "MOMENTUM" },
+        { key: "new-launches", label: "NEW LAUNCHES" },
+        { key: "last-minute", label: "LAST-MINUTE" },
+    ];
+
+    return (
+        <div className="crt-panel p-4 mb-6 animate-fade-in">
+            <div className="panel-header flex items-center gap-2">
+                <span className="status-dot status-dot-green" />
+                ╔══ QUICK FILTER ══╗
+                <span className="ml-auto text-[#00ff41]/30">{matchedCount} MATCHES</span>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-3">
+                {filters.map((filter) => {
+                    const active = activeFilter === filter.key;
+                    return (
+                        <button
+                            key={filter.key}
+                            onClick={() => onChange(filter.key)}
+                            className={cn(
+                                "px-3 py-1.5 border text-[10px] tracking-[0.12em] transition-all",
+                                active
+                                    ? "border-[#00ff41]/60 text-[#00ff41] bg-[#00ff41]/10"
+                                    : "border-[#00ff41]/20 text-[#00ff41]/50 hover:text-[#00ff41]/80 hover:border-[#00ff41]/40 hover:bg-[#00ff41]/5"
+                            )}
+                        >
+                            {filter.label}
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+function BreakingRadarPanel({ trends }: { trends: RadarTrend[] }) {
+    return (
+        <div className="crt-panel crt-panel-amber p-4 mb-6 animate-fade-in">
+            <div className="panel-header flex items-center gap-2">
+                <span className="status-dot status-dot-amber" />
+                ╔══ BREAKING CRYPTO RADAR ══╗
+                <span className="ml-auto text-[#ffaa00]/40">LAST 120M</span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 mt-2 stagger-children">
+                {trends.slice(0, 6).map((trend) => (
+                    <a
+                        key={trend.id}
+                        href={trend.url ?? "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-3 border border-[#ffaa00]/20 bg-black/45 hover:bg-[#ffaa00]/5 hover:border-[#ffaa00]/40 transition-all"
+                    >
+                        <p className="text-[11px] text-[#ffaa00]/80 tracking-wider line-clamp-2 leading-relaxed">
+                            {trend.title}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2 text-[8px] tracking-[0.12em]">
+                            <span className="text-[#ffaa00]/35">{trend.source.replace("_", " ").toUpperCase()}</span>
+                            <span className="text-[#ffaa00]/30">SCORE {trend.score}</span>
+                            <span className="text-[#ffaa00]/25 ml-auto">{formatTimeAgo(trend.publishedAt)}</span>
+                        </div>
+                    </a>
+                ))}
+            </div>
+        </div>
+    );
+}
 
 function RadarSection({ trends }: { trends: RadarTrend[] }) {
     return (
@@ -428,12 +538,26 @@ function AlphaCard({ token }: { token: AlphaToken }) {
         token.alphaScore >= 60 ? "#ff4400"
             : token.alphaScore >= 30 ? "#ffaa00"
                 : "#00ff41";
+    const rugRiskScore = token.rugRiskScore ?? 0;
+    const rugRiskLevel = token.rugRiskLevel ?? scoreToRiskLevel(rugRiskScore);
+    const rugRiskClass =
+        rugRiskLevel === "high"
+            ? "border-[#ff4400]/35 text-[#ff4400]/75"
+            : rugRiskLevel === "medium"
+                ? "border-[#ffaa00]/35 text-[#ffaa00]/75"
+                : "border-[#00ff41]/20 text-[#00ff41]/50";
 
     return (
         <Link
             href={`/token/${token.tokenMint}`}
             className="group border border-[#00ff41]/15 bg-black/60 p-4 relative overflow-hidden hover:border-[#00ff41]/40 hover:bg-[#00ff41]/[0.02] transition-all"
         >
+            {rugRiskScore > 0 && (
+                <div className={cn("absolute top-3 left-3 px-1.5 py-0.5 border text-[8px] tracking-wider", rugRiskClass)}>
+                    RUG {rugRiskScore}
+                </div>
+            )}
+
             {/* Score badge */}
             <div className="absolute top-3 right-3 flex items-center gap-1 text-xs tracking-wider" style={{ color: scoreColor, textShadow: `0 0 8px ${scoreColor}` }}>
                 <Zap className="w-3 h-3" />
@@ -656,6 +780,69 @@ function formatTokenAmount(raw: bigint, decimals: number): string {
         .replace(/0+$/, "");
 
     return `${whole.toString()}.${fractionText}`;
+}
+
+function applyQuickFilter(tokens: AlphaToken[], filter: QuickFilter): AlphaToken[] {
+    if (filter === "all") return tokens;
+
+    return tokens.filter((token) => {
+        if (filter === "rug-check") {
+            return (token.rugRiskScore ?? 0) >= 35;
+        }
+
+        if (filter === "momentum") {
+            return (
+                token.alphaScore >= 30 ||
+                (token.priceChange24h ?? 0) >= 12 ||
+                (token.volume24hUsd ?? 0) >= 20_000
+            );
+        }
+
+        if (filter === "new-launches") {
+            return isRecentLaunch(token.pairCreatedAt, 24);
+        }
+
+        if (filter === "last-minute") {
+            return isRecentLaunch(token.pairCreatedAt, 2) || hasUrgentSignal(token);
+        }
+
+        return true;
+    });
+}
+
+function hasUrgentSignal(token: AlphaToken): boolean {
+    return token.signals.some((signal) => signal.severity === "critical");
+}
+
+function isRecentLaunch(pairCreatedAt?: string, maxAgeHours: number = 24): boolean {
+    if (!pairCreatedAt) return false;
+    const ts = new Date(pairCreatedAt).getTime();
+    if (!Number.isFinite(ts)) return false;
+    const ageMs = Date.now() - ts;
+    if (ageMs < 0) return true;
+    return ageMs <= maxAgeHours * 60 * 60 * 1000;
+}
+
+function getBreakingTrends(trends: RadarTrend[]): RadarTrend[] {
+    const now = Date.now();
+    return trends
+        .filter((trend) => {
+            const published = new Date(trend.publishedAt).getTime();
+            if (!Number.isFinite(published)) return false;
+            const age = now - published;
+            return age >= 0 && age <= BREAKING_WINDOW_MS;
+        })
+        .sort((a, b) => {
+            const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
+            if (scoreDiff !== 0) return scoreDiff;
+            return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+        });
+}
+
+function scoreToRiskLevel(score: number): "low" | "medium" | "high" {
+    if (score >= 65) return "high";
+    if (score >= 35) return "medium";
+    return "low";
 }
 
 function AccessLinks({ mint }: { mint?: string }) {

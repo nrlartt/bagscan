@@ -13,9 +13,11 @@ export type AlphaSignalType =
     | "high_earnings"
     | "new_migration"
     | "new_launch"
-    | "holder_surge";
+    | "holder_surge"
+    | "rug_risk";
 
 export type AlphaSignalSeverity = "low" | "medium" | "high" | "critical";
+export type AlphaRiskLevel = "low" | "medium" | "high";
 
 export interface AlphaSignal {
     type: AlphaSignalType;
@@ -38,6 +40,7 @@ export interface AlphaToken {
     volume24hUsd?: number;
     marketCap?: number;
     liquidityUsd?: number;
+    pairCreatedAt?: string;
 
     // Creator info
     creatorDisplay?: string;
@@ -59,6 +62,9 @@ export interface AlphaToken {
     // Alpha scoring
     alphaScore: number;
     signals: AlphaSignal[];
+    rugRiskScore?: number;
+    rugRiskLevel?: AlphaRiskLevel;
+    rugRiskReasons?: string[];
 
     // Timing
     detectedAt: string;
