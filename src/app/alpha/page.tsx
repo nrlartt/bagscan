@@ -1,18 +1,90 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { Connection, PublicKey } from "@solana/web3.js";
 import { cn } from "@/lib/utils";
+import { getRpcUrl } from "@/lib/solana";
 import Link from "next/link";
 import Image from "next/image";
 import {
     Zap, TrendingUp, TrendingDown, Flame, AlertTriangle, DollarSign,
     Users, MessageCircle, Shield, Rocket, BarChart3, ExternalLink,
-    RefreshCw, Wifi, WifiOff, Eye, ChevronRight, Activity,
+    RefreshCw, Wifi, WifiOff, Eye, ChevronRight, Activity, Loader2,
     Radio, Cpu, Battery,
 } from "lucide-react";
 import type { AlphaFeedResponse, AlphaToken, AlphaSignal, AlphaSignalSeverity, RadarTrend } from "@/lib/alpha/types";
 
+const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
+const MIN_SCAN_REQUIRED = BigInt(1_000_000);
+
+interface AlphaAccessCheck {
+    eligible: boolean;
+    balanceUi: string;
+    requiredUi: string;
+    mint: string;
+}
+
 export default function AlphaPage() {
+    const { connected, publicKey } = useWallet();
+    const { setVisible } = useWalletModal();
+
+    const {
+        data: accessData,
+        isLoading: isAccessLoading,
+        isFetching: isAccessFetching,
+        error: accessError,
+        refetch: refetchAccess,
+    } = useQuery<AlphaAccessCheck>({
+        queryKey: ["alpha-access", publicKey?.toBase58()],
+        enabled: connected && !!publicKey,
+        staleTime: 30_000,
+        refetchInterval: 60_000,
+        retry: 1,
+        queryFn: async () => {
+            if (!publicKey) throw new Error("Wallet not connected");
+
+            const connection = new Connection(getRpcUrl(), "confirmed");
+            const mint = new PublicKey(SCAN_MINT);
+            const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, { mint });
+
+            let totalRaw = BigInt(0);
+            let decimals = 0;
+
+            for (const account of tokenAccounts.value) {
+                const parsedData = account.account.data as {
+                    parsed?: {
+                        info?: {
+                            tokenAmount?: {
+                                amount?: string;
+                                decimals?: number;
+                            };
+                        };
+                    };
+                };
+                const tokenAmount = parsedData.parsed?.info?.tokenAmount;
+                if (!tokenAmount?.amount) continue;
+                decimals = tokenAmount.decimals ?? decimals;
+                try {
+                    totalRaw += BigInt(tokenAmount.amount);
+                } catch {
+                    // ignore malformed amount
+                }
+            }
+
+            const thresholdRaw = MIN_SCAN_REQUIRED * (BigInt(10) ** BigInt(decimals));
+            return {
+                eligible: totalRaw >= thresholdRaw,
+                balanceUi: formatTokenAmount(totalRaw, decimals),
+                requiredUi: Number(MIN_SCAN_REQUIRED).toLocaleString("en-US"),
+                mint: SCAN_MINT,
+            };
+        },
+    });
+
+    const hasAccess = connected && !!accessData?.eligible;
+
     const { data, isLoading, error, refetch, isFetching } = useQuery<AlphaFeedResponse>({
         queryKey: ["alpha-feed"],
         queryFn: async () => {
@@ -21,7 +93,86 @@ export default function AlphaPage() {
             return res.json();
         },
         refetchInterval: 90_000,
+        enabled: hasAccess,
     });
+
+    if (!connected) {
+        return (
+            <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
+                <div className="crt-panel p-8 text-center">
+                    <Shield className="w-10 h-10 text-[#ffaa00] mx-auto mb-4" />
+                    <h1 className="text-sm text-[#ffaa00] tracking-[0.18em]">ALPHA ACCESS RESTRICTED</h1>
+                    <p className="text-[10px] text-[#00ff41]/40 tracking-wider mt-2">
+                        /ALPHA SAYFASI SADECE EN AZ 1,000,000 $SCAN HOLDER CÜZDANLARINA AÇIKTIR.
+                    </p>
+                    <p className="text-[9px] text-[#00ff41]/30 tracking-wider mt-2 break-all">
+                        SCAN CA: {SCAN_MINT}
+                    </p>
+                    <button
+                        onClick={() => setVisible(true)}
+                        className="mt-5 px-6 py-2.5 border-2 border-[#00ff41]/50 bg-[#00ff41]/10 text-[#00ff41] text-xs tracking-wider hover:bg-[#00ff41]/20 transition-all"
+                    >
+                        WALLET BAĞLA
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (isAccessLoading || isAccessFetching) {
+        return (
+            <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
+                <div className="crt-panel p-8 text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#00ff41]/50 mx-auto mb-3" />
+                    <p className="text-[10px] text-[#00ff41]/40 tracking-wider">SCAN BALANCE CHECK IN PROGRESS...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (accessError) {
+        return (
+            <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
+                <div className="crt-panel crt-panel-red p-8 text-center">
+                    <AlertTriangle className="w-10 h-10 text-[#ff4400] mx-auto mb-3" />
+                    <p className="text-sm text-[#ff4400] tracking-wider">ACCESS CHECK FAILED</p>
+                    <p className="text-[10px] text-[#ff4400]/40 mt-2 tracking-wider">{String(accessError)}</p>
+                    <button
+                        onClick={() => refetchAccess()}
+                        className="mt-4 px-4 py-2 border border-[#ff4400]/50 text-[#ff4400] text-xs tracking-wider hover:bg-[#ff4400]/10 transition-colors"
+                    >
+                        TEKRAR DENE
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (!accessData?.eligible) {
+        return (
+            <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
+                <div className="crt-panel p-8 text-center">
+                    <Shield className="w-10 h-10 text-[#ffaa00] mx-auto mb-3" />
+                    <h1 className="text-sm text-[#ffaa00] tracking-[0.15em]">INSUFFICIENT SCAN BALANCE</h1>
+                    <p className="text-[10px] text-[#00ff41]/40 tracking-wider mt-2">
+                        GEREKEN: {accessData?.requiredUi ?? "1,000,000"} SCAN
+                    </p>
+                    <p className="text-[10px] text-[#00ff41]/40 tracking-wider mt-1">
+                        CÜZDANINDA: {accessData?.balanceUi ?? "0"} SCAN
+                    </p>
+                    <p className="text-[9px] text-[#00ff41]/30 tracking-wider mt-2 break-all">
+                        SCAN CA: {accessData?.mint ?? SCAN_MINT}
+                    </p>
+                    <button
+                        onClick={() => refetchAccess()}
+                        className="mt-4 px-4 py-2 border border-[#00ff41]/30 text-[#00ff41]/70 text-xs tracking-wider hover:bg-[#00ff41]/10 transition-colors"
+                    >
+                        BALANCE YENİLE
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     const tokens = data?.tokens ?? [];
     const totalSignals = data?.totalSignals ?? 0;
@@ -489,4 +640,22 @@ function formatTimeAgo(iso: string): string {
     if (minutes < 60) return `${minutes}M AGO`;
     const hours = Math.floor(minutes / 60);
     return `${hours}H AGO`;
+}
+
+function formatTokenAmount(raw: bigint, decimals: number): string {
+    const safeDecimals = Math.max(0, decimals);
+    if (safeDecimals === 0) return raw.toString();
+
+    const scale = BigInt(10) ** BigInt(safeDecimals);
+    const whole = raw / scale;
+    const fraction = raw % scale;
+
+    if (fraction === BigInt(0)) return whole.toString();
+
+    const fractionText = fraction
+        .toString()
+        .padStart(safeDecimals, "0")
+        .replace(/0+$/, "");
+
+    return `${whole.toString()}.${fractionText}`;
 }
