@@ -51,9 +51,29 @@ export default function AlphaPage() {
         queryFn: async () => {
             if (!publicKey) throw new Error("Wallet not connected");
 
-            const connection = new Connection(getRpcUrl(), "confirmed");
             const mint = new PublicKey(SCAN_MINT);
-            const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, { mint });
+            const rpcUrls = getRpcFallbackUrls();
+            let tokenAccounts: Awaited<
+                ReturnType<Connection["getParsedTokenAccountsByOwner"]>
+            > | null = null;
+            let lastError: unknown = null;
+
+            for (const rpcUrl of rpcUrls) {
+                try {
+                    const connection = new Connection(rpcUrl, "confirmed");
+                    tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+                        publicKey,
+                        { mint }
+                    );
+                    break;
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+
+            if (!tokenAccounts) {
+                throw new Error(formatRpcAccessError(lastError));
+            }
 
             let totalRaw = BigInt(0);
             let decimals = 0;
@@ -843,6 +863,30 @@ function scoreToRiskLevel(score: number): "low" | "medium" | "high" {
     if (score >= 65) return "high";
     if (score >= 35) return "medium";
     return "low";
+}
+
+function getRpcFallbackUrls(): string[] {
+    const candidates = [
+        getRpcUrl(),
+        "https://api.mainnet-beta.solana.com",
+        "https://solana-rpc.publicnode.com",
+    ];
+
+    return Array.from(
+        new Set(
+            candidates
+                .map((url) => url.trim())
+                .filter((url) => url.length > 0)
+        )
+    );
+}
+
+function formatRpcAccessError(error: unknown): string {
+    const raw = error instanceof Error ? error.message : String(error ?? "Unknown RPC error");
+    if (/403|forbidden/i.test(raw)) {
+        return "RPC access forbidden (403). Endpoint fallback also failed.";
+    }
+    return raw;
 }
 
 function AccessLinks({ mint }: { mint?: string }) {
