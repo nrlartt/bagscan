@@ -19,20 +19,35 @@ export type TokensQuery = z.infer<typeof tokensQuerySchema>;
 
 // ── Quote ────────────────────────────────────
 export const quoteBodySchema = z.object({
-    tokenMint: z.string().min(1),
+    tokenMint: z.string().min(1).optional(),
+    outputMint: z.string().min(1).optional(),
     inputMint: z.string().optional(),
     amount: z.number().positive(),
     slippageBps: z.number().int().min(0).max(10000).optional(),
+}).refine((data) => Boolean(data.outputMint || data.tokenMint), {
+    message: "outputMint or tokenMint is required",
+    path: ["outputMint"],
 });
 
 // ── Swap ─────────────────────────────────────
 export const swapBodySchema = z.object({
-    tokenMint: z.string().min(1),
+    tokenMint: z.string().min(1).optional(),
+    outputMint: z.string().min(1).optional(),
     userPublicKey: z.string().min(1),
-    amount: z.number().positive(),
+    quoteRequestId: z.string().min(1).optional(),
+    quoteResponse: z.record(z.string(), z.unknown()).optional(),
+    amount: z.number().positive().optional(),
     slippageBps: z.number().int().min(0).max(10000).optional(),
     inputMint: z.string().optional(),
-});
+})
+    .refine((data) => Boolean(data.quoteResponse || data.quoteRequestId || data.outputMint || data.tokenMint), {
+        message: "quoteResponse, quoteRequestId, or outputMint/tokenMint is required",
+        path: ["quoteResponse"],
+    })
+    .refine((data) => Boolean(data.quoteResponse || data.quoteRequestId || typeof data.amount === "number"), {
+        message: "amount is required when quoteResponse and quoteRequestId are missing",
+        path: ["amount"],
+    });
 
 // ── Launch: create token info ────────────────
 export const createTokenInfoSchema = z.object({
@@ -43,6 +58,11 @@ export const createTokenInfoSchema = z.object({
     website: z.string().url().optional().or(z.literal("")),
     twitter: z.string().optional(),
     telegram: z.string().optional(),
+});
+
+// Agent integration: no file upload, URL-based metadata only.
+export const agentCreateTokenInfoSchema = createTokenInfoSchema.extend({
+    metadataUrl: z.string().url().optional().or(z.literal("")),
 });
 
 // ── Launch: fee share config (v2: /fee-share/config) ─

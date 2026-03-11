@@ -30,6 +30,7 @@ import type {
     BagsPartnerClaimResponse,
     HeliusAsset,
 } from "./types";
+import { SOL_MINT } from "@/lib/solana";
 
 // ── helpers ──────────────────────────────────
 
@@ -266,13 +267,22 @@ export async function getClaimablePositions(
 export async function getQuote(
     req: BagsQuoteRequest
 ): Promise<BagsQuoteResponse> {
+    const outputMint = req.outputMint ?? req.tokenMint;
+    if (!outputMint) {
+        throw new Error("Missing outputMint (or legacy tokenMint) for quote request");
+    }
+    const inputMint = req.inputMint ?? SOL_MINT;
+    const amount = normalizeTradeAmount(req.amount, inputMint);
+
     const params = new URLSearchParams({
-        tokenMint: req.tokenMint,
-        amount: String(req.amount),
+        inputMint,
+        outputMint,
+        amount: String(amount),
     });
-    if (req.inputMint) params.set("inputMint", req.inputMint);
-    if (req.slippageBps !== undefined)
+    if (req.slippageBps !== undefined) {
         params.set("slippageBps", String(req.slippageBps));
+    }
+
     return bagsGet<BagsQuoteResponse>(`/trade/quote?${params}`, {
         revalidate: 0,
     });
@@ -281,7 +291,47 @@ export async function getQuote(
 export async function createSwapTransaction(
     req: BagsSwapRequest
 ): Promise<BagsSwapResponse> {
-    return bagsPost<BagsSwapResponse>("/trade/swap", req);
+    if (req.quoteResponse && typeof req.quoteResponse === "object") {
+        return bagsPost<BagsSwapResponse>("/trade/swap", {
+            quoteResponse: req.quoteResponse,
+            userPublicKey: req.userPublicKey,
+        });
+    }
+
+    if (req.quoteRequestId) {
+        return bagsPost<BagsSwapResponse>("/trade/swap", {
+            quoteRequestId: req.quoteRequestId,
+            userPublicKey: req.userPublicKey,
+        });
+    }
+
+    const outputMint = req.outputMint ?? req.tokenMint;
+    if (!outputMint) {
+        throw new Error("Missing outputMint (or legacy tokenMint) for swap request");
+    }
+    const inputMint = req.inputMint ?? SOL_MINT;
+    const amount = normalizeTradeAmount(req.amount, inputMint);
+
+    return bagsPost<BagsSwapResponse>("/trade/swap", {
+        inputMint,
+        outputMint,
+        amount,
+        slippageBps: req.slippageBps,
+        userPublicKey: req.userPublicKey,
+        tokenMint: undefined,
+    });
+}
+
+function normalizeTradeAmount(amount: number | undefined, inputMint: string): number | undefined {
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+        return amount;
+    }
+
+    if (inputMint === SOL_MINT && !Number.isInteger(amount)) {
+        return Math.floor(amount * 1_000_000_000);
+    }
+
+    return amount;
 }
 
 // ================================================================

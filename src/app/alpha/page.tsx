@@ -4,9 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { Connection, PublicKey } from "@solana/web3.js";
 import { cn } from "@/lib/utils";
-import { getRpcUrl } from "@/lib/solana";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -18,7 +16,6 @@ import {
 import type { AlphaFeedResponse, AlphaToken, AlphaSignal, AlphaSignalSeverity, RadarTrend } from "@/lib/alpha/types";
 
 const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
-const MIN_SCAN_REQUIRED = BigInt(10_000_000);
 const SCAN_BAGS_URL = `https://bags.fm/${SCAN_MINT}`;
 const SCAN_JUP_URL = `https://jup.ag/swap?sell=So11111111111111111111111111111111111111112&buy=${SCAN_MINT}`;
 const BREAKING_WINDOW_MS = 2 * 60 * 60 * 1000;
@@ -51,61 +48,18 @@ export default function AlphaPage() {
         queryFn: async () => {
             if (!publicKey) throw new Error("Wallet not connected");
 
-            const mint = new PublicKey(SCAN_MINT);
-            const rpcUrls = getRpcFallbackUrls();
-            let tokenAccounts: Awaited<
-                ReturnType<Connection["getParsedTokenAccountsByOwner"]>
-            > | null = null;
-            let lastError: unknown = null;
+            const wallet = publicKey.toBase58();
+            const res = await fetch(
+                `/api/alpha/access?wallet=${encodeURIComponent(wallet)}`,
+                { cache: "no-store" }
+            );
+            const payload = await res.json().catch(() => null);
 
-            for (const rpcUrl of rpcUrls) {
-                try {
-                    const connection = new Connection(rpcUrl, "confirmed");
-                    tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-                        publicKey,
-                        { mint }
-                    );
-                    break;
-                } catch (error) {
-                    lastError = error;
-                }
+            if (!res.ok || !payload?.success || !payload?.data) {
+                throw new Error(payload?.error ?? "Failed to verify SCAN balance");
             }
 
-            if (!tokenAccounts) {
-                throw new Error(formatRpcAccessError(lastError));
-            }
-
-            let totalRaw = BigInt(0);
-            let decimals = 0;
-
-            for (const account of tokenAccounts.value) {
-                const parsedData = account.account.data as {
-                    parsed?: {
-                        info?: {
-                            tokenAmount?: {
-                                amount?: string;
-                                decimals?: number;
-                            };
-                        };
-                    };
-                };
-                const tokenAmount = parsedData.parsed?.info?.tokenAmount;
-                if (!tokenAmount?.amount) continue;
-                decimals = tokenAmount.decimals ?? decimals;
-                try {
-                    totalRaw += BigInt(tokenAmount.amount);
-                } catch {
-                    // ignore malformed amount
-                }
-            }
-
-            const thresholdRaw = MIN_SCAN_REQUIRED * (BigInt(10) ** BigInt(decimals));
-            return {
-                eligible: totalRaw >= thresholdRaw,
-                balanceUi: formatTokenAmount(totalRaw, decimals),
-                requiredUi: Number(MIN_SCAN_REQUIRED).toLocaleString("en-US"),
-                mint: SCAN_MINT,
-            };
+            return payload.data as AlphaAccessCheck;
         },
     });
 
@@ -784,24 +738,6 @@ function formatTimeAgo(iso: string): string {
     return `${hours}H AGO`;
 }
 
-function formatTokenAmount(raw: bigint, decimals: number): string {
-    const safeDecimals = Math.max(0, decimals);
-    if (safeDecimals === 0) return raw.toString();
-
-    const scale = BigInt(10) ** BigInt(safeDecimals);
-    const whole = raw / scale;
-    const fraction = raw % scale;
-
-    if (fraction === BigInt(0)) return whole.toString();
-
-    const fractionText = fraction
-        .toString()
-        .padStart(safeDecimals, "0")
-        .replace(/0+$/, "");
-
-    return `${whole.toString()}.${fractionText}`;
-}
-
 function applyQuickFilter(tokens: AlphaToken[], filter: QuickFilter): AlphaToken[] {
     if (filter === "all") return tokens;
 
@@ -863,30 +799,6 @@ function scoreToRiskLevel(score: number): "low" | "medium" | "high" {
     if (score >= 65) return "high";
     if (score >= 35) return "medium";
     return "low";
-}
-
-function getRpcFallbackUrls(): string[] {
-    const candidates = [
-        getRpcUrl(),
-        "https://api.mainnet-beta.solana.com",
-        "https://solana-rpc.publicnode.com",
-    ];
-
-    return Array.from(
-        new Set(
-            candidates
-                .map((url) => url.trim())
-                .filter((url) => url.length > 0)
-        )
-    );
-}
-
-function formatRpcAccessError(error: unknown): string {
-    const raw = error instanceof Error ? error.message : String(error ?? "Unknown RPC error");
-    if (/403|forbidden/i.test(raw)) {
-        return "RPC access forbidden (403). Endpoint fallback also failed.";
-    }
-    return raw;
 }
 
 function AccessLinks({ mint }: { mint?: string }) {

@@ -4,9 +4,10 @@ import { useState, useCallback } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { VersionedTransaction } from "@solana/web3.js";
+import bs58 from "bs58";
 import { Loader2, Wallet, ExternalLink, AlertCircle, Zap } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/lib/utils";
-import { getExplorerUrl } from "@/lib/solana";
+import { getExplorerUrl, SOL_MINT } from "@/lib/solana";
 
 interface BuyWidgetProps {
     tokenMint: string;
@@ -28,18 +29,27 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
     const [quote, setQuote] = useState<Record<string, unknown> | null>(null);
     const [txSig, setTxSig] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const outputAmount = getNumericField(quote, "outputAmount", "outAmount");
+    const priceImpact = getNumericField(quote, "priceImpact");
+    const fee = getNumericField(quote, "fee");
 
     const fetchQuote = useCallback(async () => {
         if (!amount || parseFloat(amount) <= 0) return;
         setStep("quoting");
         setError(null);
         try {
+            const amountInBaseUnits = toSolBaseUnits(amount);
+            if (amountInBaseUnits <= 0) {
+                throw new Error("Amount must be greater than zero");
+            }
+
             const res = await fetch("/api/quote", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    tokenMint,
-                    amount: parseFloat(amount),
+                    outputMint: tokenMint,
+                    inputMint: SOL_MINT,
+                    amount: amountInBaseUnits,
                     slippageBps: parseInt(slippage, 10),
                 }),
             });
@@ -58,23 +68,39 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
         setStep("signing");
         setError(null);
         try {
+            const amountInBaseUnits = toSolBaseUnits(amount);
+            if (amountInBaseUnits <= 0) {
+                throw new Error("Amount must be greater than zero");
+            }
+
+            const quoteRequestId = getQuoteRequestId(quote);
+            if (!quote && !quoteRequestId) {
+                throw new Error("Missing quote payload. Please fetch quote again.");
+            }
+
             const res = await fetch("/api/swap", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    tokenMint,
+                    outputMint: tokenMint,
+                    inputMint: SOL_MINT,
                     userPublicKey: publicKey.toBase58(),
-                    amount: parseFloat(amount),
+                    quoteResponse: quote,
+                    ...(quoteRequestId ? { quoteRequestId } : {}),
+                    amount: amountInBaseUnits,
                     slippageBps: parseInt(slippage, 10),
                 }),
             });
             const data = await res.json();
             if (!data.success) throw new Error(data.error || "Swap failed");
 
-            const txData = data.data.transaction || data.data.serializedTransaction;
+            const txData =
+                data.data.transaction ||
+                data.data.serializedTransaction ||
+                data.data.swapTransaction;
             if (!txData) throw new Error("No transaction returned");
 
-            const txBuffer = Buffer.from(txData, "base64");
+            const txBuffer = decodeTransactionData(txData);
             const transaction = VersionedTransaction.deserialize(txBuffer);
             const signed = await signTransaction(transaction);
 
@@ -91,7 +117,7 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
             setError(String(e));
             setStep("error");
         }
-    }, [tokenMint, amount, slippage, publicKey, signTransaction]);
+    }, [quote, tokenMint, amount, slippage, publicKey, signTransaction]);
 
     return (
         <div className={cn("crt-panel p-5", className)}>
@@ -142,24 +168,24 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
 
                     {quote && step === "quoted" && (
                         <div className="p-3 border border-[#00ff41]/15 bg-black/40 space-y-1.5">
-                            {quote.outputAmount !== undefined && (
+                            {outputAmount !== null && (
                                 <div className="flex justify-between text-[10px] tracking-wider">
                                     <span className="text-[#00ff41]/30">YOU RECEIVE</span>
-                                    <span className="text-[#00ff41]/70">{formatNumber(quote.outputAmount as number, false)} {tokenSymbol ?? "TOKENS"}</span>
+                                    <span className="text-[#00ff41]/70">{formatNumber(outputAmount, false)} {tokenSymbol ?? "TOKENS"}</span>
                                 </div>
                             )}
-                            {quote.priceImpact !== undefined && (
+                            {priceImpact !== null && (
                                 <div className="flex justify-between text-[10px] tracking-wider">
                                     <span className="text-[#00ff41]/30">PRICE IMPACT</span>
-                                    <span className={cn((quote.priceImpact as number) > 5 ? "text-[#ff4400]" : "text-[#00ff41]/60")}>
-                                        {(quote.priceImpact as number).toFixed(2)}%
+                                    <span className={cn(priceImpact > 5 ? "text-[#ff4400]" : "text-[#00ff41]/60")}>
+                                        {priceImpact.toFixed(2)}%
                                     </span>
                                 </div>
                             )}
-                            {quote.fee !== undefined && (
+                            {fee !== null && (
                                 <div className="flex justify-between text-[10px] tracking-wider">
                                     <span className="text-[#00ff41]/30">FEE</span>
-                                    <span className="text-[#00ff41]/50">{formatCurrency(quote.fee as number)}</span>
+                                    <span className="text-[#00ff41]/50">{formatCurrency(fee)}</span>
                                 </div>
                             )}
                         </div>
@@ -240,4 +266,79 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
             )}
         </div>
     );
+}
+
+function getQuoteRequestId(quote: Record<string, unknown> | null): string | null {
+    if (!quote) return null;
+
+    const direct =
+        typeof quote.quoteRequestId === "string"
+            ? quote.quoteRequestId
+            : typeof quote.requestId === "string"
+                ? quote.requestId
+            : typeof quote.id === "string"
+                ? quote.id
+                : null;
+    if (direct) return direct;
+
+    const nested = quote.quoteRequest as Record<string, unknown> | undefined;
+    if (nested && typeof nested.id === "string") {
+        return nested.id;
+    }
+
+    return null;
+}
+
+function toSolBaseUnits(amountUi: string): number {
+    const parsed = Number(amountUi);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return Math.floor(parsed * 1_000_000_000);
+}
+
+function getNumericField(
+    quote: Record<string, unknown> | null,
+    ...keys: string[]
+): number | null {
+    if (!quote) return null;
+
+    for (const key of keys) {
+        const raw = quote[key];
+        if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+        if (typeof raw === "string") {
+            const parsed = Number(raw);
+            if (Number.isFinite(parsed)) return parsed;
+        }
+    }
+
+    return null;
+}
+
+function decodeTransactionData(raw: string): Uint8Array {
+    const base64 = tryDecodeBase64(raw);
+    if (base64) return base64;
+
+    const base58 = tryDecodeBase58(raw);
+    if (base58) return base58;
+
+    throw new Error("Unsupported transaction encoding returned by swap API");
+}
+
+function tryDecodeBase64(raw: string): Uint8Array | null {
+    try {
+        const bytes = Buffer.from(raw, "base64");
+        VersionedTransaction.deserialize(bytes);
+        return bytes;
+    } catch {
+        return null;
+    }
+}
+
+function tryDecodeBase58(raw: string): Uint8Array | null {
+    try {
+        const bytes = bs58.decode(raw);
+        VersionedTransaction.deserialize(bytes);
+        return bytes;
+    } catch {
+        return null;
+    }
 }

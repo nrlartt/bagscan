@@ -148,13 +148,16 @@ export interface BagsClaimablePosition {
 
 // ── Trade ────────────────────────────────────
 export interface BagsQuoteRequest {
-    tokenMint: string;
+    tokenMint?: string;
+    outputMint?: string;
     inputMint?: string;
     amount: number;
     slippageBps?: number;
 }
 
 export interface BagsQuoteResponse {
+    quoteRequestId?: string;
+    id?: string;
     inputAmount?: number;
     outputAmount?: number;
     priceImpact?: number;
@@ -164,9 +167,12 @@ export interface BagsQuoteResponse {
 }
 
 export interface BagsSwapRequest {
-    tokenMint: string;
+    tokenMint?: string;
+    outputMint?: string;
     userPublicKey: string;
-    amount: number;
+    quoteRequestId?: string;
+    quoteResponse?: Record<string, unknown>;
+    amount?: number;
     slippageBps?: number;
     inputMint?: string;
 }
