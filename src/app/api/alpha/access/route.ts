@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
-const MIN_SCAN_REQUIRED = BigInt(10_000_000);
+const MIN_SCAN_REQUIRED = BigInt(2_000_000);
 
 function getRpcFallbackUrls(): string[] {
     const candidates = [

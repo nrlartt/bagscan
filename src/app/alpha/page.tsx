@@ -101,7 +101,7 @@ export default function AlphaPage() {
                     <Shield className="w-12 h-12 text-[#ffaa00] mx-auto mb-5" />
                     <h1 className="text-2xl sm:text-3xl text-[#ffaa00] tracking-[0.12em]">ALPHA ACCESS RESTRICTED</h1>
                     <p className="text-sm sm:text-base text-[#00ff41]/60 tracking-wider mt-4 max-w-2xl mx-auto">
-                        THE ALPHA PAGE IS AVAILABLE ONLY TO WALLETS HOLDING AT LEAST 10,000,000 SCAN TOKENS.
+                        THE ALPHA PAGE IS AVAILABLE ONLY TO WALLETS HOLDING AT LEAST 2,000,000 SCAN TOKENS.
                     </p>
                     <AccessLinks />
                     <button
@@ -151,7 +151,7 @@ export default function AlphaPage() {
                     <Shield className="w-12 h-12 text-[#ffaa00] mx-auto mb-4" />
                     <h1 className="text-2xl sm:text-3xl text-[#ffaa00] tracking-[0.12em]">INSUFFICIENT SCAN BALANCE</h1>
                     <p className="text-sm sm:text-base text-[#00ff41]/60 tracking-wider mt-4">
-                        REQUIRED: {accessData?.requiredUi ?? "10,000,000"} SCAN
+                        REQUIRED: {accessData?.requiredUi ?? "2,000,000"} SCAN
                     </p>
                     <p className="text-sm sm:text-base text-[#00ff41]/60 tracking-wider mt-2">
                         CURRENT WALLET BALANCE: {accessData?.balanceUi ?? "0"} SCAN
