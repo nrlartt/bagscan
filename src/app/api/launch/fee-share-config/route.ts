@@ -10,14 +10,17 @@ export async function POST(req: NextRequest) {
 
         const partnerWallet = process.env.BAGSCAN_PARTNER_WALLET;
         const partnerConfig = process.env.BAGSCAN_PARTNER_CONFIG;
+        const includePartner = data.includePartner !== false;
 
         const result = await createFeeShareConfig({
             payer: data.payer,
             baseMint: data.baseMint,
             claimersArray: data.claimersArray,
             basisPointsArray: data.basisPointsArray,
-            partner: data.partner || partnerWallet || undefined,
-            partnerConfig: data.partnerConfig || partnerConfig || undefined,
+            partner: includePartner ? (data.partner || partnerWallet || undefined) : undefined,
+            partnerConfig: includePartner ? (data.partnerConfig || partnerConfig || undefined) : undefined,
+            tipWallet: data.tipWallet || undefined,
+            tipLamports: data.tipLamports,
         });
 
         return NextResponse.json({ success: true, data: result });

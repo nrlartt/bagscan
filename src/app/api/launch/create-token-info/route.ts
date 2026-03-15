@@ -6,7 +6,8 @@ import crypto from "crypto";
 import { createTokenInfoSchema } from "@/lib/validators";
 import { createTokenInfo } from "@/lib/bags/client";
 
-const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/jpg"]);
+const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"]);
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 
 function toAbsoluteUrl(req: NextRequest, relativePath: string): string | null {
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
                 symbol: String(form.get("symbol") ?? ""),
                 description: String(form.get("description") ?? ""),
                 imageUrl: String(form.get("imageUrl") ?? ""),
+                metadataUrl: String(form.get("metadataUrl") ?? ""),
                 website: String(form.get("website") ?? ""),
                 twitter: String(form.get("twitter") ?? ""),
                 telegram: String(form.get("telegram") ?? ""),
@@ -60,7 +62,13 @@ export async function POST(req: NextRequest) {
                 const file = image as File;
                 if (file.size > 0 && !ALLOWED_IMAGE_TYPES.has(file.type)) {
                     return NextResponse.json(
-                        { success: false, error: `Invalid image type: ${file.type}. Use PNG or JPG.` },
+                        { success: false, error: `Invalid image type: ${file.type}. Use PNG, JPG, or WEBP.` },
+                        { status: 400 }
+                    );
+                }
+                if (file.size > MAX_IMAGE_BYTES) {
+                    return NextResponse.json(
+                        { success: false, error: "Image file exceeds 15MB limit." },
                         { status: 400 }
                     );
                 }
@@ -77,6 +85,7 @@ export async function POST(req: NextRequest) {
             description: data.description,
             image: imageFile,
             imageUrl: data.imageUrl || undefined,
+            metadataUrl: data.metadataUrl || undefined,
             website: data.website || undefined,
             twitter: data.twitter || undefined,
             telegram: data.telegram || undefined,

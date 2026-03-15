@@ -12,6 +12,10 @@ import type {
 } from "./types";
 
 const BASE_URL = "https://xquik.com/api/v1";
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60_000;
+
+let rateLimitUntil = 0;
+let lastRateLimitLogAt = 0;
 
 function getApiKey(): string | null {
     const key = process.env.XQUIK_API_KEY;
@@ -35,12 +39,27 @@ export function isXquikConfigured(): boolean {
 
 async function xquikGet<T>(path: string, silent402 = false): Promise<T | null> {
     if (!getApiKey()) return null;
+    if (rateLimitUntil > Date.now()) return null;
+
     try {
         const res = await fetch(`${BASE_URL}${path}`, {
             headers: headers(),
             cache: "no-store",
         });
         if (!res.ok) {
+            if (res.status === 429) {
+                const retryAfterHeader = res.headers.get("retry-after");
+                const retryAfterMs = retryAfterHeader ? Number(retryAfterHeader) * 1000 : NaN;
+                rateLimitUntil =
+                    Date.now() + (Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? retryAfterMs : RATE_LIMIT_COOLDOWN_MS);
+
+                if (Date.now() - lastRateLimitLogAt > 30_000) {
+                    lastRateLimitLogAt = Date.now();
+                    console.warn(`[xquik] Rate limited for ${path.split("?")[0]}; pausing requests temporarily`);
+                }
+                return null;
+            }
+
             if (res.status === 402 && silent402) return null;
             const text = await res.text().catch(() => "");
             if (res.status === 402) {
@@ -50,6 +69,7 @@ async function xquikGet<T>(path: string, silent402 = false): Promise<T | null> {
             }
             return null;
         }
+        rateLimitUntil = 0;
         return res.json();
     } catch (e) {
         console.error("[xquik] fetch error:", e);
@@ -79,7 +99,7 @@ export async function getXUser(username: string): Promise<XquikUser | null> {
 
 // ── Batch user lookups with caching ──────────
 
-let userCache = new Map<string, { user: XquikUser; ts: number }>();
+const userCache = new Map<string, { user: XquikUser; ts: number }>();
 const USER_CACHE_TTL = 5 * 60_000;
 
 export async function getXUserCached(

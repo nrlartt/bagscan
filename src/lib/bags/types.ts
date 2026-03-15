@@ -156,11 +156,15 @@ export interface BagsQuoteRequest {
 }
 
 export interface BagsQuoteResponse {
+    requestId?: string;
     quoteRequestId?: string;
     id?: string;
     inputAmount?: number;
     outputAmount?: number;
+    inAmount?: number | string;
+    outAmount?: number | string;
     priceImpact?: number;
+    priceImpactPct?: number | string;
     fee?: number;
     route?: unknown;
     [key: string]: unknown;
@@ -180,10 +184,42 @@ export interface BagsSwapRequest {
 export interface BagsSwapResponse {
     transaction?: string;
     serializedTransaction?: string;
+    swapTransaction?: string;
     [key: string]: unknown;
 }
 
 // ── Launch ───────────────────────────────────
+
+export type BagsFeeShareWalletProvider =
+    | "twitter"
+    | "x"
+    | "github"
+    | "kick"
+    | "instagram"
+    | "tiktok"
+    | "onlyfans"
+    | "bags"
+    | "telegram"
+    | "tg"
+    | "youtube"
+    | "facebook"
+    | "apple"
+    | "google"
+    | "email"
+    | "solana";
+
+export interface BagsFeeShareWalletLookupRequest {
+    provider: BagsFeeShareWalletProvider;
+    username: string;
+}
+
+export interface BagsFeeShareWalletLookupResponse {
+    provider?: string;
+    username?: string;
+    wallet?: string | null;
+    address?: string | null;
+    [key: string]: unknown;
+}
 
 // POST /token-launch/create-token-info (multipart/form-data)
 export interface BagsCreateTokenInfoRequest {
@@ -257,17 +293,26 @@ export type BagsLaunchResponse = string;
 
 // ── Partner ──────────────────────────────────
 export interface BagsPartnerStatsResponse {
+    partner?: string;
     partnerWallet?: string;
     partnerConfig?: string;
-    claimedFees?: number;
-    claimedFeesUsd?: number;
-    unclaimedFees?: number;
-    unclaimedFeesUsd?: number;
+    claimedFees?: number | string;
+    claimedFeesUsd?: number | string;
+    unclaimedFees?: number | string;
+    unclaimedFeesUsd?: number | string;
+    claimableFees?: number | string;
+    claimableFeesUsd?: number | string;
     totalLaunches?: number;
     [key: string]: unknown;
 }
 
 export interface BagsPartnerClaimResponse {
+    transactions?: Array<{
+        transaction?: string;
+        serializedTransaction?: string;
+        [key: string]: unknown;
+    }>;
+    bundles?: Array<Array<Record<string, unknown>>>;
     transaction?: string;
     serializedTransaction?: string;
     [key: string]: unknown;

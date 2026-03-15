@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const result = await createPartnerClaimTx(partnerWallet, partnerConfig);
+        const result = await createPartnerClaimTx(partnerWallet);
         return NextResponse.json({ success: true, data: result });
     } catch (e) {
         console.error("[api/partner/claim] error:", e);

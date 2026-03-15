@@ -19,14 +19,14 @@ interface DexPair {
     info?: { imageUrl?: string };
     pairAddress?: string;
     dexId?: string;
-    pairCreatedAt?: number;
-    priceUsd?: string | number;
-    fdv?: string | number;
-    marketCap?: string | number;
-    liquidity?: { usd?: string | number };
-    volume?: { h24?: string | number };
-    priceChange?: { h24?: string | number };
-    txns?: { h24?: { buys?: string | number; sells?: string | number } };
+    pairCreatedAt?: number | null;
+    priceUsd?: string | number | null;
+    fdv?: string | number | null;
+    marketCap?: string | number | null;
+    liquidity?: { usd?: string | number | null };
+    volume?: { h24?: string | number | null };
+    priceChange?: { h24?: string | number | null };
+    txns?: { h24?: { buys?: string | number | null; sells?: string | number | null } };
 }
 
 export async function GET(req: NextRequest) {

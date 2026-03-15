@@ -11,11 +11,12 @@ import type {
     BagsPoolInfo,
     BagsCreatorV3,
     BagsCreatorResponse,
-    BagsLifetimeFeesResponse,
     BagsClaimStatsResponse,
     BagsClaimStatEntry,
     BagsClaimEventsResponse,
     BagsClaimablePosition,
+    BagsFeeShareWalletLookupRequest,
+    BagsFeeShareWalletLookupResponse,
     BagsQuoteRequest,
     BagsQuoteResponse,
     BagsSwapRequest,
@@ -50,14 +51,40 @@ function headers(): HeadersInit {
 }
 
 async function unwrap<T>(res: Response): Promise<T> {
-    if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`Bags API ${res.status}: ${text}`);
+    const text = await res.text().catch(() => "");
+    let json: BagsApiResponse<T> | null = null;
+
+    if (text) {
+        try {
+            json = JSON.parse(text) as BagsApiResponse<T>;
+        } catch {
+            json = null;
+        }
     }
-    const json: BagsApiResponse<T> = await res.json();
+
+    if (!res.ok) {
+        const detail =
+            typeof json?.error === "string"
+                ? json.error
+                : typeof json?.response === "string"
+                    ? json.response
+                    : text;
+        throw new Error(`Bags API ${res.status}: ${detail || "unknown error"}`);
+    }
+
+    if (!json) {
+        throw new Error("Bags API returned an empty or invalid JSON response");
+    }
+
     if (!json.success) {
+        const detail =
+            typeof json.error === "string"
+                ? json.error
+                : typeof json.response === "string"
+                    ? json.response
+                    : JSON.stringify(json.error) ?? "unknown";
         throw new Error(
-            `Bags API error: ${typeof json.error === "string" ? json.error : JSON.stringify(json.error) ?? "unknown"}`
+            `Bags API error: ${detail}`
         );
     }
     return json.response as T;
@@ -109,12 +136,12 @@ async function bagsGet<T>(
 
 async function bagsPost<T>(path: string, body: unknown): Promise<T> {
     const url = `${BASE()}${path}`;
-    const res = await fetch(url, {
+    const res = await fetchWithRetry(url, {
         method: "POST",
         headers: headers(),
         body: JSON.stringify(body),
         cache: "no-store",
-    });
+    }, 2, 400);
     return unwrap<T>(res);
 }
 
@@ -260,6 +287,50 @@ export async function getClaimablePositions(
     }
 }
 
+export async function getFeeShareWallet(
+    req: BagsFeeShareWalletLookupRequest
+): Promise<BagsFeeShareWalletLookupResponse | null> {
+    try {
+        const params = new URLSearchParams({
+            provider: req.provider,
+            username: req.username,
+        });
+        return await bagsGet<BagsFeeShareWalletLookupResponse>(
+            `/fee-share/wallet/v2?${params}`,
+            { revalidate: 0, cache: "no-store" }
+        );
+    } catch {
+        return null;
+    }
+}
+
+export async function getFeeShareWalletsBulk(
+    items: BagsFeeShareWalletLookupRequest[]
+): Promise<BagsFeeShareWalletLookupResponse[]> {
+    if (items.length === 0) return [];
+
+    const attempts: unknown[] = [
+        items,
+        { items },
+        { wallets: items },
+    ];
+
+    for (const body of attempts) {
+        try {
+            const data = await bagsPost<
+                BagsFeeShareWalletLookupResponse[] | { wallets?: BagsFeeShareWalletLookupResponse[]; items?: BagsFeeShareWalletLookupResponse[] }
+            >("/fee-share/wallet/v2/bulk", body);
+
+            if (Array.isArray(data)) return data;
+            return data.wallets ?? data.items ?? [];
+        } catch {
+            continue;
+        }
+    }
+
+    return [];
+}
+
 // ================================================================
 // C) Trade
 // ================================================================
@@ -357,16 +428,14 @@ export async function createTokenInfo(
     const key = process.env.BAGS_API_KEY;
     if (key) h["x-api-key"] = key;
 
-    const res = await fetch(url, { method: "POST", headers: h, body: form, cache: "no-store" });
-    if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`Bags API ${res.status}: ${text}`);
-    }
-    const json = await res.json();
-    if (!json.success) {
-        throw new Error(`Bags API error: ${json.error ?? "unknown"}`);
-    }
-    return json.response as BagsCreateTokenInfoResponse;
+    const res = await fetchWithRetry(
+        url,
+        { method: "POST", headers: h, body: form, cache: "no-store" },
+        2,
+        400
+    );
+
+    return unwrap<BagsCreateTokenInfoResponse>(res);
 }
 
 export async function createFeeShareConfig(
@@ -392,13 +461,12 @@ export async function createLaunchTransaction(
 // ================================================================
 
 export async function getPartnerStats(
-    partnerWallet: string,
-    partnerConfig: string
+    partnerWallet: string
 ): Promise<BagsPartnerStatsResponse | null> {
     try {
-        const params = new URLSearchParams({ partnerWallet, partnerConfig });
+        const params = new URLSearchParams({ partner: partnerWallet });
         return await bagsGet<BagsPartnerStatsResponse>(
-            `/partner/stats?${params}`,
+            `/fee-share/partner-config/stats?${params}`,
             { revalidate: 30 }
         );
     } catch {
@@ -407,12 +475,10 @@ export async function getPartnerStats(
 }
 
 export async function createPartnerClaimTx(
-    partnerWallet: string,
-    partnerConfig: string
+    partnerWallet: string
 ): Promise<BagsPartnerClaimResponse> {
-    return bagsPost<BagsPartnerClaimResponse>("/partner/claim", {
+    return bagsPost<BagsPartnerClaimResponse>("/fee-share/partner-config/claim-tx", {
         partnerWallet,
-        partnerConfig,
     });
 }
 
@@ -460,7 +526,39 @@ export async function getHackathonApps(page: number = 1): Promise<HackathonListR
 // G) DexScreener enrichment
 // ================================================================
 
-export async function getDexScreenerPairs(mints: string[]): Promise<any[]> {
+interface DexScreenerPair {
+    chainId?: string;
+    dexId?: string;
+    pairCreatedAt?: number | null;
+    baseToken: {
+        address?: string;
+        name?: string;
+        symbol?: string;
+    };
+    info?: {
+        imageUrl?: string;
+    };
+    priceUsd?: string | number | null;
+    marketCap?: string | number | null;
+    liquidity?: {
+        usd?: string | number | null;
+    };
+    volume?: {
+        h24?: string | number | null;
+    };
+    priceChange?: {
+        h24?: string | number | null;
+    };
+    txns?: {
+        h24?: {
+            buys?: string | number | null;
+            sells?: string | number | null;
+        };
+    };
+    [key: string]: unknown;
+}
+
+export async function getDexScreenerPairs(mints: string[]): Promise<DexScreenerPair[]> {
     if (mints.length === 0) return [];
     try {
         const url = `https://api.dexscreener.com/latest/dex/tokens/${mints.join(",")}`;
@@ -480,7 +578,7 @@ export async function getDexScreenerPairs(mints: string[]): Promise<any[]> {
 /** @deprecated Use getDexScreenerPairs */
 export const getDexScreenerMetadata = getDexScreenerPairs;
 
-export async function getDexScreenerSearch(query: string): Promise<any[]> {
+export async function getDexScreenerSearch(query: string): Promise<DexScreenerPair[]> {
     try {
         const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
         const res = await fetchWithRetry(url, {
@@ -489,19 +587,20 @@ export async function getDexScreenerSearch(query: string): Promise<any[]> {
         }, 2, 300);
         if (!res.ok) return [];
         const json = await res.json();
-        return (json.pairs || []).filter((p: any) => p.chainId === "solana");
+        const pairs = Array.isArray(json.pairs) ? (json.pairs as DexScreenerPair[]) : [];
+        return pairs.filter((pair) => pair.chainId === "solana");
     } catch (e) {
         console.error("[dexscreener] search error:", e);
         return [];
     }
 }
 
-export async function getDexScreenerNewBagsPairs(): Promise<any[]> {
+export async function getDexScreenerNewBagsPairs(): Promise<DexScreenerPair[]> {
     try {
         const pairs = await getDexScreenerSearch("bags");
         return pairs
-            .filter((p: any) => p.dexId === "bags" && p.baseToken?.address && p.pairCreatedAt)
-            .sort((a: any, b: any) => (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0));
+            .filter((pair) => pair.dexId === "bags" && pair.baseToken?.address && pair.pairCreatedAt)
+            .sort((a, b) => (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0));
     } catch (e) {
         console.error("[dexscreener] new bags pairs error:", e);
         return [];
@@ -528,7 +627,13 @@ interface EnhancedTokenAccount {
     amount?: string | number | null;
 }
 
-async function heliusRpc(method: string, params: unknown): Promise<any> {
+interface HeliusRpcResult {
+    token_accounts?: EnhancedTokenAccount[];
+    cursor?: string;
+    [key: string]: unknown;
+}
+
+async function heliusRpc(method: string, params: unknown): Promise<HeliusRpcResult> {
     const res = await fetch(heliusRpcUrl(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },

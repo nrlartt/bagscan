@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
             });
         }
 
-        const stats = await getPartnerStats(partnerWallet, partnerConfig);
+        const stats = await getPartnerStats(partnerWallet);
 
         // Save snapshot
         if (stats) {
@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
                 await prisma.partnerSnapshot.create({
                     data: {
                         partnerWallet,
-                        claimedFees: stats.claimedFees ?? stats.claimedFeesUsd,
-                        unclaimedFees: stats.unclaimedFees ?? stats.unclaimedFeesUsd,
+                        claimedFees: toNumber(stats.claimedFees ?? stats.claimedFeesUsd),
+                        unclaimedFees: toNumber(stats.unclaimedFees ?? stats.unclaimedFeesUsd ?? stats.claimableFees ?? stats.claimableFeesUsd),
                         rawJson: JSON.stringify(stats),
                     },
                 });
@@ -74,4 +74,17 @@ export async function GET(req: NextRequest) {
             { status: 500 }
         );
     }
+}
+
+function toNumber(value: number | string | undefined): number | null {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+    }
+
+    if (typeof value === "string") {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
 }

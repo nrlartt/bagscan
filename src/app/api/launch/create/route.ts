@@ -15,6 +15,8 @@ export async function POST(req: NextRequest) {
             wallet: data.wallet,
             initialBuyLamports: data.initialBuyLamports,
             configKey: data.configKey,
+            tipWallet: data.tipWallet || undefined,
+            tipLamports: data.tipLamports,
         });
 
         try {
@@ -23,7 +25,7 @@ export async function POST(req: NextRequest) {
                     tokenMint: data.tokenMint,
                     tokenMetadata: data.ipfs,
                     feeShareConfig: data.configKey,
-                    partnerIncluded: true,
+                    partnerIncluded: data.partnerIncluded ?? true,
                     name: body.name ?? "Unknown",
                     symbol: body.symbol ?? "???",
                     description: body.description ?? "",

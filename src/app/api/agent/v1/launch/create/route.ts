@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
             wallet: data.wallet,
             initialBuyLamports: data.initialBuyLamports,
             configKey: data.configKey,
+            tipWallet: data.tipWallet || undefined,
+            tipLamports: data.tipLamports,
         });
 
         return NextResponse.json({ success: true, data: result });
@@ -29,4 +31,3 @@ export async function POST(req: NextRequest) {
         );
     }
 }
-

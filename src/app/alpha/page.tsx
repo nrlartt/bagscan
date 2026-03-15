@@ -8,10 +8,10 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
 import {
-    Zap, TrendingUp, TrendingDown, Flame, AlertTriangle, DollarSign,
-    Users, MessageCircle, Shield, Rocket, BarChart3, ExternalLink,
+    Zap, Flame, AlertTriangle, DollarSign,
+    Users, MessageCircle, Shield, BarChart3, ExternalLink,
     RefreshCw, Wifi, WifiOff, Eye, ChevronRight, Activity, Loader2,
-    Radio, Cpu, Battery,
+    Radio, Cpu,
 } from "lucide-react";
 import type { AlphaFeedResponse, AlphaToken, AlphaSignal, AlphaSignalSeverity, RadarTrend } from "@/lib/alpha/types";
 
@@ -19,6 +19,8 @@ const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
 const SCAN_BAGS_URL = `https://bags.fm/${SCAN_MINT}`;
 const SCAN_JUP_URL = `https://jup.ag/swap?sell=So11111111111111111111111111111111111111112&buy=${SCAN_MINT}`;
 const BREAKING_WINDOW_MS = 2 * 60 * 60 * 1000;
+const EMPTY_TOKENS: AlphaToken[] = [];
+const EMPTY_TRENDS: RadarTrend[] = [];
 
 type QuickFilter = "all" | "rug-check" | "momentum" | "new-launches" | "last-minute";
 
@@ -77,10 +79,10 @@ export default function AlphaPage() {
         enabled: hasAccess,
     });
 
-    const tokens = data?.tokens ?? [];
+    const tokens = data?.tokens ?? EMPTY_TOKENS;
     const totalSignals = data?.totalSignals ?? 0;
     const xquikEnabled = data?.xquikEnabled ?? false;
-    const radarTrends = data?.radarTrends ?? [];
+    const radarTrends = data?.radarTrends ?? EMPTY_TRENDS;
     const filteredTokens = useMemo(
         () => applyQuickFilter(tokens, quickFilter),
         [tokens, quickFilter]
@@ -88,6 +90,18 @@ export default function AlphaPage() {
     const breakingTrends = useMemo(
         () => getBreakingTrends(radarTrends),
         [radarTrends]
+    );
+    const trendingTokens = useMemo(
+        () =>
+            [...tokens]
+                .filter((token) => token.isTrendingNow)
+                .sort((a, b) => {
+                    const trendingDiff = (b.trendingNowScore ?? 0) - (a.trendingNowScore ?? 0);
+                    if (trendingDiff !== 0) return trendingDiff;
+                    return b.alphaScore - a.alphaScore;
+                })
+                .slice(0, 6),
+        [tokens]
     );
 
     const criticalTokens = filteredTokens.filter((t) => t.alphaScore >= 60);
@@ -251,6 +265,10 @@ export default function AlphaPage() {
                 <BreakingRadarPanel trends={breakingTrends} />
             )}
 
+            {!isLoading && trendingTokens.length > 0 && (
+                <TrendingBagsPanel tokens={trendingTokens} />
+            )}
+
             {/* Loading state */}
             {isLoading ? (
                 <AlphaSkeleton />
@@ -318,6 +336,7 @@ export default function AlphaPage() {
                             <p className="text-[#00ff41]/70">READY_</p>
                             <p className="text-[#00ff41]/50 mt-1">&gt; QUERY: ALPHA SCAN STATUS</p>
                             <p className="text-[#00ff41]/70 mt-1">&gt; {filteredTokens.length} TOKENS MATCHING {quickFilter.toUpperCase()} :: {totalSignals} SIGNALS ACTIVE</p>
+                            <p className="text-[#ffaa00]/60 mt-1">&gt; {trendingTokens.length} TRENDING BAGS PINNED TO TOP</p>
                             <p className="text-[#00ff41]/70 mt-1">&gt; {criticalTokens.length} CRITICAL ALERTS PENDING REVIEW</p>
                             {!xquikEnabled && (
                                 <p className="text-[#ffaa00]/60 mt-1">&gt; WARNING: X/TWITTER FEED DISCONNECTED - SUBSCRIBE AT XQUIK.COM</p>
@@ -400,6 +419,26 @@ function QuickFilterPanel({
                         </button>
                     );
                 })}
+            </div>
+        </div>
+    );
+}
+
+function TrendingBagsPanel({ tokens }: { tokens: AlphaToken[] }) {
+    return (
+        <div className="crt-panel crt-panel-amber p-4 mb-6 animate-fade-in">
+            <div className="panel-header flex items-center gap-2">
+                <span className="status-dot status-dot-amber" />
+                ╔══ TRENDING BAGS NOW ══╗
+                <span className="ml-auto text-[#ffaa00]/35">PINNED LIVE [{tokens.length}]</span>
+            </div>
+            <p className="text-[9px] text-[#ffaa00]/35 tracking-[0.14em] mb-3">
+                ONLY LIVE FLOW TOKENS WITH REAL ACTIVITY, PRICE STRENGTH, AND CROWD TRACTION
+            </p>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 stagger-children">
+                {tokens.map((token, index) => (
+                    <AlphaCard key={token.tokenMint} token={token} trendingRank={index + 1} />
+                ))}
             </div>
         </div>
     );
@@ -507,7 +546,7 @@ function AlphaSection({
 
 // ── AlphaCard ────────────────────────────────
 
-function AlphaCard({ token }: { token: AlphaToken }) {
+function AlphaCard({ token, trendingRank }: { token: AlphaToken; trendingRank?: number }) {
     const scoreColor =
         token.alphaScore >= 60 ? "#ff4400"
             : token.alphaScore >= 30 ? "#ffaa00"
@@ -520,14 +559,22 @@ function AlphaCard({ token }: { token: AlphaToken }) {
             : rugRiskLevel === "medium"
                 ? "border-[#ffaa00]/35 text-[#ffaa00]/75"
                 : "border-[#00ff41]/20 text-[#00ff41]/50";
+    const showTrendingBadge = Boolean(trendingRank) || token.isTrendingNow;
+    const rugBadgeTop = showTrendingBadge ? "top-10" : "top-3";
 
     return (
         <Link
             href={`/token/${token.tokenMint}`}
             className="group border border-[#00ff41]/15 bg-black/60 p-4 relative overflow-hidden hover:border-[#00ff41]/40 hover:bg-[#00ff41]/[0.02] transition-all"
         >
+            {showTrendingBadge && (
+                <div className="absolute top-3 left-3 px-1.5 py-0.5 border border-[#ffaa00]/35 text-[#ffaa00]/80 text-[8px] tracking-wider bg-[#ffaa00]/[0.06]">
+                    {trendingRank ? `TREND #${trendingRank}` : `TRENDING NOW ${token.trendingNowScore ?? ""}`.trim()}
+                </div>
+            )}
+
             {rugRiskScore > 0 && (
-                <div className={cn("absolute top-3 left-3 px-1.5 py-0.5 border text-[8px] tracking-wider", rugRiskClass)}>
+                <div className={cn("absolute left-3 px-1.5 py-0.5 border text-[8px] tracking-wider", rugBadgeTop, rugRiskClass)}>
                     RUG {rugRiskScore}
                 </div>
             )}
@@ -575,6 +622,22 @@ function AlphaCard({ token }: { token: AlphaToken }) {
                             </span>
                         )}
                     </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                        {token.discoverySource && (
+                            <div className="inline-flex items-center gap-1 border border-[#00aaff]/15 px-1.5 py-0.5 text-[8px] tracking-[0.14em] text-[#00aaff]/45">
+                                {token.discoverySource === "bags-pool-scan"
+                                    ? "BAGS SCAN"
+                                    : token.discoverySource === "sync-trending-cache"
+                                        ? "TREND CACHE"
+                                        : "DEX SEARCH"}
+                            </div>
+                        )}
+                        {token.isTrendingNow && (
+                            <div className="inline-flex items-center gap-1 border border-[#ffaa00]/20 px-1.5 py-0.5 text-[8px] tracking-[0.14em] text-[#ffaa00]/55">
+                                HOT NOW {token.trendingNowScore ?? 0}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -584,6 +647,12 @@ function AlphaCard({ token }: { token: AlphaToken }) {
                     <div className="flex items-center gap-1 text-[#00ff41]/40">
                         <BarChart3 className="w-2.5 h-2.5" />
                         <span>VOL ${fmtCompact(token.volume24hUsd)}</span>
+                    </div>
+                )}
+                {token.txCount24h !== undefined && (
+                    <div className="flex items-center gap-1 text-[#ffaa00]/45">
+                        <Activity className="w-2.5 h-2.5" />
+                        <span>{fmtCompact(token.txCount24h)} TX</span>
                     </div>
                 )}
                 {token.earnedUsd !== undefined && token.earnedUsd > 0 && (
@@ -628,6 +697,19 @@ function AlphaCard({ token }: { token: AlphaToken }) {
                             <ExternalLink className="w-2.5 h-2.5" />
                         </a>
                     )}
+                </div>
+            )}
+
+            {token.isTrendingNow && token.trendingReasons && token.trendingReasons.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                    {token.trendingReasons.slice(0, 3).map((reason) => (
+                        <span
+                            key={`${token.tokenMint}-${reason}`}
+                            className="px-2 py-0.5 border border-[#ffaa00]/15 text-[8px] text-[#ffaa00]/55 tracking-[0.14em]"
+                        >
+                            {reason}
+                        </span>
+                    ))}
                 </div>
             )}
 
@@ -750,7 +832,8 @@ function applyQuickFilter(tokens: AlphaToken[], filter: QuickFilter): AlphaToken
             return (
                 token.alphaScore >= 30 ||
                 (token.priceChange24h ?? 0) >= 12 ||
-                (token.volume24hUsd ?? 0) >= 20_000
+                (token.volume24hUsd ?? 0) >= 20_000 ||
+                (token.txCount24h ?? 0) >= 180
             );
         }
 
@@ -759,7 +842,7 @@ function applyQuickFilter(tokens: AlphaToken[], filter: QuickFilter): AlphaToken
         }
 
         if (filter === "last-minute") {
-            return isRecentLaunch(token.pairCreatedAt, 2) || hasUrgentSignal(token);
+            return isRecentLaunch(token.pairCreatedAt, 2) || hasUrgentSignal(token) || (token.txCount24h ?? 0) >= 300;
         }
 
         return true;

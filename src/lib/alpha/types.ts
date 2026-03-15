@@ -7,10 +7,13 @@ export type AlphaSignalType =
     | "volume_spike"
     | "price_pump"
     | "price_dump"
+    | "crowd_activity"
+    | "buy_pressure"
     | "whale_claim"
     | "creator_active"
     | "social_buzz"
     | "high_earnings"
+    | "fee_momentum"
     | "new_migration"
     | "new_launch"
     | "holder_surge"
@@ -41,12 +44,19 @@ export interface AlphaToken {
     marketCap?: number;
     liquidityUsd?: number;
     pairCreatedAt?: string;
+    txCount24h?: number;
+    buyCount24h?: number;
+    sellCount24h?: number;
+    discoverySource?: string;
 
     // Creator info
     creatorDisplay?: string;
     creatorPfp?: string;
     twitterUsername?: string;
     provider?: string;
+    creatorWallet?: string;
+    providerUsername?: string;
+    bagsUsername?: string;
 
     // Fees & earnings
     earnedUsd?: number;
@@ -62,6 +72,9 @@ export interface AlphaToken {
     // Alpha scoring
     alphaScore: number;
     signals: AlphaSignal[];
+    isTrendingNow?: boolean;
+    trendingNowScore?: number;
+    trendingReasons?: string[];
     rugRiskScore?: number;
     rugRiskLevel?: AlphaRiskLevel;
     rugRiskReasons?: string[];
