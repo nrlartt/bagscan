@@ -8,8 +8,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
 import {
-    Zap, Flame, AlertTriangle, DollarSign,
-    Users, MessageCircle, Shield, BarChart3, ExternalLink,
+    Zap, Flame, AlertTriangle, Shield, ExternalLink,
     RefreshCw, Wifi, WifiOff, Eye, ChevronRight, Activity, Loader2,
     Radio, Cpu,
 } from "lucide-react";
@@ -182,68 +181,88 @@ export default function AlphaPage() {
         );
     }
 
+    const lastUpdatedLabel = data?.lastUpdated ? formatTimeAgo(data.lastUpdated) : "SYNCING";
+
     return (
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
-            {/* ╔══ HEADER ══╗ */}
-            <div className="mb-6 animate-fade-in">
-                <div className="crt-panel p-4">
-                    <div className="flex items-center justify-between flex-wrap gap-4">
-                        <div className="flex items-center gap-4">
-                            <div className="relative w-12 h-12 border-2 border-[#ffaa00]/60 flex items-center justify-center" style={{ boxShadow: '0 0 16px rgba(255,170,0,0.15)' }}>
-                                <Zap className="w-6 h-6 text-[#ffaa00]" />
+        <div className="alpha-premium-shell mx-auto max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">
+            {/* â•”â•â• HEADER â•â•â•— */}
+                        <section className="alpha-hero-panel mb-6 animate-fade-in">
+                <div className="relative z-[1] grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.95fr)] xl:items-end">
+                    <div className="space-y-5">
+                        <div className="flex flex-wrap items-start gap-4">
+                            <div className="alpha-hero-mark">
+                                <Zap className="h-7 w-7 text-[#ffaa00]" />
                             </div>
-                            <div>
-                                <h1 className="text-lg tracking-[0.2em] text-crt-amber">
-                                    ╔══ BAGS ALPHA CHANNEL ══╗
-                                </h1>
-                                <p className="text-[10px] text-[#00ff41]/40 tracking-[0.15em] mt-0.5">
-                                    REAL-TIME SIGNAL DETECTION ENGINE :: ACTIVE
+                            <div className="min-w-0 flex-1">
+                                <p className="alpha-kicker">Private Flow Intelligence</p>
+                                <h1 className="alpha-hero-title">BAGS ALPHA TERMINAL</h1>
+                                <p className="max-w-3xl text-sm leading-7 text-[#d8ffe6]/72 sm:text-[15px]">
+                                    Premium discovery surface for live Bags momentum, rug pressure, creator traction, and
+                                    high-conviction trend rotations. Built to read cleanly at high resolution without losing signal density.
                                 </p>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <div className={cn(
-                                "flex items-center gap-1.5 px-3 py-1.5 text-[9px] tracking-[0.1em] border",
-                                xquikEnabled
-                                    ? "border-[#00ff41]/30 text-[#00ff41]/70"
-                                    : "border-[#ffaa00]/30 text-[#ffaa00]/70"
-                            )}>
-                                {xquikEnabled ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                                {xquikEnabled ? "X/TWITTER LINKED" : "X/TWITTER OFFLINE"}
+                        <div className="flex flex-wrap gap-2.5">
+                            <div className="alpha-inline-chip border-[#ffaa00]/25 bg-[#ffaa00]/10 text-[#ffd37a]">
+                                <span className="status-dot status-dot-amber" />
+                                LIVE SIGNALS {totalSignals}
                             </div>
-                            <button
-                                onClick={() => refetch()}
-                                disabled={isFetching}
-                                className="p-2 border border-[#00ff41]/30 text-[#00ff41]/60 hover:text-[#00ff41] hover:border-[#00ff41]/60 hover:bg-[#00ff41]/5 transition-all disabled:opacity-50"
+                            <div className="alpha-inline-chip border-[#00ff41]/20 bg-[#00ff41]/10 text-[#9dffb8]">
+                                <span className="status-dot status-dot-green" />
+                                TOKENS TRACKED {tokens.length}
+                            </div>
+                            <div
+                                className={cn(
+                                    "alpha-inline-chip",
+                                    xquikEnabled
+                                        ? "border-[#00aaff]/20 bg-[#00aaff]/10 text-[#8dd8ff]"
+                                        : "border-[#ffaa00]/20 bg-[#ffaa00]/10 text-[#ffd37a]"
+                                )}
                             >
-                                <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} />
-                            </button>
+                                {xquikEnabled ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                                {xquikEnabled ? "X SIGNAL GRAPH ONLINE" : "X SIGNAL GRAPH DEGRADED"}
+                            </div>
+                            <div className="alpha-inline-chip border-white/10 bg-white/[0.03] text-white/60">
+                                LAST SCAN {lastUpdatedLabel}
+                            </div>
                         </div>
                     </div>
 
-                    {/* Stats bar */}
-                    {!isLoading && (
-                        <div className="flex items-center gap-6 mt-4 pt-3 border-t border-[#00ff41]/15 text-[10px] tracking-wider">
-                            <div className="flex items-center gap-1.5 text-[#00ff41]/50">
-                                <span className="status-dot status-dot-amber" />
-                                <span><span className="text-[#ffaa00]">{totalSignals}</span> SIGNALS DETECTED</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[#00ff41]/50">
-                                <span className="status-dot status-dot-green" />
-                                <span><span className="text-[#00ff41]">{tokens.length}</span> TOKENS TRACKED</span>
-                            </div>
-                            {data?.lastUpdated && (
-                                <div className="text-[#00ff41]/30">
-                                    LAST SCAN: {formatTimeAgo(data.lastUpdated)}
-                                </div>
-                            )}
+                    <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-2">
+                        <div className="alpha-hero-metric">
+                            <span className="alpha-hero-metric-label">Trending Pins</span>
+                            <span className="alpha-hero-metric-value text-[#ffaa00]">{trendingTokens.length}</span>
+                            <span className="alpha-hero-metric-note">Highest live-momentum mints stay pinned above the main feed.</span>
                         </div>
-                    )}
+                        <div className="alpha-hero-metric">
+                            <span className="alpha-hero-metric-label">Critical Alerts</span>
+                            <span className="alpha-hero-metric-value text-[#ff7d50]">{criticalTokens.length}</span>
+                            <span className="alpha-hero-metric-note">Aggressive price and flow combinations demanding immediate review.</span>
+                        </div>
+                        <div className="alpha-hero-metric sm:col-span-3 xl:col-span-2">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <span className="alpha-hero-metric-label">Refresh Stream</span>
+                                    <p className="alpha-hero-metric-note mt-1">
+                                        Pool motion, discovery source, and creator context stay synced in one premium surface.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => refetch()}
+                                    disabled={isFetching}
+                                    className="inline-flex items-center gap-2 rounded-full border border-[#00ff41]/25 bg-black/35 px-4 py-2 text-[11px] tracking-[0.24em] text-[#9dffb8] transition-all hover:border-[#00ff41]/45 hover:bg-[#00ff41]/10 hover:text-[#d8ffe6] disabled:opacity-50"
+                                >
+                                    <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+                                    REFRESH
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            </section>
 
-            {/* ╔══ SYSTEM STATUS GRID ══╗ */}
+            {/* â•”â•â• SYSTEM STATUS GRID â•â•â•— */}
             {!isLoading && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 stagger-children">
                     <SystemStatusCard label="CRITICAL" value={criticalTokens.length} status="critical" icon={<AlertTriangle className="w-4 h-4" />} />
@@ -273,7 +292,7 @@ export default function AlphaPage() {
             {isLoading ? (
                 <AlphaSkeleton />
             ) : error ? (
-                <div className="crt-panel crt-panel-red p-12 text-center">
+                <div className="alpha-section-panel crt-panel crt-panel-red p-12 text-center">
                     <AlertTriangle className="w-10 h-10 text-[#ff4400] mx-auto mb-3" />
                     <p className="text-[#ff4400] tracking-wider text-sm">SYSTEM ERROR :: ALPHA FEED OFFLINE</p>
                     <p className="text-[#ff4400]/40 text-xs mt-2 tracking-wider">{String(error)}</p>
@@ -282,13 +301,13 @@ export default function AlphaPage() {
                     </button>
                 </div>
             ) : tokens.length === 0 ? (
-                <div className="crt-panel p-12 text-center">
+                <div className="alpha-section-panel crt-panel p-12 text-center">
                     <Cpu className="w-10 h-10 text-[#00ff41]/30 mx-auto mb-3" />
                     <p className="text-[#00ff41]/70 tracking-wider text-sm">NO ALPHA SIGNALS DETECTED</p>
                     <p className="text-[#00ff41]/30 text-xs mt-2 tracking-wider">AWAITING MARKET ACTIVITY_</p>
                 </div>
             ) : filteredTokens.length === 0 ? (
-                <div className="crt-panel p-12 text-center">
+                <div className="alpha-section-panel crt-panel p-12 text-center">
                     <Activity className="w-10 h-10 text-[#00ff41]/30 mx-auto mb-3" />
                     <p className="text-[#00ff41]/70 tracking-wider text-sm">NO TOKENS MATCH THIS QUICK FILTER</p>
                     <p className="text-[#00ff41]/30 text-xs mt-2 tracking-wider">TRY SWITCHING TO ALL OR MOMENTUM</p>
@@ -297,7 +316,7 @@ export default function AlphaPage() {
                 <div className="space-y-6">
                     {criticalTokens.length > 0 && (
                         <AlphaSection
-                            title="╔══ CRITICAL ALPHA ══╗"
+                            title="â•”â•â• CRITICAL ALPHA â•â•â•—"
                             subtitle="PRIORITY SIGNALS :: IMMEDIATE ATTENTION REQUIRED"
                             panelClass="crt-panel-red"
                             dotClass="status-dot-red"
@@ -307,7 +326,7 @@ export default function AlphaPage() {
 
                     {hotTokens.length > 0 && (
                         <AlphaSection
-                            title="╔══ HOT SIGNALS ══╗"
+                            title="â•”â•â• HOT SIGNALS â•â•â•—"
                             subtitle="EMERGING ALPHA OPPORTUNITIES"
                             panelClass="crt-panel-amber"
                             dotClass="status-dot-amber"
@@ -317,7 +336,7 @@ export default function AlphaPage() {
 
                     {watchTokens.length > 0 && (
                         <AlphaSection
-                            title="╔══ WATCHLIST ══╗"
+                            title="â•”â•â• WATCHLIST â•â•â•—"
                             subtitle="EARLY ACTIVITY INDICATORS"
                             panelClass=""
                             dotClass="status-dot-green"
@@ -331,7 +350,7 @@ export default function AlphaPage() {
 
                     {/* MOTHER terminal */}
                     <div className="crt-panel p-4">
-                        <div className="panel-header">╔══ MOTHER COMPUTER INTERFACE ══╗</div>
+                        <div className="panel-header">â•”â•â• MOTHER COMPUTER INTERFACE â•â•â•—</div>
                         <div className="bg-black p-4 border border-[#00ff41]/10 font-mono text-[11px] leading-relaxed">
                             <p className="text-[#00ff41]/70">READY_</p>
                             <p className="text-[#00ff41]/50 mt-1">&gt; QUERY: ALPHA SCAN STATUS</p>
@@ -351,31 +370,37 @@ export default function AlphaPage() {
     );
 }
 
-// ── SystemStatusCard ────────────────────────
+// â”€â”€ SystemStatusCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SystemStatusCard({ label, value, status, icon }: {
     label: string; value: number; status: "online" | "warning" | "critical" | "info"; icon: React.ReactNode;
 }) {
     const colors = {
-        online: { border: "border-[#00ff41]/50", text: "text-[#00ff41]", bg: "bg-[#00ff41]/5" },
-        warning: { border: "border-[#ffaa00]/50", text: "text-[#ffaa00]", bg: "bg-[#ffaa00]/5" },
-        critical: { border: "border-[#ff4400]/50", text: "text-[#ff4400]", bg: "bg-[#ff4400]/5" },
-        info: { border: "border-[#00aaff]/50", text: "text-[#00aaff]", bg: "bg-[#00aaff]/5" },
+        online: { border: "border-[#00ff41]/18", text: "text-[#9dffb8]", dim: "text-[#84ffad]/55", iconBg: "border-[#00ff41]/20 bg-[#00ff41]/10" },
+        warning: { border: "border-[#ffaa00]/18", text: "text-[#ffd37a]", dim: "text-[#ffd37a]/55", iconBg: "border-[#ffaa00]/20 bg-[#ffaa00]/10" },
+        critical: { border: "border-[#ff4400]/20", text: "text-[#ff8c64]", dim: "text-[#ff8c64]/55", iconBg: "border-[#ff4400]/20 bg-[#ff4400]/10" },
+        info: { border: "border-[#00aaff]/20", text: "text-[#8dd8ff]", dim: "text-[#8dd8ff]/55", iconBg: "border-[#00aaff]/20 bg-[#00aaff]/10" },
     };
     const c = colors[status];
 
     return (
-        <div className={cn("border-2 p-3 text-center transition-all hover:bg-opacity-10", c.border, c.bg)}>
-            <div className={cn("flex items-center justify-center gap-2 mb-1", c.text)}>{icon}</div>
-            <p className="text-[9px] text-[#00ff41]/40 tracking-[0.15em]">{label}</p>
-            <p className={cn("text-2xl font-medium mt-1 tracking-wider", c.text)} style={{ textShadow: '0 0 10px currentColor' }}>
+        <div className={cn("alpha-status-card", c.border)}>
+            <div className={cn("inline-flex h-11 w-11 items-center justify-center rounded-2xl border", c.iconBg, c.text)}>
+                {icon}
+            </div>
+            <p className="mt-4 text-[10px] uppercase tracking-[0.32em] text-white/42">{label}</p>
+            <p className={cn("mt-2 text-3xl font-semibold tracking-[0.08em]", c.text)} style={{ textShadow: "0 0 14px currentColor" }}>
                 {value}
+            </p>
+            <div className="mt-4 h-px w-full bg-white/8" />
+            <p className={cn("mt-3 text-[10px] uppercase tracking-[0.26em]", c.dim)}>
+                Live Monitor
             </p>
         </div>
     );
 }
 
-// ── RadarSection ─────────────────────────────
+// â”€â”€ RadarSection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function QuickFilterPanel({
     activeFilter,
@@ -395,13 +420,22 @@ function QuickFilterPanel({
     ];
 
     return (
-        <div className="crt-panel p-4 mb-6 animate-fade-in">
-            <div className="panel-header flex items-center gap-2">
-                <span className="status-dot status-dot-green" />
-                ╔══ QUICK FILTER ══╗
-                <span className="ml-auto text-[#00ff41]/30">{matchedCount} MATCHES</span>
+        <div className="alpha-section-panel crt-panel mb-6 animate-fade-in p-4">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#00ff41]/12 pb-4">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <span className="status-dot status-dot-green" />
+                        <p className="text-[11px] uppercase tracking-[0.34em] text-[#d8ffe6]">Quick Filters</p>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-6 text-white/42">
+                        Trim the feed to rug pressure, fresh launches, or last-minute momentum without losing the live signal stack.
+                    </p>
+                </div>
+                <div className="alpha-inline-chip border-[#00ff41]/18 bg-[#00ff41]/10 text-[#9dffb8]">
+                    {matchedCount} LIVE MATCHES
+                </div>
             </div>
-            <div className="flex flex-wrap gap-2 mt-3">
+            <div className="mt-4 flex flex-wrap gap-2.5">
                 {filters.map((filter) => {
                     const active = activeFilter === filter.key;
                     return (
@@ -409,10 +443,10 @@ function QuickFilterPanel({
                             key={filter.key}
                             onClick={() => onChange(filter.key)}
                             className={cn(
-                                "px-3 py-1.5 border text-[10px] tracking-[0.12em] transition-all",
+                                "rounded-full border px-4 py-2 text-[11px] uppercase tracking-[0.22em] transition-all",
                                 active
-                                    ? "border-[#00ff41]/60 text-[#00ff41] bg-[#00ff41]/10"
-                                    : "border-[#00ff41]/20 text-[#00ff41]/50 hover:text-[#00ff41]/80 hover:border-[#00ff41]/40 hover:bg-[#00ff41]/5"
+                                    ? "border-[#00ff41]/40 bg-[#00ff41]/12 text-[#d8ffe6] shadow-[0_0_20px_rgba(0,255,65,0.08)]"
+                                    : "border-white/10 bg-black/30 text-white/44 hover:border-[#00ff41]/20 hover:bg-[#00ff41]/8 hover:text-[#b4ffca]"
                             )}
                         >
                             {filter.label}
@@ -423,19 +457,24 @@ function QuickFilterPanel({
         </div>
     );
 }
-
 function TrendingBagsPanel({ tokens }: { tokens: AlphaToken[] }) {
     return (
-        <div className="crt-panel crt-panel-amber p-4 mb-6 animate-fade-in">
-            <div className="panel-header flex items-center gap-2">
-                <span className="status-dot status-dot-amber" />
-                ╔══ TRENDING BAGS NOW ══╗
-                <span className="ml-auto text-[#ffaa00]/35">PINNED LIVE [{tokens.length}]</span>
+        <div className="alpha-section-panel crt-panel crt-panel-amber mb-6 animate-fade-in p-4">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#ffaa00]/16 pb-4">
+                <div>
+                    <div className="flex items-center gap-2 text-[#ffd37a]">
+                        <span className="status-dot status-dot-amber" />
+                        <p className="text-[11px] uppercase tracking-[0.34em]">Trending Bags Now</p>
+                    </div>
+                    <p className="mt-2 max-w-3xl text-[11px] leading-6 text-[#ffe3ac]/45">
+                        Only live-flow mints with real activity, price strength, and crowd traction stay pinned here.
+                    </p>
+                </div>
+                <div className="alpha-inline-chip border-[#ffaa00]/18 bg-[#ffaa00]/10 text-[#ffd37a]">
+                    PINNED LIVE {tokens.length}
+                </div>
             </div>
-            <p className="text-[9px] text-[#ffaa00]/35 tracking-[0.14em] mb-3">
-                ONLY LIVE FLOW TOKENS WITH REAL ACTIVITY, PRICE STRENGTH, AND CROWD TRACTION
-            </p>
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 stagger-children">
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3 stagger-children">
                 {tokens.map((token, index) => (
                     <AlphaCard key={token.tokenMint} token={token} trendingRank={index + 1} />
                 ))}
@@ -443,31 +482,37 @@ function TrendingBagsPanel({ tokens }: { tokens: AlphaToken[] }) {
         </div>
     );
 }
-
 function BreakingRadarPanel({ trends }: { trends: RadarTrend[] }) {
     return (
-        <div className="crt-panel crt-panel-amber p-4 mb-6 animate-fade-in">
-            <div className="panel-header flex items-center gap-2">
-                <span className="status-dot status-dot-amber" />
-                ╔══ BREAKING CRYPTO RADAR ══╗
-                <span className="ml-auto text-[#ffaa00]/40">LAST 120M</span>
+        <div className="alpha-section-panel crt-panel crt-panel-amber mb-6 animate-fade-in p-4">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-4 border-b border-[#ffaa00]/16 pb-4">
+                <div>
+                    <div className="flex items-center gap-2 text-[#ffd37a]">
+                        <span className="status-dot status-dot-amber" />
+                        <p className="text-[11px] uppercase tracking-[0.34em]">Breaking Crypto Radar</p>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-6 text-[#ffe3ac]/45">Macro narratives and external momentum spikes from the last 120 minutes.</p>
+                </div>
+                <div className="alpha-inline-chip border-[#ffaa00]/18 bg-[#ffaa00]/10 text-[#ffd37a]">
+                    LAST 120M
+                </div>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 mt-2 stagger-children">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 stagger-children">
                 {trends.slice(0, 6).map((trend) => (
                     <a
                         key={trend.id}
                         href={trend.url ?? "#"}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="p-3 border border-[#ffaa00]/20 bg-black/45 hover:bg-[#ffaa00]/5 hover:border-[#ffaa00]/40 transition-all"
+                        className="rounded-[22px] border border-[#ffaa00]/14 bg-black/55 p-4 transition-all hover:border-[#ffaa00]/30 hover:bg-[#ffaa00]/8"
                     >
-                        <p className="text-[11px] text-[#ffaa00]/80 tracking-wider line-clamp-2 leading-relaxed">
+                        <p className="line-clamp-2 text-[12px] leading-6 tracking-[0.12em] text-[#ffd37a]/85">
                             {trend.title}
                         </p>
-                        <div className="flex items-center gap-2 mt-2 text-[8px] tracking-[0.12em]">
-                            <span className="text-[#ffaa00]/35">{trend.source.replace("_", " ").toUpperCase()}</span>
-                            <span className="text-[#ffaa00]/30">SCORE {trend.score}</span>
-                            <span className="text-[#ffaa00]/25 ml-auto">{formatTimeAgo(trend.publishedAt)}</span>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[9px] uppercase tracking-[0.2em] text-[#ffd37a]/40">
+                            <span>{trend.source.replace("_", " ").toUpperCase()}</span>
+                            <span>SCORE {trend.score}</span>
+                            <span className="ml-auto">{formatTimeAgo(trend.publishedAt)}</span>
                         </div>
                     </a>
                 ))}
@@ -475,34 +520,32 @@ function BreakingRadarPanel({ trends }: { trends: RadarTrend[] }) {
         </div>
     );
 }
-
 function RadarSection({ trends }: { trends: RadarTrend[] }) {
     return (
-        <div className="crt-panel p-4 animate-fade-in">
-            <div className="panel-header flex items-center gap-2">
+        <div className="alpha-section-panel crt-panel animate-fade-in p-4">
+            <div className="mb-4 flex items-center gap-2 border-b border-[#00aaff]/10 pb-4 text-[#8dd8ff]">
                 <span className="status-dot status-dot-blue" />
-                ╔══ EXTERNAL RADAR FEED ══╗
+                <div>
+                    <p className="text-[11px] uppercase tracking-[0.34em]">External Radar Feed</p>
+                    <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-[#8dd8ff]/35">Supplemental catalyst scan outside core Bags discovery</p>
+                </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 stagger-children">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 stagger-children">
                 {trends.slice(0, 12).map((trend) => (
                     <a
                         key={trend.id}
                         href={trend.url ?? "#"}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="p-3 border border-[#00aaff]/15 bg-black/40 hover:bg-[#00aaff]/5 hover:border-[#00aaff]/30 transition-all group"
+                        className="group rounded-[22px] border border-[#00aaff]/12 bg-black/45 p-4 transition-all hover:border-[#00aaff]/28 hover:bg-[#00aaff]/7"
                     >
-                        <p className="text-[11px] text-[#00aaff]/80 group-hover:text-[#00aaff] transition-colors line-clamp-2 tracking-wider leading-relaxed">
+                        <p className="line-clamp-2 text-[12px] leading-6 tracking-[0.12em] text-[#a7e7ff]/80 transition-colors group-hover:text-[#d2f4ff]">
                             {trend.title}
                         </p>
-                        <div className="flex items-center gap-2 mt-2">
-                            <span className="text-[8px] text-[#00aaff]/30 px-1.5 py-0.5 border border-[#00aaff]/10 tracking-wider">
-                                {trend.source.replace("_", " ").toUpperCase()}
-                            </span>
-                            <span className="text-[8px] text-[#00aaff]/20 tracking-wider">
-                                SCORE: {trend.score}
-                            </span>
-                            <ExternalLink className="w-2.5 h-2.5 text-[#00aaff]/20 group-hover:text-[#00aaff]/50 transition-colors ml-auto" />
+                        <div className="mt-3 flex items-center gap-2 text-[9px] uppercase tracking-[0.2em] text-[#8dd8ff]/38">
+                            <span>{trend.source.replace("_", " ").toUpperCase()}</span>
+                            <span>SCORE {trend.score}</span>
+                            <ExternalLink className="ml-auto h-3.5 w-3.5 text-[#8dd8ff]/25 transition-colors group-hover:text-[#8dd8ff]/70" />
                         </div>
                     </a>
                 ))}
@@ -510,9 +553,6 @@ function RadarSection({ trends }: { trends: RadarTrend[] }) {
         </div>
     );
 }
-
-// ── AlphaSection ─────────────────────────────
-
 function AlphaSection({
     title,
     subtitle,
@@ -527,15 +567,21 @@ function AlphaSection({
     tokens: AlphaToken[];
 }) {
     return (
-        <div className={cn("crt-panel p-4 animate-fade-in", panelClass)}>
-            <div className="panel-header flex items-center gap-2">
-                <span className={cn("status-dot", dotClass)} />
-                {title}
-                <span className="ml-auto text-[#00ff41]/30">[{tokens.length}]</span>
+        <div className={cn("alpha-section-panel crt-panel animate-fade-in p-4", panelClass)}>
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/8 pb-4">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <span className={cn("status-dot", dotClass)} />
+                        <p className="text-[11px] uppercase tracking-[0.34em] text-[#d8ffe6]">{title}</p>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-6 text-white/38">{subtitle}</p>
+                </div>
+                <div className="alpha-inline-chip border-white/10 bg-white/[0.03] text-white/55">
+                    {tokens.length} LIVE NAMES
+                </div>
             </div>
-            <p className="text-[9px] text-[#00ff41]/30 tracking-[0.1em] mb-3 -mt-1">{subtitle}</p>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 stagger-children">
+            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3 stagger-children">
                 {tokens.map((token) => (
                     <AlphaCard key={token.tokenMint} token={token} />
                 ))}
@@ -543,169 +589,177 @@ function AlphaSection({
         </div>
     );
 }
-
-// ── AlphaCard ────────────────────────────────
-
 function AlphaCard({ token, trendingRank }: { token: AlphaToken; trendingRank?: number }) {
     const scoreColor =
-        token.alphaScore >= 60 ? "#ff4400"
+        token.alphaScore >= 60 ? "#ff7d50"
             : token.alphaScore >= 30 ? "#ffaa00"
                 : "#00ff41";
     const rugRiskScore = token.rugRiskScore ?? 0;
     const rugRiskLevel = token.rugRiskLevel ?? scoreToRiskLevel(rugRiskScore);
     const rugRiskClass =
         rugRiskLevel === "high"
-            ? "border-[#ff4400]/35 text-[#ff4400]/75"
+            ? "border-[#ff4400]/20 bg-[#ff4400]/10 text-[#ff8c64]"
             : rugRiskLevel === "medium"
-                ? "border-[#ffaa00]/35 text-[#ffaa00]/75"
-                : "border-[#00ff41]/20 text-[#00ff41]/50";
+                ? "border-[#ffaa00]/20 bg-[#ffaa00]/10 text-[#ffd37a]"
+                : "border-[#00ff41]/15 bg-[#00ff41]/8 text-[#9dffb8]";
     const showTrendingBadge = Boolean(trendingRank) || token.isTrendingNow;
-    const rugBadgeTop = showTrendingBadge ? "top-10" : "top-3";
+    const discoveryLabel = getDiscoverySourceLabel(token.discoverySource);
+    const creatorHandle = token.creatorDisplay ?? token.twitterUsername;
+    const priceText = formatUsdPrice(token.priceUsd);
+    const metrics: Array<{ label: string; value: string; tone: string }> = [];
+
+    if (token.volume24hUsd !== undefined) {
+        metrics.push({ label: "24H VOL", value: `$${fmtCompact(token.volume24hUsd)}`, tone: "text-[#9dffb8]" });
+    }
+    if (token.txCount24h !== undefined) {
+        metrics.push({ label: "TX COUNT", value: fmtCompact(token.txCount24h), tone: "text-[#ffd37a]" });
+    }
+    if (token.earnedUsd !== undefined && token.earnedUsd > 0) {
+        metrics.push({ label: "FEES", value: `$${fmtCompact(token.earnedUsd)}`, tone: "text-[#ffd37a]" });
+    }
+    if (token.creatorFollowers !== undefined) {
+        metrics.push({ label: "FOLLOWERS", value: fmtCompact(token.creatorFollowers), tone: "text-[#8dd8ff]" });
+    }
+    if (token.tweetCount !== undefined && token.tweetCount > 0) {
+        metrics.push({ label: "POSTS", value: fmtCompact(token.tweetCount), tone: "text-[#8dd8ff]" });
+    }
 
     return (
-        <Link
-            href={`/token/${token.tokenMint}`}
-            className="group border border-[#00ff41]/15 bg-black/60 p-4 relative overflow-hidden hover:border-[#00ff41]/40 hover:bg-[#00ff41]/[0.02] transition-all"
-        >
-            {showTrendingBadge && (
-                <div className="absolute top-3 left-3 px-1.5 py-0.5 border border-[#ffaa00]/35 text-[#ffaa00]/80 text-[8px] tracking-wider bg-[#ffaa00]/[0.06]">
-                    {trendingRank ? `TREND #${trendingRank}` : `TRENDING NOW ${token.trendingNowScore ?? ""}`.trim()}
+        <Link href={`/token/${token.tokenMint}`} className="alpha-card-shell group">
+            <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                    {showTrendingBadge && (
+                        <span className="alpha-badge-chip border-[#ffaa00]/22 bg-[#ffaa00]/10 text-[#ffd37a]">
+                            {trendingRank ? `TREND #${trendingRank}` : `TRENDING NOW ${token.trendingNowScore ?? 0}`}
+                        </span>
+                    )}
+                    {rugRiskScore > 0 && (
+                        <span className={cn("alpha-badge-chip", rugRiskClass)}>
+                            RUG {rugRiskScore}
+                        </span>
+                    )}
+                    {discoveryLabel && (
+                        <span className="alpha-badge-chip border-[#00aaff]/18 bg-[#00aaff]/10 text-[#8dd8ff]">
+                            {discoveryLabel}
+                        </span>
+                    )}
+                    {token.isTrendingNow && (
+                        <span className="alpha-badge-chip border-white/10 bg-white/[0.04] text-white/60">
+                            HOT NOW {token.trendingNowScore ?? 0}
+                        </span>
+                    )}
                 </div>
-            )}
 
-            {rugRiskScore > 0 && (
-                <div className={cn("absolute left-3 px-1.5 py-0.5 border text-[8px] tracking-wider", rugBadgeTop, rugRiskClass)}>
-                    RUG {rugRiskScore}
+                <div
+                    className="alpha-score-chip"
+                    style={{
+                        borderColor: `${scoreColor}55`,
+                        color: scoreColor,
+                        boxShadow: `0 0 22px ${scoreColor}18`,
+                    }}
+                >
+                    <Zap className="h-3.5 w-3.5" />
+                    <span>{token.alphaScore}</span>
                 </div>
-            )}
-
-            {/* Score badge */}
-            <div className="absolute top-3 right-3 flex items-center gap-1 text-xs tracking-wider" style={{ color: scoreColor, textShadow: `0 0 8px ${scoreColor}` }}>
-                <Zap className="w-3 h-3" />
-                <span className="font-medium">{token.alphaScore}</span>
             </div>
 
-            {/* Token header */}
-            <div className="flex items-center gap-3 mb-3">
-                <div className="relative w-10 h-10 overflow-hidden flex-shrink-0 border border-[#00ff41]/20">
+            <div className="mt-4 flex items-start gap-4">
+                <div className="relative h-14 w-14 overflow-hidden rounded-[18px] border border-white/10 bg-white/[0.03] shadow-[0_14px_28px_rgba(0,0,0,0.35)]">
                     {token.image ? (
                         <Image src={token.image} alt={token.symbol ?? ""} fill className="object-cover" unoptimized />
                     ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[#00ff41]/40 text-sm bg-[#00ff41]/5">
+                        <div className="flex h-full w-full items-center justify-center bg-[#00ff41]/8 text-lg text-[#00ff41]/45">
                             {token.symbol?.charAt(0) ?? "?"}
                         </div>
                     )}
                 </div>
-                <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-[#00ff41] text-xs tracking-wider group-hover:text-[#00ff41] transition-colors" style={{ textShadow: '0 0 6px rgba(0,255,65,0.3)' }}>
+
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="text-lg font-semibold uppercase tracking-[0.14em] text-[#d8ffe6] transition-colors group-hover:text-white">
                             ${token.symbol}
                         </span>
                         {token.name && (
-                            <span className="text-[9px] text-[#00ff41]/25 truncate max-w-[120px] tracking-wider">
+                            <span className="truncate text-[11px] uppercase tracking-[0.22em] text-white/40">
                                 {token.name}
                             </span>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                        {token.priceUsd !== undefined && (
-                            <span className="text-[10px] text-[#00ff41]/50 tracking-wider">
-                                ${token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(4)}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+                        {priceText && (
+                            <span className="text-[13px] font-medium tracking-[0.08em] text-[#9dffb8]">
+                                ${priceText}
                             </span>
                         )}
                         {token.priceChange24h !== undefined && (
-                            <span className={cn(
-                                "text-[9px] tracking-wider",
-                                token.priceChange24h >= 0 ? "text-[#00ff41]" : "text-[#ff4400]"
-                            )}>
+                            <span
+                                className={cn(
+                                    "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.22em]",
+                                    token.priceChange24h >= 0
+                                        ? "border-[#00ff41]/18 bg-[#00ff41]/10 text-[#9dffb8]"
+                                        : "border-[#ff4400]/20 bg-[#ff4400]/10 text-[#ff8c64]"
+                                )}
+                            >
                                 {token.priceChange24h >= 0 ? "+" : ""}{token.priceChange24h.toFixed(1)}%
                             </span>
                         )}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-1">
-                        {token.discoverySource && (
-                            <div className="inline-flex items-center gap-1 border border-[#00aaff]/15 px-1.5 py-0.5 text-[8px] tracking-[0.14em] text-[#00aaff]/45">
-                                {token.discoverySource === "bags-pool-scan"
-                                    ? "BAGS SCAN"
-                                    : token.discoverySource === "sync-trending-cache"
-                                        ? "TREND CACHE"
-                                        : "DEX SEARCH"}
-                            </div>
-                        )}
-                        {token.isTrendingNow && (
-                            <div className="inline-flex items-center gap-1 border border-[#ffaa00]/20 px-1.5 py-0.5 text-[8px] tracking-[0.14em] text-[#ffaa00]/55">
-                                HOT NOW {token.trendingNowScore ?? 0}
-                            </div>
+                        {token.pairCreatedAt && (
+                            <span className="text-[10px] uppercase tracking-[0.22em] text-white/34">
+                                LAUNCHED {formatTimeAgo(token.pairCreatedAt)}
+                            </span>
                         )}
                     </div>
+
+                    {creatorHandle && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-white/44">
+                            <div className="relative h-5 w-5 overflow-hidden rounded-full border border-white/10 bg-white/[0.04]">
+                                {token.creatorPfp ? (
+                                    <Image src={token.creatorPfp} alt={creatorHandle} fill className="object-cover" unoptimized />
+                                ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-[9px] text-white/45">
+                                        {creatorHandle.charAt(0).toUpperCase()}
+                                    </div>
+                                )}
+                            </div>
+                            <span className="truncate">@{creatorHandle}</span>
+                            {token.twitterUsername && (
+                                <button
+                                    type="button"
+                                    onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        window.open(`https://x.com/${token.twitterUsername}`, "_blank", "noopener,noreferrer");
+                                    }}
+                                    className="inline-flex items-center gap-1 text-[#8dd8ff]/65 transition-colors hover:text-[#8dd8ff]"
+                                >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* Metrics row */}
-            <div className="flex items-center gap-3 mb-3 text-[9px] tracking-wider">
-                {token.volume24hUsd !== undefined && (
-                    <div className="flex items-center gap-1 text-[#00ff41]/40">
-                        <BarChart3 className="w-2.5 h-2.5" />
-                        <span>VOL ${fmtCompact(token.volume24hUsd)}</span>
-                    </div>
-                )}
-                {token.txCount24h !== undefined && (
-                    <div className="flex items-center gap-1 text-[#ffaa00]/45">
-                        <Activity className="w-2.5 h-2.5" />
-                        <span>{fmtCompact(token.txCount24h)} TX</span>
-                    </div>
-                )}
-                {token.earnedUsd !== undefined && token.earnedUsd > 0 && (
-                    <div className="flex items-center gap-1 text-[#ffaa00]/40">
-                        <DollarSign className="w-2.5 h-2.5" />
-                        <span>${fmtCompact(token.earnedUsd)}</span>
-                    </div>
-                )}
-                {token.creatorFollowers !== undefined && (
-                    <div className="flex items-center gap-1 text-[#00aaff]/40">
-                        <Users className="w-2.5 h-2.5" />
-                        <span>{fmtCompact(token.creatorFollowers)}</span>
-                    </div>
-                )}
-                {token.tweetCount !== undefined && token.tweetCount > 0 && (
-                    <div className="flex items-center gap-1 text-[#00aaff]/40">
-                        <MessageCircle className="w-2.5 h-2.5" />
-                        <span>{token.tweetCount}</span>
-                    </div>
-                )}
-            </div>
-
-            {/* Creator */}
-            {token.creatorDisplay && (
-                <div className="flex items-center gap-1.5 mb-3">
-                    {token.creatorPfp && (
-                        <div className="relative w-4 h-4 overflow-hidden flex-shrink-0 border border-[#00ff41]/15">
-                            <Image src={token.creatorPfp} alt="" fill className="object-cover" unoptimized />
+            {metrics.length > 0 && (
+                <div className="alpha-metric-grid mt-4">
+                    {metrics.slice(0, 4).map((metric) => (
+                        <div key={`${token.tokenMint}-${metric.label}`} className="alpha-metric-tile">
+                            <span className="text-[9px] uppercase tracking-[0.24em] text-white/32">{metric.label}</span>
+                            <span className={cn("mt-2 text-[13px] font-medium tracking-[0.08em]", metric.tone)}>
+                                {metric.value}
+                            </span>
                         </div>
-                    )}
-                    <span className="text-[9px] text-[#00ff41]/30 tracking-wider">
-                        @{token.creatorDisplay}
-                    </span>
-                    {token.twitterUsername && (
-                        <a
-                            href={`https://x.com/${token.twitterUsername}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[#00aaff]/30 hover:text-[#00aaff] transition-colors"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
-                    )}
+                    ))}
                 </div>
             )}
 
             {token.isTrendingNow && token.trendingReasons && token.trendingReasons.length > 0 && (
-                <div className="mb-3 flex flex-wrap gap-1.5">
+                <div className="mt-4 flex flex-wrap gap-2">
                     {token.trendingReasons.slice(0, 3).map((reason) => (
                         <span
                             key={`${token.tokenMint}-${reason}`}
-                            className="px-2 py-0.5 border border-[#ffaa00]/15 text-[8px] text-[#ffaa00]/55 tracking-[0.14em]"
+                            className="alpha-badge-chip border-[#ffaa00]/16 bg-[#ffaa00]/10 text-[#ffd37a]/88"
                         >
                             {reason}
                         </span>
@@ -713,85 +767,83 @@ function AlphaCard({ token, trendingRank }: { token: AlphaToken; trendingRank?: 
                 </div>
             )}
 
-            {/* Signals */}
-            <div className="flex flex-wrap gap-1.5">
+            <div className="mt-4 flex flex-wrap gap-2">
                 {token.signals.slice(0, 4).map((signal, idx) => (
                     <SignalBadge key={`${signal.type}-${idx}`} signal={signal} />
                 ))}
                 {token.signals.length > 4 && (
-                    <span className="text-[8px] text-[#00ff41]/20 px-2 py-0.5 border border-[#00ff41]/10 tracking-wider">
-                        +{token.signals.length - 4}
+                    <span className="alpha-badge-chip border-white/10 bg-white/[0.03] text-white/42">
+                        +{token.signals.length - 4} MORE
                     </span>
                 )}
             </div>
 
-            {/* Latest tweet */}
             {token.latestCreatorTweet && (
-                <div className="mt-3 p-2.5 border border-[#00aaff]/10 bg-black/60">
-                    <div className="flex items-center gap-1 mb-1">
-                        <svg viewBox="0 0 24 24" className="w-3 h-3 text-[#00aaff]/30 fill-current">
+                <div className="mt-4 rounded-[22px] border border-[#00aaff]/12 bg-[#03131b]/80 p-3">
+                    <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-[#8dd8ff]/55">
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-[#8dd8ff]/65">
                             <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                         </svg>
-                        <span className="text-[8px] text-[#00aaff]/25 tracking-wider">FEED: @{token.twitterUsername}</span>
+                        <span>CREATOR FEED {token.twitterUsername ? `@${token.twitterUsername}` : "LIVE"}</span>
                     </div>
-                    <p className="text-[9px] text-[#00aaff]/40 line-clamp-2 leading-relaxed tracking-wider">
+                    <p className="line-clamp-3 text-[12px] leading-6 text-[#c4efff]/72">
                         {token.latestCreatorTweet}
                     </p>
                 </div>
             )}
 
-            <ChevronRight className="absolute bottom-3 right-3 w-3.5 h-3.5 text-[#00ff41]/15 group-hover:text-[#00ff41]/50 transition-all group-hover:translate-x-0.5" />
+            <div className="mt-4 flex items-center justify-between border-t border-white/6 pt-3 text-[10px] uppercase tracking-[0.24em] text-white/28">
+                <span>{shortMint(token.tokenMint)}</span>
+                <ChevronRight className="h-4 w-4 text-[#00ff41]/25 transition-all group-hover:translate-x-0.5 group-hover:text-[#00ff41]/65" />
+            </div>
         </Link>
     );
 }
 
-// ── SignalBadge ──────────────────────────────
-
 function SignalBadge({ signal }: { signal: AlphaSignal }) {
     const colors: Record<AlphaSignalSeverity, string> = {
-        critical: "border-[#ff4400]/30 text-[#ff4400]/70",
-        high: "border-[#ffaa00]/30 text-[#ffaa00]/70",
-        medium: "border-[#00ff41]/30 text-[#00ff41]/70",
-        low: "border-[#00ff41]/15 text-[#00ff41]/40",
+        critical: "border-[#ff4400]/20 bg-[#ff4400]/10 text-[#ff8c64]",
+        high: "border-[#ffaa00]/20 bg-[#ffaa00]/10 text-[#ffd37a]",
+        medium: "border-[#00ff41]/18 bg-[#00ff41]/10 text-[#9dffb8]",
+        low: "border-white/10 bg-white/[0.03] text-white/45",
     };
 
     return (
-        <div className={cn("flex items-center gap-1 px-2 py-0.5 border text-[8px] tracking-wider", colors[signal.severity])}>
+        <div className={cn("alpha-badge-chip", colors[signal.severity])}>
             <span>{signal.title}</span>
             {signal.value && <span className="opacity-60">{signal.value}</span>}
         </div>
     );
 }
 
-// ── AlphaSkeleton ───────────────────────────
-
 function AlphaSkeleton() {
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="border-2 border-[#00ff41]/15 p-3 text-center animate-pulse">
-                        <div className="w-6 h-6 mx-auto mb-2 border border-[#00ff41]/10" />
-                        <div className="w-16 h-3 bg-[#00ff41]/5 mx-auto mb-1" />
-                        <div className="w-8 h-6 bg-[#00ff41]/10 mx-auto" />
+                    <div key={i} className="alpha-status-card animate-pulse">
+                        <div className="h-11 w-11 rounded-2xl border border-white/8 bg-white/[0.04]" />
+                        <div className="mt-4 h-3 w-20 rounded-full bg-white/[0.05]" />
+                        <div className="mt-3 h-8 w-12 rounded-full bg-white/[0.07]" />
                     </div>
                 ))}
             </div>
-            <div className="crt-panel p-4">
-                <div className="w-48 h-4 bg-[#00ff41]/10 mb-4" />
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div className="alpha-section-panel crt-panel p-4">
+                <div className="h-4 w-56 rounded-full bg-white/[0.06]" />
+                <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
                     {Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} className="border border-[#00ff41]/10 bg-black/60 p-4 animate-pulse">
-                            <div className="flex items-center gap-3 mb-3">
-                                <div className="w-10 h-10 border border-[#00ff41]/10" />
-                                <div>
-                                    <div className="w-20 h-3 bg-[#00ff41]/10" />
-                                    <div className="w-14 h-2 bg-[#00ff41]/5 mt-1" />
+                        <div key={i} className="alpha-card-shell animate-pulse">
+                            <div className="h-5 w-32 rounded-full bg-white/[0.05]" />
+                            <div className="mt-4 flex items-start gap-4">
+                                <div className="h-14 w-14 rounded-[18px] bg-white/[0.05]" />
+                                <div className="flex-1 space-y-2">
+                                    <div className="h-4 w-28 rounded-full bg-white/[0.06]" />
+                                    <div className="h-3 w-20 rounded-full bg-white/[0.05]" />
                                 </div>
                             </div>
-                            <div className="flex gap-1.5">
-                                <div className="w-20 h-4 border border-[#00ff41]/5" />
-                                <div className="w-16 h-4 border border-[#00ff41]/5" />
+                            <div className="mt-4 grid grid-cols-2 gap-3">
+                                <div className="h-16 rounded-[18px] bg-white/[0.04]" />
+                                <div className="h-16 rounded-[18px] bg-white/[0.04]" />
                             </div>
                         </div>
                     ))}
@@ -801,8 +853,23 @@ function AlphaSkeleton() {
     );
 }
 
-// ── Utilities ────────────────────────────────
+function formatUsdPrice(price?: number): string | null {
+    if (price === undefined) return null;
+    if (price >= 1) return price.toFixed(4);
+    if (price >= 0.001) return price.toFixed(6);
+    return price.toExponential(2);
+}
 
+function getDiscoverySourceLabel(source?: string): string | null {
+    if (!source) return null;
+    if (source === "bags-pool-scan") return "BAGS SCAN";
+    if (source === "sync-trending-cache") return "TREND CACHE";
+    return "DEX SEARCH";
+}
+
+function shortMint(mint: string): string {
+    return `${mint.slice(0, 4)}...${mint.slice(-4)}`;
+}
 function fmtCompact(n: number): string {
     if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
     if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
@@ -911,3 +978,7 @@ function AccessLinks({ mint }: { mint?: string }) {
         </div>
     );
 }
+
+
+
+

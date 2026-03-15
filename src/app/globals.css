@@ -1,9 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 @import "tailwindcss";
 
-/* ══════════════════════════════════════════════
-   BAGSCAN TERMINAL – NOSTROMO CRT INTERFACE
-   ══════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   BAGSCAN TERMINAL â€“ NOSTROMO CRT INTERFACE
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 :root {
   --crt-green: #00ff41;
@@ -38,7 +38,7 @@ body {
   background-size: 20px 20px;
 }
 
-/* ── CRT Scan Lines Overlay ───────────────── */
+/* â”€â”€ CRT Scan Lines Overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .crt-scanlines {
   position: fixed;
   inset: 0;
@@ -62,7 +62,7 @@ body {
   animation: flicker 4s ease-in-out infinite;
 }
 
-/* ── Scrollbar ──────────────────────────────── */
+/* â”€â”€ Scrollbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -82,7 +82,7 @@ body {
   background: rgba(0, 255, 65, 0.4);
 }
 
-/* ═══ WALLET ADAPTER – CRT OVERRIDES ══════════ */
+/* â•â•â• WALLET ADAPTER â€“ CRT OVERRIDES â•â•â•â•â•â•â•â•â•â• */
 
 .wallet-adapter-button {
   font-family: 'Share Tech Mono', 'Courier New', monospace !important;
@@ -309,13 +309,13 @@ body {
   letter-spacing: 0.1em !important;
 }
 
-/* ── Selection ──────────────────────────────── */
+/* â”€â”€ Selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 ::selection {
   background: rgba(0, 255, 65, 0.3);
   color: #00ff41;
 }
 
-/* ═══ ANIMATIONS ═══════════════════════════════ */
+/* â•â•â• ANIMATIONS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 @keyframes flicker {
   0%, 100% { opacity: 1; }
@@ -439,7 +439,7 @@ body {
   100% { background-position: 0 -40px; }
 }
 
-/* ═══ ANIMATION UTILITIES ══════════════════════ */
+/* â•â•â• ANIMATION UTILITIES â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .animate-fade-in {
   animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -521,7 +521,7 @@ body {
 .stagger-children > *:nth-child(7) { animation-delay: 300ms; }
 .stagger-children > *:nth-child(8) { animation-delay: 350ms; }
 
-/* ═══ CRT PANEL SYSTEM ═════════════════════════ */
+/* â•â•â• CRT PANEL SYSTEM â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .glass-card {
   background: rgba(0, 0, 0, 0.80);
@@ -573,7 +573,7 @@ body {
   border-color: rgba(255, 68, 0, 0.5);
 }
 
-/* ═══ GLOW EFFECTS ═════════════════════════════ */
+/* â•â•â• GLOW EFFECTS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .glow-green {
   box-shadow: 0 0 12px rgba(0, 255, 65, 0.2), 0 0 40px rgba(0, 255, 65, 0.05);
@@ -591,7 +591,7 @@ body {
   box-shadow: 0 0 12px rgba(0, 255, 65, 0.15), 0 0 40px rgba(0, 255, 65, 0.05);
 }
 
-/* ═══ TEXT STYLES ══════════════════════════════ */
+/* â•â•â• TEXT STYLES â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .text-gradient-purple {
   color: #00ff41;
@@ -625,7 +625,7 @@ body {
   text-shadow: 0 0 6px rgba(255, 68, 0, 0.4);
 }
 
-/* ═══ TICKER BAR ══════════════════════════════ */
+/* â•â•â• TICKER BAR â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .ticker-container {
   overflow: hidden;
@@ -633,7 +633,7 @@ body {
   -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
 }
 
-/* ═══ TERMINAL PANEL HEADERS ════════════════════ */
+/* â•â•â• TERMINAL PANEL HEADERS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .panel-header {
   color: #00ff41;
@@ -646,7 +646,7 @@ body {
   margin-bottom: 0.75rem;
 }
 
-/* ═══ STATUS DOTS ═════════════════════════════ */
+/* â•â•â• STATUS DOTS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .status-dot {
   width: 8px;
@@ -676,7 +676,7 @@ body {
   box-shadow: 0 0 6px #00aaff, 0 0 12px rgba(0, 170, 255, 0.3);
 }
 
-/* ═══ DATA BARS ═══════════════════════════════ */
+/* â•â•â• DATA BARS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .data-bar {
   height: 6px;
@@ -706,7 +706,7 @@ body {
   box-shadow: 0 0 8px rgba(255, 68, 0, 0.5);
 }
 
-/* ═══ AURORA / BG ═════════════════════════════ */
+/* â•â•â• AURORA / BG â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .bg-aurora {
   background: linear-gradient(-45deg,
@@ -716,14 +716,14 @@ body {
     rgba(0, 255, 65, 0.03));
 }
 
-/* ═══ SELECT ══════════════════════════════════ */
+/* â•â•â• SELECT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 select option {
   background: #000000;
   color: #00ff41;
 }
 
-/* ═══ FOCUS ═══════════════════════════════════ */
+/* â•â•â• FOCUS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 *:focus-visible {
   outline: 2px solid rgba(0, 255, 65, 0.5);
@@ -731,7 +731,7 @@ select option {
   border-radius: 2px;
 }
 
-/* ═══ NEW LAUNCH ANIMATIONS ══════════════════ */
+/* â•â•â• NEW LAUNCH ANIMATIONS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 @keyframes new-launch-glow {
   0%, 100% { box-shadow: 0 0 0px rgba(255, 184, 0, 0), inset 0 0 0 rgba(255, 184, 0, 0); }
@@ -803,4 +803,272 @@ select option {
   border-radius: 50%;
   border: 1px solid rgba(255, 184, 0, 0.4);
   animation: signal-ping 2s ease-out infinite;
+}
+
+.alpha-premium-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.alpha-premium-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top left, rgba(255, 170, 0, 0.08), transparent 26%),
+    radial-gradient(circle at top right, rgba(0, 170, 255, 0.08), transparent 28%),
+    radial-gradient(circle at bottom center, rgba(0, 255, 65, 0.05), transparent 34%);
+  filter: blur(8px);
+}
+
+.alpha-premium-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 90px 90px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.32), transparent 85%);
+}
+
+.alpha-hero-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 170, 0, 0.28);
+  border-radius: 32px;
+  padding: 1.75rem;
+  background:
+    linear-gradient(140deg, rgba(255, 170, 0, 0.12), rgba(0, 0, 0, 0.92) 34%, rgba(0, 170, 255, 0.1) 100%);
+  box-shadow:
+    0 28px 60px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.alpha-hero-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(255, 170, 0, 0.18), transparent 18%),
+    radial-gradient(circle at 82% 14%, rgba(0, 170, 255, 0.18), transparent 22%),
+    linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.26));
+  pointer-events: none;
+}
+
+.alpha-hero-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 255, 255, 0.018) 3px,
+    rgba(255, 255, 255, 0.018) 6px
+  );
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.alpha-hero-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 170, 0, 0.28);
+  background: linear-gradient(145deg, rgba(255, 170, 0, 0.18), rgba(0, 0, 0, 0.62));
+  box-shadow:
+    0 0 35px rgba(255, 170, 0, 0.14),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.alpha-kicker {
+  margin-bottom: 0.7rem;
+  color: rgba(255, 211, 122, 0.82);
+  font-size: 0.68rem;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+}
+
+.alpha-hero-title {
+  color: #f7fff9;
+  font-size: clamp(1.8rem, 3vw, 3.25rem);
+  line-height: 1;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 28px rgba(255, 255, 255, 0.08);
+}
+
+.alpha-hero-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-height: 132px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 1.15rem;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(10px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.alpha-hero-metric-label {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.66rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+
+.alpha-hero-metric-value {
+  font-size: clamp(1.7rem, 2vw, 2.6rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.06em;
+}
+
+.alpha-hero-metric-note {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.74rem;
+  line-height: 1.65;
+}
+
+.alpha-inline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0.7rem 0.95rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  backdrop-filter: blur(10px);
+}
+
+.alpha-status-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  min-height: 176px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  padding: 1.25rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.55)),
+    rgba(0, 0, 0, 0.7);
+  box-shadow:
+    0 22px 45px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.alpha-section-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 32px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(0, 0, 0, 0.72)),
+    rgba(0, 0, 0, 0.84);
+  box-shadow:
+    0 28px 55px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.alpha-section-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 22%);
+  pointer-events: none;
+}
+
+.alpha-card-shell {
+  position: relative;
+  display: block;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  padding: 1.2rem;
+  background:
+    radial-gradient(circle at top right, rgba(255, 170, 0, 0.08), transparent 18%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(0, 0, 0, 0.75)),
+    rgba(0, 0, 0, 0.74);
+  box-shadow:
+    0 24px 46px rgba(0, 0, 0, 0.32),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.alpha-card-shell:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 255, 65, 0.2);
+  box-shadow:
+    0 30px 56px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(0, 255, 65, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.alpha-score-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.alpha-badge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 0.42rem 0.72rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+.alpha-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.alpha-metric-tile {
+  display: flex;
+  flex-direction: column;
+  min-height: 78px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 20px;
+  padding: 0.85rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+@media (max-width: 768px) {
+  .alpha-hero-panel {
+    padding: 1.1rem;
+    border-radius: 24px;
+  }
+
+  .alpha-status-card,
+  .alpha-section-panel,
+  .alpha-card-shell {
+    border-radius: 24px;
+  }
 }
