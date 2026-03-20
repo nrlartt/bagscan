@@ -7,11 +7,11 @@ import { TokenTable } from "@/components/bagscan/TokenTable";
 import { LiveTicker } from "@/components/bagscan/LiveTicker";
 import { EmptyState, ErrorState } from "@/components/bagscan/States";
 import { TokenCardSkeleton, TokenTableSkeleton } from "@/components/bagscan/Skeletons";
-import { formatCurrency, formatNumber, cn } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 import type { NormalizedToken } from "@/lib/bags/types";
 import {
   Flame, Rocket, Trophy, Search, SearchX, X, LayoutGrid, List,
-  DollarSign, BarChart3, Layers, Cpu, AppWindow, ExternalLink, Radio,
+  DollarSign, BarChart3, Layers, Cpu, AppWindow, Radio,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -73,6 +73,9 @@ interface TokensResponse {
 }
 
 type Tab = "trending" | "new" | "hackathon" | "leaderboard";
+const EMPTY_LEADERBOARD: LeaderboardEntry[] = [];
+const EMPTY_HACKATHON_APPS: HackathonApp[] = [];
+const EMPTY_TOKENS: NormalizedToken[] = [];
 
 export default function HomePage() {
   const [tab, setTab] = useState<Tab>("trending");
@@ -128,9 +131,9 @@ export default function HomePage() {
 
   const isLeaderboard = !isSearching && tab === "leaderboard";
   const isHackathon = !isSearching && tab === "hackathon";
-  const leaderboardEntries = isLeaderboard ? (data?.data as LeaderboardEntry[] ?? []) : [];
-  const hackathonApps = isHackathon ? (data?.data as HackathonApp[] ?? []) : [];
-  const tokens = (!isLeaderboard && !isHackathon) ? (data?.data as NormalizedToken[] ?? []) : [];
+  const leaderboardEntries = isLeaderboard ? ((data?.data as LeaderboardEntry[] | undefined) ?? EMPTY_LEADERBOARD) : EMPTY_LEADERBOARD;
+  const hackathonApps = isHackathon ? ((data?.data as HackathonApp[] | undefined) ?? EMPTY_HACKATHON_APPS) : EMPTY_HACKATHON_APPS;
+  const tokens = (!isLeaderboard && !isHackathon) ? ((data?.data as NormalizedToken[] | undefined) ?? EMPTY_TOKENS) : EMPTY_TOKENS;
   const trendingTokens = !isSearching && tab === "trending" ? tokens : [];
 
   const [hackathonFilter, setHackathonFilter] = useState<string>("all");
@@ -296,8 +299,11 @@ export default function HomePage() {
             <div className="flex items-center gap-2 mb-4 text-[10px] tracking-wider">
               <AppWindow className="w-3.5 h-3.5 text-[#00aaff]" />
               <span className="text-[#00ff41]/50">
-                HACKATHON APPS ({filteredApps.length})
+                HACKATHON APPS ({hackathonApps.length})
               </span>
+              {hackathonFilter !== "all" && (
+                <span className="text-[#00aaff]/30">FILTERED {filteredApps.length}</span>
+              )}
               <span className="text-[#00ff41]/20">— BAGS APP STORE</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 stagger-children">

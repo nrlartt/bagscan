@@ -590,20 +590,30 @@ export async function syncHackathonApps(): Promise<EnrichedHackathonApp[]> {
     }
 
     try {
-        const [page1, page2] = await Promise.all([
-            getHackathonApps(1),
-            getHackathonApps(2),
-        ]);
+        type HackathonDexPair = Awaited<ReturnType<typeof getDexScreenerPairs>>[number];
+        const firstPage = await getHackathonApps(1);
+        const remainingPages = await Promise.all(
+            Array.from(
+                { length: Math.max(0, firstPage.totalPages - 1) },
+                (_, index) => getHackathonApps(index + 2)
+            )
+        );
 
-        const allApps = [...page1.applications, ...page2.applications];
+        const dedupedApps = Array.from(
+            new Map(
+                [firstPage, ...remainingPages]
+                    .flatMap((page) => page.applications)
+                    .map((app) => [app.uuid, app])
+            ).values()
+        );
 
-        const mints = allApps.map((a) => a.tokenAddress).filter(Boolean);
-        const dexBatches: any[] = [];
+        const mints = dedupedApps.map((a) => a.tokenAddress).filter(Boolean);
+        const dexBatches: Array<Promise<HackathonDexPair[]>> = [];
         for (let i = 0; i < mints.length; i += 30) {
             dexBatches.push(getDexScreenerPairs(mints.slice(i, i + 30)));
         }
         const dexResults = await Promise.all(dexBatches);
-        const dexMap = new Map<string, any>();
+        const dexMap = new Map<string, HackathonDexPair>();
         for (const pairs of dexResults) {
             for (const p of pairs) {
                 const addr = p.baseToken?.address;
@@ -611,7 +621,7 @@ export async function syncHackathonApps(): Promise<EnrichedHackathonApp[]> {
             }
         }
 
-        const enriched: EnrichedHackathonApp[] = allApps.map((app) => {
+        const enriched: EnrichedHackathonApp[] = dedupedApps.map((app) => {
             const dex = dexMap.get(app.tokenAddress);
             return {
                 uuid: app.uuid,

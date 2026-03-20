@@ -2,69 +2,23 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
 import {
-    Zap, Flame, AlertTriangle, Shield, ExternalLink,
-    RefreshCw, Wifi, WifiOff, Eye, ChevronRight, Activity, Loader2,
+    Zap, Flame, AlertTriangle, ExternalLink,
+    RefreshCw, Wifi, WifiOff, Eye, ChevronRight, Activity,
     Radio, Cpu,
 } from "lucide-react";
 import type { AlphaFeedResponse, AlphaToken, AlphaSignal, AlphaSignalSeverity, RadarTrend } from "@/lib/alpha/types";
 
-const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
-const SCAN_BAGS_URL = `https://bags.fm/${SCAN_MINT}`;
-const SCAN_JUP_URL = `https://jup.ag/swap?sell=So11111111111111111111111111111111111111112&buy=${SCAN_MINT}`;
 const BREAKING_WINDOW_MS = 2 * 60 * 60 * 1000;
 const EMPTY_TOKENS: AlphaToken[] = [];
 const EMPTY_TRENDS: RadarTrend[] = [];
 
 type QuickFilter = "all" | "rug-check" | "momentum" | "new-launches" | "last-minute";
 
-interface AlphaAccessCheck {
-    eligible: boolean;
-    balanceUi: string;
-    requiredUi: string;
-    mint: string;
-}
-
 export default function AlphaPage() {
-    const { connected, publicKey } = useWallet();
-    const { setVisible } = useWalletModal();
-
-    const {
-        data: accessData,
-        isLoading: isAccessLoading,
-        isFetching: isAccessFetching,
-        error: accessError,
-        refetch: refetchAccess,
-    } = useQuery<AlphaAccessCheck>({
-        queryKey: ["alpha-access", publicKey?.toBase58()],
-        enabled: connected && !!publicKey,
-        staleTime: 30_000,
-        refetchInterval: 60_000,
-        retry: 1,
-        queryFn: async () => {
-            if (!publicKey) throw new Error("Wallet not connected");
-
-            const wallet = publicKey.toBase58();
-            const res = await fetch(
-                `/api/alpha/access?wallet=${encodeURIComponent(wallet)}`,
-                { cache: "no-store" }
-            );
-            const payload = await res.json().catch(() => null);
-
-            if (!res.ok || !payload?.success || !payload?.data) {
-                throw new Error(payload?.error ?? "Failed to verify SCAN balance");
-            }
-
-            return payload.data as AlphaAccessCheck;
-        },
-    });
-
-    const hasAccess = connected && !!accessData?.eligible;
     const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
 
     const { data, isLoading, error, refetch, isFetching } = useQuery<AlphaFeedResponse>({
@@ -75,7 +29,6 @@ export default function AlphaPage() {
             return res.json();
         },
         refetchInterval: 90_000,
-        enabled: hasAccess,
     });
 
     const tokens = data?.tokens ?? EMPTY_TOKENS;
@@ -106,80 +59,6 @@ export default function AlphaPage() {
     const criticalTokens = filteredTokens.filter((t) => t.alphaScore >= 60);
     const hotTokens = filteredTokens.filter((t) => t.alphaScore >= 30 && t.alphaScore < 60);
     const watchTokens = filteredTokens.filter((t) => t.alphaScore > 0 && t.alphaScore < 30);
-
-    if (!connected) {
-        return (
-            <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-10">
-                <div className="crt-panel p-10 text-center">
-                    <Shield className="w-12 h-12 text-[#ffaa00] mx-auto mb-5" />
-                    <h1 className="text-2xl sm:text-3xl text-[#ffaa00] tracking-[0.12em]">ALPHA ACCESS RESTRICTED</h1>
-                    <p className="text-sm sm:text-base text-[#00ff41]/60 tracking-wider mt-4 max-w-2xl mx-auto">
-                        THE ALPHA PAGE IS AVAILABLE ONLY TO WALLETS HOLDING AT LEAST 2,000,000 SCAN TOKENS.
-                    </p>
-                    <AccessLinks />
-                    <button
-                        onClick={() => setVisible(true)}
-                        className="mt-6 px-7 py-3 border-2 border-[#00ff41]/50 bg-[#00ff41]/10 text-[#00ff41] text-sm tracking-wider hover:bg-[#00ff41]/20 transition-all"
-                    >
-                        CONNECT WALLET
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    if (isAccessLoading || isAccessFetching) {
-        return (
-            <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
-                <div className="crt-panel p-8 text-center">
-                    <Loader2 className="w-8 h-8 animate-spin text-[#00ff41]/50 mx-auto mb-3" />
-                    <p className="text-[10px] text-[#00ff41]/40 tracking-wider">SCAN BALANCE CHECK IN PROGRESS...</p>
-                </div>
-            </div>
-        );
-    }
-
-    if (accessError) {
-        return (
-            <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
-                <div className="crt-panel crt-panel-red p-8 text-center">
-                    <AlertTriangle className="w-10 h-10 text-[#ff4400] mx-auto mb-3" />
-                    <p className="text-sm text-[#ff4400] tracking-wider">ACCESS CHECK FAILED</p>
-                    <p className="text-[10px] text-[#ff4400]/40 mt-2 tracking-wider">{String(accessError)}</p>
-                    <button
-                        onClick={() => refetchAccess()}
-                        className="mt-4 px-4 py-2 border border-[#ff4400]/50 text-[#ff4400] text-xs tracking-wider hover:bg-[#ff4400]/10 transition-colors"
-                    >
-                        RETRY
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    if (!accessData?.eligible) {
-        return (
-            <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-10">
-                <div className="crt-panel p-10 text-center">
-                    <Shield className="w-12 h-12 text-[#ffaa00] mx-auto mb-4" />
-                    <h1 className="text-2xl sm:text-3xl text-[#ffaa00] tracking-[0.12em]">INSUFFICIENT SCAN BALANCE</h1>
-                    <p className="text-sm sm:text-base text-[#00ff41]/60 tracking-wider mt-4">
-                        REQUIRED: {accessData?.requiredUi ?? "2,000,000"} SCAN
-                    </p>
-                    <p className="text-sm sm:text-base text-[#00ff41]/60 tracking-wider mt-2">
-                        CURRENT WALLET BALANCE: {accessData?.balanceUi ?? "0"} SCAN
-                    </p>
-                    <AccessLinks mint={accessData?.mint} />
-                    <button
-                        onClick={() => refetchAccess()}
-                        className="mt-6 px-6 py-2.5 border border-[#00ff41]/30 text-[#00ff41]/70 text-sm tracking-wider hover:bg-[#00ff41]/10 transition-colors"
-                    >
-                        REFRESH BALANCE
-                    </button>
-                </div>
-            </div>
-        );
-    }
 
     const lastUpdatedLabel = data?.lastUpdated ? formatTimeAgo(data.lastUpdated) : "SYNCING";
 
@@ -949,34 +828,6 @@ function scoreToRiskLevel(score: number): "low" | "medium" | "high" {
     if (score >= 65) return "high";
     if (score >= 35) return "medium";
     return "low";
-}
-
-function AccessLinks({ mint }: { mint?: string }) {
-    return (
-        <div className="mt-5">
-            <p className="text-xs text-[#00ff41]/45 tracking-wider break-all">SCAN CA: {mint ?? SCAN_MINT}</p>
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
-                <a
-                    href={SCAN_BAGS_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 border border-[#00ff41]/25 text-[11px] text-[#00ff41]/65 tracking-wider hover:text-[#00ff41] hover:border-[#00ff41]/50 hover:bg-[#00ff41]/5 transition-all"
-                >
-                    BAGS.FM
-                    <ExternalLink className="w-3 h-3" />
-                </a>
-                <a
-                    href={SCAN_JUP_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 border border-[#00aaff]/25 text-[11px] text-[#00aaff]/70 tracking-wider hover:text-[#00aaff] hover:border-[#00aaff]/45 hover:bg-[#00aaff]/5 transition-all"
-                >
-                    JUP.AG
-                    <ExternalLink className="w-3 h-3" />
-                </a>
-            </div>
-        </div>
-    );
 }
 
 

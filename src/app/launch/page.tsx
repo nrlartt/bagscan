@@ -224,7 +224,7 @@ export default function LaunchPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                signedTransaction: Buffer.from(signed.serialize()).toString("base64"),
+                signedTransaction: encodeBytesToBase64(signed.serialize()),
             }),
         });
         const data = await response.json();
@@ -238,6 +238,23 @@ export default function LaunchPage() {
         if (!connected || !publicKey || !signTransaction || !metadata) {
             setVisible(true);
             return;
+        }
+
+        const sanitizedTipWallet = tipWallet.trim();
+        if (tipLamports > 0 && !sanitizedTipWallet) {
+            setErrorMsg("TIP WALLET IS REQUIRED WHEN TIP AMOUNT IS GREATER THAN 0");
+            setTxStatus("error");
+            return;
+        }
+
+        if (sanitizedTipWallet) {
+            try {
+                new PublicKey(sanitizedTipWallet);
+            } catch {
+                setErrorMsg("TIP WALLET MUST BE A VALID SOLANA ADDRESS");
+                setTxStatus("error");
+                return;
+            }
         }
 
         setTxStatus("creating-info");
@@ -295,13 +312,18 @@ export default function LaunchPage() {
                     claimersArray,
                     basisPointsArray,
                     includePartner,
-                    tipWallet: tipWallet || undefined,
+                    tipWallet: sanitizedTipWallet || undefined,
                     tipLamports: tipLamports > 0 ? tipLamports : undefined,
                 }),
             });
             const feeData = await feeResponse.json();
             if (!feeData.success) {
                 throw new Error(feeData.error || "FAILED TO CREATE FEE SHARE CONFIG");
+            }
+
+            const configKey = feeData.data.meteoraConfigKey;
+            if (!configKey) {
+                throw new Error("FEE SHARE CONFIG DID NOT RETURN A CONFIG KEY");
             }
 
             if (feeData.data.needsCreation) {
@@ -327,8 +349,8 @@ export default function LaunchPage() {
                     tokenMint: infoData.data.tokenMint,
                     wallet,
                     initialBuyLamports,
-                    configKey: feeData.data.meteoraConfigKey,
-                    tipWallet: tipWallet || undefined,
+                    configKey,
+                    tipWallet: sanitizedTipWallet || undefined,
                     tipLamports: tipLamports > 0 ? tipLamports : undefined,
                     partnerIncluded: includePartner,
                     name: metadata.name,
@@ -756,7 +778,7 @@ function decodeTransactionData(raw: string) {
 
 function tryDecodeBase64(raw: string) {
     try {
-        const bytes = Buffer.from(raw, "base64");
+        const bytes = decodeBase64ToBytes(raw);
         VersionedTransaction.deserialize(bytes);
         return bytes;
     } catch {
@@ -776,4 +798,22 @@ function tryDecodeBase58(raw: string) {
 
 function formatError(error: unknown) {
     return error instanceof Error ? error.message : String(error);
+}
+
+function encodeBytesToBase64(bytes: Uint8Array) {
+    let binary = "";
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary);
+}
+
+function decodeBase64ToBytes(raw: string) {
+    const normalized = raw.replace(/\s+/g, "");
+    const binary = atob(normalized);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
 }
