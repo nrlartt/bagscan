@@ -30,9 +30,11 @@ import {
 import {
     ensureAlertServiceWorker,
     fetchAlertState,
+    fetchTelegramConnectState,
     logoutAlertSession,
     markAlertsAsRead,
     requestAlertSession,
+    sendTestAlert,
     subscribeBrowserPush,
     syncAlertState,
     unsubscribeBrowserPush,
@@ -42,6 +44,7 @@ import type {
     AlertNotificationItem,
     AlertPreferenceState,
     AlertStateResponse,
+    AlertTelegramConnectState,
 } from "@/lib/alerts/types";
 import { cn, shortenAddress } from "@/lib/utils";
 
@@ -78,7 +81,9 @@ function NotificationCenterInner({
     const [authError, setAuthError] = useState<string | null>(null);
     const [pushStatus, setPushStatus] = useState<PushStatus>("unknown");
     const [draft, setDraft] = useState<AlertPreferenceState | null>(null);
+    const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const connectedTelegramChatIdRef = useRef<string | null>(null);
 
     const alertsQuery = useQuery<AlertStateResponse>({
         queryKey: [QUERY_KEY_BASE, walletAddress],
@@ -101,7 +106,37 @@ function NotificationCenterInner({
         refetchOnWindowFocus: false,
     });
     const signedIn = sessionState === "authorized" || Boolean(alertsQuery.data);
-    const activeDraft = draft ?? alertsQuery.data?.preference ?? null;
+
+    const telegramConnectQuery = useQuery<AlertTelegramConnectState>({
+        queryKey: [QUERY_KEY_BASE, "telegram-connect", walletAddress],
+        enabled: open && signedIn && Boolean(walletAddress),
+        queryFn: async () => fetchTelegramConnectState(walletAddress),
+        retry: false,
+        staleTime: 0,
+        refetchInterval:
+            open &&
+            signedIn &&
+            Boolean(walletAddress) &&
+            Boolean(alertsQuery.data?.config.telegramConfigured) &&
+            !(draft ?? alertsQuery.data?.preference ?? null)?.telegramChatId
+                ? 5_000
+                : false,
+        refetchOnWindowFocus: false,
+    });
+    const activeDraft = (() => {
+        const nextDraft = draft ?? alertsQuery.data?.preference ?? null;
+        const telegramChatId = telegramConnectQuery.data?.chatId?.trim();
+
+        if (!nextDraft || !telegramChatId || nextDraft.telegramChatId === telegramChatId) {
+            return nextDraft;
+        }
+
+        return {
+            ...nextDraft,
+            telegramChatId,
+            telegramEnabled: true,
+        };
+    })();
 
     useEffect(() => {
         if (!open) return;
@@ -145,6 +180,20 @@ function NotificationCenterInner({
         };
     }, [open, signedIn, alertsQuery.data?.config.vapidPublicKey]);
 
+    useEffect(() => {
+        const chatId = telegramConnectQuery.data?.chatId?.trim();
+        if (!chatId || connectedTelegramChatIdRef.current === chatId) {
+            return;
+        }
+
+        connectedTelegramChatIdRef.current = chatId;
+        void queryClient.invalidateQueries({ queryKey: [QUERY_KEY_BASE, walletAddress] });
+    }, [
+        queryClient,
+        telegramConnectQuery.data?.chatId,
+        walletAddress,
+    ]);
+
     const saveMutation = useMutation({
         mutationFn: async (nextDraft: AlertPreferenceState) =>
             updateAlertSettings(walletAddress, {
@@ -163,14 +212,28 @@ function NotificationCenterInner({
             }),
         onSuccess: (state) => {
             setDraft(state.preference);
+            setFeedback({ tone: "success", text: "Alert settings saved." });
             queryClient.setQueryData([QUERY_KEY_BASE, walletAddress], state);
+        },
+        onError: (error) => {
+            setFeedback({
+                tone: "error",
+                text: error instanceof Error ? error.message : "Failed to save alert settings.",
+            });
         },
     });
 
     const syncMutation = useMutation({
         mutationFn: async () => syncAlertState(walletAddress),
         onSuccess: ({ state }) => {
+            setFeedback({ tone: "success", text: "Alert scan completed." });
             queryClient.setQueryData([QUERY_KEY_BASE, walletAddress], state);
+        },
+        onError: (error) => {
+            setFeedback({
+                tone: "error",
+                text: error instanceof Error ? error.message : "Alert sync failed.",
+            });
         },
     });
 
@@ -182,6 +245,7 @@ function NotificationCenterInner({
         onSuccess: async () => {
             setSessionState("authorized");
             setAuthError(null);
+            setFeedback({ tone: "success", text: "Alerts authorized for this wallet." });
             setDraft(null);
             await queryClient.invalidateQueries({ queryKey: [QUERY_KEY_BASE, walletAddress] });
         },
@@ -194,6 +258,8 @@ function NotificationCenterInner({
         mutationFn: async () => logoutAlertSession(),
         onSuccess: async () => {
             setSessionState("unauthorized");
+            connectedTelegramChatIdRef.current = null;
+            setFeedback({ tone: "success", text: "Alert session cleared." });
             setDraft(null);
             await queryClient.removeQueries({ queryKey: [QUERY_KEY_BASE, walletAddress] });
         },
@@ -202,7 +268,14 @@ function NotificationCenterInner({
     const markAllMutation = useMutation({
         mutationFn: async () => markAlertsAsRead(walletAddress, { all: true }),
         onSuccess: async () => {
+            setFeedback({ tone: "success", text: "All notifications marked as read." });
             await queryClient.invalidateQueries({ queryKey: [QUERY_KEY_BASE, walletAddress] });
+        },
+        onError: (error) => {
+            setFeedback({
+                tone: "error",
+                text: error instanceof Error ? error.message : "Failed to update notifications.",
+            });
         },
     });
 
@@ -224,7 +297,34 @@ function NotificationCenterInner({
         onSuccess: (state) => {
             setPushStatus(state.preference.browserPushEnabled ? "subscribed" : "not-subscribed");
             setDraft(state.preference);
+            setFeedback({
+                tone: "success",
+                text: state.preference.browserPushEnabled
+                    ? "Browser push enabled."
+                    : "Browser push disabled.",
+            });
             queryClient.setQueryData([QUERY_KEY_BASE, walletAddress], state);
+        },
+        onError: (error) => {
+            setFeedback({
+                tone: "error",
+                text: error instanceof Error ? error.message : "Failed to update browser push.",
+            });
+        },
+    });
+
+    const testMutation = useMutation({
+        mutationFn: async (channel: "inbox" | "push" | "telegram") =>
+            sendTestAlert(walletAddress, channel),
+        onSuccess: async ({ message }) => {
+            setFeedback({ tone: "success", text: message });
+            await queryClient.invalidateQueries({ queryKey: [QUERY_KEY_BASE, walletAddress] });
+        },
+        onError: (error) => {
+            setFeedback({
+                tone: "error",
+                text: error instanceof Error ? error.message : "Test alert failed.",
+            });
         },
     });
 
@@ -327,18 +427,22 @@ function NotificationCenterInner({
                                     setDraft={setDraft}
                                     pushStatus={pushStatus}
                                     alertsQuery={alertsQuery}
+                                    telegramConnectQuery={telegramConnectQuery}
                                     notifications={notifications}
                                     unreadCount={unreadCount}
+                                    feedback={feedback}
                                     savePending={saveMutation.isPending}
                                     syncPending={syncMutation.isPending}
                                     pushPending={pushMutation.isPending}
                                     logoutPending={logoutMutation.isPending}
                                     markAllPending={markAllMutation.isPending}
-                                    onSave={() => draft ? saveMutation.mutate(draft) : undefined}
+                                    testPending={testMutation.isPending}
+                                    onSave={() => activeDraft ? saveMutation.mutate(activeDraft) : undefined}
                                     onSync={() => syncMutation.mutate()}
-                                    onTogglePush={() => draft ? pushMutation.mutate(!draft.browserPushEnabled) : undefined}
+                                    onTogglePush={() => activeDraft ? pushMutation.mutate(!activeDraft.browserPushEnabled) : undefined}
                                     onMarkAll={() => markAllMutation.mutate()}
                                     onResetSession={() => logoutMutation.mutate()}
+                                    onSendTest={(channel) => testMutation.mutate(channel)}
                                     onRefresh={async () => {
                                         await queryClient.invalidateQueries({ queryKey: [QUERY_KEY_BASE, walletAddress] });
                                     }}
@@ -358,18 +462,22 @@ function AlertCenterBody({
     setDraft,
     pushStatus,
     alertsQuery,
+    telegramConnectQuery,
     notifications,
     unreadCount,
+    feedback,
     savePending,
     syncPending,
     pushPending,
     logoutPending,
     markAllPending,
+    testPending,
     onSave,
     onSync,
     onTogglePush,
     onMarkAll,
     onResetSession,
+    onSendTest,
     onRefresh,
 }: {
     walletAddress: string;
@@ -377,18 +485,22 @@ function AlertCenterBody({
     setDraft: Dispatch<SetStateAction<AlertPreferenceState | null>>;
     pushStatus: PushStatus;
     alertsQuery: UseQueryResult<AlertStateResponse, Error>;
+    telegramConnectQuery: UseQueryResult<AlertTelegramConnectState, Error>;
     notifications: AlertNotificationItem[];
     unreadCount: number;
+    feedback: { tone: "success" | "error"; text: string } | null;
     savePending: boolean;
     syncPending: boolean;
     pushPending: boolean;
     logoutPending: boolean;
     markAllPending: boolean;
+    testPending: boolean;
     onSave: () => void;
     onSync: () => void;
     onTogglePush: () => void;
     onMarkAll: () => void;
     onResetSession: () => void;
+    onSendTest: (channel: "inbox" | "push" | "telegram") => void;
     onRefresh: () => Promise<void>;
 }) {
     return (
@@ -398,6 +510,19 @@ function AlertCenterBody({
                 <SmallStat label="PUSH" value={pushStatus === "subscribed" ? "ARMED" : "OFF"} icon={<Smartphone className="h-4 w-4" />} />
                 <SmallStat label="TG" value={draft?.telegramEnabled ? "ARMED" : "OFF"} icon={<Send className="h-4 w-4" />} />
             </div>
+
+            {feedback ? (
+                <div
+                    className={cn(
+                        "border px-3 py-3 text-sm leading-6",
+                        feedback.tone === "success"
+                            ? "border-[#00ff41]/16 bg-[#00ff41]/8 text-[#9dffb8]"
+                            : "border-[#ff8f70]/20 bg-[#ff8f70]/8 text-[#ffb39f]"
+                    )}
+                >
+                    {feedback.text}
+                </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-2">
                 <ActionButton
@@ -472,15 +597,68 @@ function AlertCenterBody({
                             label="Telegram alerts"
                             description={
                                 alertsQuery.data?.config.telegramConfigured
-                                    ? "Send alerts to your Telegram chat or group."
+                                    ? "Send alerts to your Telegram inbox without leaving BagScan."
                                     : "Set TELEGRAM_BOT_TOKEN first to enable Telegram delivery."
                             }
                             checked={draft.telegramEnabled}
                             disabled={!alertsQuery.data?.config.telegramConfigured}
                             onChange={(checked) => setDraft({ ...draft, telegramEnabled: checked })}
                         />
+                        <div className="border border-white/8 bg-white/[0.02] px-3 py-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                    <p className="text-[11px] uppercase tracking-[0.18em] text-[#d8ffe6]">Connect Telegram</p>
+                                    <p className="mt-2 text-sm leading-6 text-white/52">
+                                        {telegramConnectQuery.data?.connected
+                                            ? telegramConnectQuery.data.chatLabel
+                                                ? `Connected to ${telegramConnectQuery.data.chatLabel}. Telegram alerts are armed for this wallet.`
+                                                : "Telegram is connected and ready for delivery."
+                                            : telegramConnectQuery.data?.connectUrl
+                                                ? "Use the connect link, tap Start in the bot, then BagScan will detect the chat automatically."
+                                                : telegramConnectQuery.data?.error || "Telegram bot profile is not available right now."}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => void telegramConnectQuery.refetch()}
+                                    disabled={telegramConnectQuery.isFetching}
+                                    className="inline-flex h-9 items-center gap-2 border border-white/10 bg-white/[0.03] px-3 text-[10px] tracking-[0.16em] text-white/72 transition-all hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                    <RefreshCw className={cn("h-3.5 w-3.5", telegramConnectQuery.isFetching && "animate-spin")} />
+                                    {telegramConnectQuery.isFetching ? "CHECKING..." : "CHECK STATUS"}
+                                </button>
+                            </div>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                                {telegramConnectQuery.data?.connectUrl ? (
+                                    <a
+                                        href={telegramConnectQuery.data.connectUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex h-9 items-center gap-2 border border-[#00aaff]/18 bg-[#00aaff]/10 px-3 text-[10px] tracking-[0.16em] text-[#8dd8ff] transition-all hover:bg-[#00aaff]/14"
+                                    >
+                                        <Send className="h-3.5 w-3.5" />
+                                        CONNECT TELEGRAM
+                                    </a>
+                                ) : null}
+                                {telegramConnectQuery.data?.botUrl ? (
+                                    <a
+                                        href={telegramConnectQuery.data.botUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex h-9 items-center gap-2 border border-[#ffaa00]/18 bg-[#ffaa00]/10 px-3 text-[10px] tracking-[0.16em] text-[#ffd37a] transition-all hover:bg-[#ffaa00]/14"
+                                    >
+                                        OPEN BOT
+                                    </a>
+                                ) : null}
+                            </div>
+                            {telegramConnectQuery.data?.expiresAt && !telegramConnectQuery.data.connected ? (
+                                <p className="mt-3 text-[11px] leading-6 text-white/45">
+                                    Current connect link refreshes {formatDistanceToNowStrict(new Date(telegramConnectQuery.data.expiresAt), { addSuffix: true })}.
+                                </p>
+                            ) : null}
+                        </div>
                         <TextField
-                            label="Telegram Chat ID"
+                            label="Telegram Chat ID (Advanced)"
                             value={draft.telegramChatId ?? ""}
                             placeholder="123456789 or -100..."
                             onChange={(value) => setDraft({ ...draft, telegramChatId: value })}
@@ -542,6 +720,44 @@ function AlertCenterBody({
                         />
                     </div>
                 ) : null}
+            </section>
+
+            <section className="border border-[#00ff41]/12 bg-black/35 p-4">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[#00ff41]/52">Channel Checks</p>
+                <h4 className="mt-1 text-sm tracking-[0.16em] text-[#d8ffe6]">Test each delivery path</h4>
+                <p className="mt-2 text-sm leading-6 text-white/52">
+                    Send a real sample alert to confirm inbox delivery, browser push, and Telegram routing before relying on automation.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <ActionButton
+                        label={testPending ? "SENDING..." : "TEST INBOX"}
+                        icon={<Bell className="h-3.5 w-3.5" />}
+                        onClick={() => onSendTest("inbox")}
+                        disabled={testPending}
+                    />
+                    <ActionButton
+                        label={testPending ? "SENDING..." : "TEST PUSH"}
+                        icon={<Smartphone className="h-3.5 w-3.5" />}
+                        onClick={() => onSendTest("push")}
+                        disabled={
+                            testPending ||
+                            pushPending ||
+                            !alertsQuery.data?.config.browserPushConfigured ||
+                            !draft?.browserPushEnabled
+                        }
+                    />
+                    <ActionButton
+                        label={testPending ? "SENDING..." : "TEST TG"}
+                        icon={<Send className="h-3.5 w-3.5" />}
+                        onClick={() => onSendTest("telegram")}
+                        disabled={
+                            testPending ||
+                            !alertsQuery.data?.config.telegramConfigured ||
+                            !draft?.telegramEnabled ||
+                            !draft?.telegramChatId?.trim()
+                        }
+                    />
+                </div>
             </section>
 
             <div className="flex flex-wrap items-center gap-2">

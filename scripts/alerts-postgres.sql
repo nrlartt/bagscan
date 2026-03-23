@@ -1,0 +1,108 @@
+DO $$
+BEGIN
+    CREATE TYPE "AlertKind" AS ENUM (
+        'alpha_hot',
+        'alpha_critical',
+        'portfolio_profit',
+        'portfolio_drawdown',
+        'fee_claim',
+        'system'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    CREATE TYPE "AlertSeverity" AS ENUM (
+        'info',
+        'hot',
+        'critical'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS "AlertPreference" (
+    "id" TEXT NOT NULL,
+    "walletAddress" TEXT NOT NULL,
+    "inAppEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "browserPushEnabled" BOOLEAN NOT NULL DEFAULT FALSE,
+    "telegramEnabled" BOOLEAN NOT NULL DEFAULT FALSE,
+    "alphaHotEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "alphaCriticalEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "portfolioProfitEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "portfolioDrawdownEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "feesEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "profitThresholdPercent" DOUBLE PRECISION NOT NULL DEFAULT 25,
+    "drawdownThresholdPercent" DOUBLE PRECISION NOT NULL DEFAULT -15,
+    "claimableFeesThresholdSol" DOUBLE PRECISION NOT NULL DEFAULT 0.25,
+    "telegramChatId" TEXT,
+    "lastEvaluatedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "AlertPreference_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "AlertPreference_walletAddress_key"
+    ON "AlertPreference" ("walletAddress");
+
+CREATE INDEX IF NOT EXISTS "AlertPreference_lastEvaluatedAt_idx"
+    ON "AlertPreference" ("lastEvaluatedAt");
+
+CREATE TABLE IF NOT EXISTS "PushSubscription" (
+    "id" TEXT NOT NULL,
+    "walletAddress" TEXT NOT NULL,
+    "endpoint" TEXT NOT NULL,
+    "p256dh" TEXT NOT NULL,
+    "auth" TEXT NOT NULL,
+    "expirationTime" TEXT,
+    "userAgent" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "PushSubscription_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "PushSubscription_walletAddress_fkey"
+        FOREIGN KEY ("walletAddress")
+        REFERENCES "AlertPreference" ("walletAddress")
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "PushSubscription_endpoint_key"
+    ON "PushSubscription" ("endpoint");
+
+CREATE INDEX IF NOT EXISTS "PushSubscription_walletAddress_idx"
+    ON "PushSubscription" ("walletAddress");
+
+CREATE TABLE IF NOT EXISTS "AlertNotification" (
+    "id" TEXT NOT NULL,
+    "walletAddress" TEXT NOT NULL,
+    "kind" "AlertKind" NOT NULL,
+    "severity" "AlertSeverity" NOT NULL,
+    "title" TEXT NOT NULL,
+    "message" TEXT NOT NULL,
+    "eventKey" TEXT NOT NULL,
+    "tokenMint" TEXT,
+    "actionUrl" TEXT,
+    "imageUrl" TEXT,
+    "readAt" TIMESTAMP(3),
+    "deliveredPushAt" TIMESTAMP(3),
+    "deliveredTelegramAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "AlertNotification_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "AlertNotification_walletAddress_fkey"
+        FOREIGN KEY ("walletAddress")
+        REFERENCES "AlertPreference" ("walletAddress")
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "AlertNotification_walletAddress_eventKey_key"
+    ON "AlertNotification" ("walletAddress", "eventKey");
+
+CREATE INDEX IF NOT EXISTS "AlertNotification_walletAddress_createdAt_idx"
+    ON "AlertNotification" ("walletAddress", "createdAt" DESC);
+
+CREATE INDEX IF NOT EXISTS "AlertNotification_walletAddress_readAt_idx"
+    ON "AlertNotification" ("walletAddress", "readAt");

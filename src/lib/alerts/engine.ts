@@ -11,6 +11,7 @@ import {
 import { prisma } from "@/lib/db";
 import { generateAlphaFeed } from "@/lib/alpha/engine";
 import { getPortfolioForWallet } from "@/lib/portfolio/service";
+import { getTelegramConfig } from "./telegram";
 import type { AlphaToken } from "@/lib/alpha/types";
 import type { PortfolioHolding } from "@/lib/portfolio/types";
 import type {
@@ -94,14 +95,6 @@ function getPushConfig() {
     };
 }
 
-function getTelegramConfig() {
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    return {
-        configured: Boolean(botToken),
-        botToken,
-    };
-}
-
 function hasAnyDeliveryEnabled(preference: AlertPreferenceRecord) {
     return (
         preference.inAppEnabled ||
@@ -154,7 +147,7 @@ function buildAlphaCriticalCandidates(tokens: AlphaToken[]): AlertCandidate[] {
                 token.priceChange24h !== undefined ? `Move ${formatPercent(token.priceChange24h)}` : null,
                 token.txCount24h ? `${token.txCount24h} tx/24h` : null,
                 token.trendingNowScore ? `trend ${token.trendingNowScore}` : null,
-            ].filter(Boolean).join(" • "),
+            ].filter(Boolean).join(" | "),
             eventKey: `alpha-critical:${token.tokenMint}:${getEventBucket(4)}`,
             tokenMint: token.tokenMint,
             actionUrl: createActionUrl(token.tokenMint),
@@ -171,8 +164,8 @@ function buildAlphaHotCandidates(tokens: AlphaToken[]): AlertCandidate[] {
             severity: toSeverity((token.trendingNowScore ?? 0) >= 110 ? "critical" : "hot"),
             title: `${formatTokenLabel(token.symbol, token.tokenMint)} is trending now`,
             message:
-                token.trendingReasons?.join(" • ") ||
-                `${token.txCount24h ?? 0} tx in 24h • ${formatPercent(token.priceChange24h ?? 0)}`,
+                token.trendingReasons?.join(" | ") ||
+                `${token.txCount24h ?? 0} tx in 24h | ${formatPercent(token.priceChange24h ?? 0)}`,
             eventKey: `alpha-hot:${token.tokenMint}:${getEventBucket(2)}`,
             tokenMint: token.tokenMint,
             actionUrl: createActionUrl(token.tokenMint),
@@ -195,7 +188,7 @@ function buildProfitCandidates(
             kind: PrismaAlertKind.portfolio_profit,
             severity: toSeverity((holding.unrealizedPnlPercent ?? 0) >= thresholdPercent * 1.8 ? "critical" : "hot"),
             title: `${formatTokenLabel(holding.symbol, holding.mint)} is above your profit target`,
-            message: `${formatPercent(holding.unrealizedPnlPercent ?? 0)} unrealized • value ${holding.valueUsd?.toFixed(2) ? `$${holding.valueUsd.toFixed(2)}` : "$0.00"}`,
+            message: `${formatPercent(holding.unrealizedPnlPercent ?? 0)} unrealized | value ${holding.valueUsd?.toFixed(2) ? `$${holding.valueUsd.toFixed(2)}` : "$0.00"}`,
             eventKey: `portfolio-profit:${holding.mint}:${thresholdPercent}:${getEventBucket(6)}`,
             tokenMint: holding.mint,
             actionUrl: createActionUrl(holding.mint, "/portfolio"),
@@ -218,7 +211,7 @@ function buildDrawdownCandidates(
             kind: PrismaAlertKind.portfolio_drawdown,
             severity: toSeverity((holding.unrealizedPnlPercent ?? 0) <= thresholdPercent * 1.75 ? "critical" : "hot"),
             title: `${formatTokenLabel(holding.symbol, holding.mint)} fell below your drawdown limit`,
-            message: `${formatPercent(holding.unrealizedPnlPercent ?? 0)} unrealized • value ${holding.valueUsd?.toFixed(2) ? `$${holding.valueUsd.toFixed(2)}` : "$0.00"}`,
+            message: `${formatPercent(holding.unrealizedPnlPercent ?? 0)} unrealized | value ${holding.valueUsd?.toFixed(2) ? `$${holding.valueUsd.toFixed(2)}` : "$0.00"}`,
             eventKey: `portfolio-drawdown:${holding.mint}:${thresholdPercent}:${getEventBucket(4)}`,
             tokenMint: holding.mint,
             actionUrl: createActionUrl(holding.mint, "/portfolio"),
@@ -300,7 +293,7 @@ async function sendBrowserPush(
                 ? notifications
                     .slice(0, 3)
                     .map((item) => item.title)
-                    .join(" • ")
+                    .join(" | ")
                 : top.message,
         url: top.actionUrl || PUSH_ACTION_FALLBACK,
         tag: `bagscan-alerts-${preference.walletAddress}`,
@@ -524,6 +517,29 @@ export async function updateAlertPreference(
     walletAddress: string,
     input: AlertPreferenceUpdateInput
 ) {
+    const current = await getOrCreatePreference(walletAddress);
+    const nextTelegramEnabled = input.telegramEnabled ?? current.telegramEnabled;
+    const nextTelegramChatId =
+        input.telegramChatId === undefined
+            ? current.telegramChatId
+            : input.telegramChatId?.trim() || null;
+
+    if (nextTelegramEnabled && !nextTelegramChatId) {
+        throw new Error("Telegram alerts require a Telegram chat ID");
+    }
+
+    if (input.profitThresholdPercent !== undefined && input.profitThresholdPercent <= 0) {
+        throw new Error("Profit threshold must be greater than 0");
+    }
+
+    if (input.drawdownThresholdPercent !== undefined && input.drawdownThresholdPercent >= 0) {
+        throw new Error("Drawdown threshold must be below 0");
+    }
+
+    if (input.claimableFeesThresholdSol !== undefined && input.claimableFeesThresholdSol < 0) {
+        throw new Error("Claimable SOL threshold cannot be negative");
+    }
+
     return prisma.alertPreference.update({
         where: { walletAddress },
         data: {
@@ -541,7 +557,7 @@ export async function updateAlertPreference(
             telegramChatId:
                 input.telegramChatId === undefined
                     ? undefined
-                    : input.telegramChatId?.trim() || null,
+                    : nextTelegramChatId,
         },
     });
 }
@@ -640,5 +656,72 @@ export async function runAlertsCron(limit = 100) {
     return {
         walletsProcessed: preferences.length,
         createdCount,
+    };
+}
+
+export async function sendTestAlert(
+    walletAddress: string,
+    channel: "inbox" | "push" | "telegram"
+) {
+    const preference = await getOrCreatePreference(walletAddress);
+    const notification = await prisma.alertNotification.create({
+        data: {
+            walletAddress,
+            kind: PrismaAlertKind.system,
+            severity:
+                channel === "inbox"
+                    ? PrismaAlertSeverity.info
+                    : PrismaAlertSeverity.hot,
+            title: `BagScan ${channel.toUpperCase()} test`,
+            message:
+                channel === "inbox"
+                    ? "Your in-app notification center is working."
+                    : channel === "push"
+                        ? "Your browser push channel is armed and receiving alerts."
+                        : "Your Telegram channel is connected and receiving alerts.",
+            eventKey: `system-test:${channel}:${Date.now()}`,
+            actionUrl: "/alpha",
+        },
+    });
+
+    if (channel === "push") {
+        if (!getPushConfig().configured) {
+            throw new Error("Browser push is not configured on the server");
+        }
+        if (!preference.browserPushEnabled) {
+            throw new Error("Enable browser push first");
+        }
+
+        const subscriptions = await prisma.pushSubscription.findMany({
+            where: { walletAddress },
+        });
+        if (subscriptions.length === 0) {
+            throw new Error("No browser push subscription found for this wallet");
+        }
+
+        await sendBrowserPush(preference, [notification], subscriptions);
+    }
+
+    if (channel === "telegram") {
+        if (!getTelegramConfig().configured) {
+            throw new Error("Telegram is not configured on the server");
+        }
+        if (!preference.telegramEnabled) {
+            throw new Error("Enable Telegram alerts first");
+        }
+        if (!preference.telegramChatId) {
+            throw new Error("Add a Telegram chat ID first");
+        }
+
+        await sendTelegram(preference, [notification]);
+    }
+
+    return {
+        message:
+            channel === "inbox"
+                ? "Test alert created in your inbox."
+                : channel === "push"
+                    ? "Test push sent to this browser."
+                    : "Test alert sent to Telegram.",
     };
 }

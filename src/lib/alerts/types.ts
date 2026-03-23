@@ -6,6 +6,7 @@ export type AlertKind =
     | "portfolio_drawdown"
     | "fee_claim"
     | "system";
+export type AlertTestChannel = "inbox" | "push" | "telegram";
 
 export interface AlertPreferenceState {
     walletAddress: string;
@@ -52,6 +53,18 @@ export interface AlertStateResponse {
     };
 }
 
+export interface AlertTelegramConnectState {
+    configured: boolean;
+    connected: boolean;
+    botUsername?: string | null;
+    botUrl?: string | null;
+    connectUrl?: string | null;
+    expiresAt?: string | null;
+    chatId?: string | null;
+    chatLabel?: string | null;
+    error?: string | null;
+}
+
 export interface AlertSyncResponse {
     state: AlertStateResponse;
     createdCount: number;
@@ -70,4 +83,8 @@ export interface AlertPreferenceUpdateInput {
     drawdownThresholdPercent?: number;
     claimableFeesThresholdSol?: number;
     telegramChatId?: string | null;
+}
+
+export interface AlertTestResponse {
+    message: string;
 }

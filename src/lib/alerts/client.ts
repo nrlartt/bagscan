@@ -1,6 +1,9 @@
 "use client";
 
 import type {
+    AlertTelegramConnectState,
+    AlertTestChannel,
+    AlertTestResponse,
     AlertPreferenceUpdateInput,
     AlertStateResponse,
     AlertSyncResponse,
@@ -197,4 +200,26 @@ export async function unsubscribeBrowserPush(wallet: string) {
     });
 
     await subscription.unsubscribe();
+}
+
+export async function sendTestAlert(wallet: string, channel: AlertTestChannel) {
+    const response = await fetch("/api/alerts/test", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            ...buildAuthHeaders(wallet),
+        },
+        body: JSON.stringify({ channel }),
+    });
+
+    return parseApiResponse<AlertTestResponse>(response);
+}
+
+export async function fetchTelegramConnectState(wallet: string) {
+    const response = await fetch("/api/alerts/telegram/connect", {
+        cache: "no-store",
+        headers: buildAuthHeaders(wallet),
+    });
+
+    return parseApiResponse<AlertTelegramConnectState>(response);
 }
