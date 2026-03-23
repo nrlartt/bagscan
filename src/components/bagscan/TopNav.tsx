@@ -2,17 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { Rocket, Info, Menu, X, Zap, Scan, Bot, Wallet } from "lucide-react";
 import { useState, useEffect } from "react";
 import { BagLogo } from "./BagLogo";
-
-const WalletMultiButtonDynamic = dynamic(
-    async () =>
-        (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
-    { ssr: false }
-);
+import { WalletPortfolioButton } from "./WalletPortfolioButton";
 
 const NAV_ITEMS = [
     { href: "/", label: "DISCOVER", icon: Scan },
@@ -136,7 +130,7 @@ export function TopNav() {
                             </div>
                         </div>
 
-                        <WalletMultiButtonDynamic />
+                        <WalletPortfolioButton key={pathname} />
                         <button
                             className="md:hidden p-2 text-[#00ff41]/60 hover:text-[#00ff41] transition-colors border border-[#00ff41]/30"
                             onClick={() => setMobileOpen(!mobileOpen)}

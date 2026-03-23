@@ -21,13 +21,8 @@ import {
     Wallet,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
+import { fetchPortfolio } from "@/lib/portfolio/client";
 import type { PortfolioResponse } from "@/lib/portfolio/types";
-
-interface PortfolioApiResponse {
-    success: boolean;
-    data?: PortfolioResponse;
-    error?: string;
-}
 
 export default function PortfolioPage() {
     const { publicKey, connected } = useWallet();
@@ -47,24 +42,15 @@ export default function PortfolioPage() {
         }
     }, [deferredWallet]);
 
-    const portfolioQuery = useQuery<PortfolioApiResponse>({
+    const portfolioQuery = useQuery<PortfolioResponse>({
         queryKey: ["portfolio", deferredWallet],
         enabled: Boolean(deferredWallet) && !walletError,
-        queryFn: async () => {
-            const res = await fetch(`/api/portfolio?wallet=${encodeURIComponent(deferredWallet)}`, {
-                cache: "no-store",
-            });
-            const payload = (await res.json()) as PortfolioApiResponse;
-            if (!res.ok || !payload.success || !payload.data) {
-                throw new Error(payload.error ?? "Failed to load portfolio");
-            }
-            return payload;
-        },
+        queryFn: () => fetchPortfolio(deferredWallet),
         staleTime: 20_000,
         refetchInterval: 45_000,
     });
 
-    const portfolio = portfolioQuery.data?.data;
+    const portfolio = portfolioQuery.data;
     const summary = portfolio?.summary;
 
     return (
