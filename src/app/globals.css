@@ -36,6 +36,7 @@ body {
     linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
   background-size: 20px 20px;
+  overflow-x: hidden;
 }
 
 /* â”€â”€ CRT Scan Lines Overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -943,6 +944,8 @@ select option {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  max-width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
   padding: 0.7rem 0.95rem;
@@ -1021,6 +1024,7 @@ select option {
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
+  flex-shrink: 0;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 999px;
   padding: 0.55rem 0.8rem;
@@ -1035,6 +1039,7 @@ select option {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  max-width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   padding: 0.42rem 0.72rem;
@@ -1042,6 +1047,7 @@ select option {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   line-height: 1.2;
+  white-space: normal;
 }
 
 .alpha-metric-grid {
@@ -1066,9 +1072,54 @@ select option {
     border-radius: 24px;
   }
 
+  .alpha-hero-mark {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+  }
+
+  .alpha-kicker {
+    letter-spacing: 0.28em;
+  }
+
+  .alpha-hero-title {
+    letter-spacing: 0.12em;
+  }
+
+  .alpha-hero-metric {
+    min-height: 0;
+    padding: 1rem;
+    border-radius: 20px;
+  }
+
+  .alpha-inline-chip {
+    padding: 0.58rem 0.8rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+  }
+
   .alpha-status-card,
   .alpha-section-panel,
   .alpha-card-shell {
     border-radius: 24px;
+  }
+
+  .alpha-status-card {
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .alpha-card-shell {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .alpha-metric-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .alpha-metric-tile {
+    min-height: 0;
   }
 }

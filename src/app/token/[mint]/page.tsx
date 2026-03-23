@@ -97,7 +97,7 @@ export default function TokenDetailPage() {
                 <div className="lg:col-span-2 space-y-6">
                     {/* Hero */}
                     <div className="crt-panel p-6 animate-fade-in-scale">
-                        <div className="flex items-start gap-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                             <div className="relative w-16 h-16 overflow-hidden flex-shrink-0 border-2 border-[#00ff41]/30" style={{ boxShadow: '0 0 12px rgba(0,255,65,0.1)' }}>
                                 {token.image ? (
                                     <Image src={token.image} alt={token.name ?? "Token"} fill className="object-cover" unoptimized />
@@ -132,7 +132,7 @@ export default function TokenDetailPage() {
                                 </div>
 
                                 {token.priceUsd !== undefined && (
-                                    <div className="flex items-baseline gap-3 mt-2">
+                                    <div className="mt-2 flex flex-wrap items-baseline gap-3">
                                         <span className="text-xl text-[#00ff41] tracking-wider" style={{ textShadow: '0 0 12px rgba(0,255,65,0.3)' }}>
                                             {formatCurrency(token.priceUsd, { compact: false, decimals: 6 })}
                                         </span>
@@ -275,13 +275,13 @@ export default function TokenDetailPage() {
                                 {token.pairCreatedAt && <InfoRow label="LAUNCH DATE" value={formatLaunchDate(token.pairCreatedAt)} />}
                                 {token.dexId && <InfoRow label="DEX" value={token.dexId} />}
                                 {token.dbcPoolKey && (
-                                    <div className="flex items-center justify-between py-1">
-                                        <span className="text-[10px] text-[#00ff41]/25 tracking-[0.15em]">DBC POOL</span>
-                                        <CopyButton value={token.dbcPoolKey} label={shortenAddress(token.dbcPoolKey)} />
-                                    </div>
-                                )}
+                                        <div className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:justify-between">
+                                            <span className="text-[10px] text-[#00ff41]/25 tracking-[0.15em]">DBC POOL</span>
+                                            <CopyButton value={token.dbcPoolKey} label={shortenAddress(token.dbcPoolKey)} />
+                                        </div>
+                                    )}
                                 {token.dammV2PoolKey && (
-                                    <div className="flex items-center justify-between py-1">
+                                    <div className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:justify-between">
                                         <span className="text-[10px] text-[#00ff41]/25 tracking-[0.15em]">DAMM V2 POOL</span>
                                         <CopyButton value={token.dammV2PoolKey} label={shortenAddress(token.dammV2PoolKey)} />
                                     </div>
@@ -314,7 +314,7 @@ export default function TokenDetailPage() {
                                 )}
                                 <InfoRow label="DISPLAY" value={token.creatorDisplay} />
                                 {token.twitterUsername && (
-                                    <div className="flex items-center justify-between py-1">
+                                    <div className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:justify-between">
                                         <span className="text-[10px] text-[#00ff41]/25 tracking-[0.15em]">TWITTER</span>
                                         <a
                                             href={`https://twitter.com/${token.twitterUsername}`}
@@ -328,7 +328,7 @@ export default function TokenDetailPage() {
                                     </div>
                                 )}
                                 {token.creatorWallet && (
-                                    <div className="flex items-center justify-between py-1">
+                                    <div className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:justify-between">
                                         <span className="text-[10px] text-[#00ff41]/25 tracking-[0.15em]">WALLET</span>
                                         <CopyButton value={token.creatorWallet} label={shortenAddress(token.creatorWallet)} />
                                     </div>
@@ -492,9 +492,9 @@ function FeeShareTable({ stats }: { stats: BagsClaimStatEntry[] }) {
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
     if (!value) return null;
     return (
-        <div className="flex items-center justify-between py-1">
+        <div className="flex flex-col gap-1 py-1 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-[10px] text-[#00ff41]/25 tracking-[0.15em]">{label}</span>
-            <span className="text-[11px] text-[#00ff41]/60 tracking-wider">{value}</span>
+            <span className="break-words text-[11px] text-[#00ff41]/60 tracking-wider sm:text-right">{value}</span>
         </div>
     );
 }

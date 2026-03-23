@@ -410,13 +410,13 @@ export default function LaunchPage() {
                 <p className="mt-2 text-[10px] tracking-wider text-[#00ff41]/30">CREATE A TOKEN AND DEPLOY THROUGH BAGSCAN</p>
             </div>
 
-            <div className="mb-8 flex items-center justify-center gap-2">
+            <div className="mb-8 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
                 {[1, 2, 3, 4].map((currentStep) => (
-                    <div key={currentStep} className="flex items-center gap-2">
-                        <div className={cn("flex h-8 w-8 items-center justify-center border-2 text-[10px] tracking-wider transition-all", step >= currentStep ? "border-[#00ff41]/60 bg-[#00ff41]/15 text-[#00ff41]" : "border-[#00ff41]/15 bg-black text-[#00ff41]/25")}>
+                    <div key={currentStep} className="flex items-center gap-1.5 sm:gap-2">
+                        <div className={cn("flex h-7 w-7 items-center justify-center border-2 text-[10px] tracking-wider transition-all sm:h-8 sm:w-8", step >= currentStep ? "border-[#00ff41]/60 bg-[#00ff41]/15 text-[#00ff41]" : "border-[#00ff41]/15 bg-black text-[#00ff41]/25")}>
                             {step > currentStep ? <Check className="h-4 w-4" /> : currentStep}
                         </div>
-                        {currentStep < 4 && <div className={cn("h-0.5 w-8", step > currentStep ? "bg-[#00ff41]/40" : "bg-[#00ff41]/10")} />}
+                        {currentStep < 4 && <div className={cn("h-0.5 w-4 sm:w-8", step > currentStep ? "bg-[#00ff41]/40" : "bg-[#00ff41]/10")} />}
                     </div>
                 ))}
             </div>
@@ -424,7 +424,7 @@ export default function LaunchPage() {
             {step === 1 && (
                 <form onSubmit={handleSubmit(onMetadataSubmit)} className="space-y-4">
                     <div className="panel-header">TOKEN METADATA</div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <Field label="NAME *" error={errors.name?.message}><input {...register("name")} placeholder="My Token" className={inputClass} /></Field>
                         <Field label="SYMBOL *" error={errors.symbol?.message}><input {...register("symbol")} placeholder="TKN" className={inputClass} /></Field>
                     </div>
@@ -435,7 +435,7 @@ export default function LaunchPage() {
                     <div>
                         <label className="mb-1 block text-[9px] tracking-[0.2em] text-[#00ff41]/25">TOKEN IMAGE</label>
                         {imagePreview ? (
-                            <div className="flex items-center gap-4 border border-[#00ff41]/25 bg-black/60 p-3">
+                            <div className="flex flex-col gap-4 border border-[#00ff41]/25 bg-black/60 p-3 sm:flex-row sm:items-center">
                                 <div className="relative h-20 w-20 overflow-hidden border border-[#00ff41]/20"><Image src={imagePreview} alt="Preview" fill className="object-cover" unoptimized /></div>
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-[10px] tracking-wider text-[#00ff41]/60">{imageFile?.name}</p>
@@ -455,7 +455,7 @@ export default function LaunchPage() {
                         {imageError && <p className="mt-2 text-[9px] tracking-wider text-[#ff4400]/60">{imageError}</p>}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <Field label="IMAGE URL" error={errors.imageUrl?.message}><input {...register("imageUrl")} placeholder="https://example.com/token.png" className={inputClass} /></Field>
                         <Field label="METADATA URL" error={errors.metadataUrl?.message}><input {...register("metadataUrl")} placeholder="https://example.com/metadata.json" className={inputClass} /></Field>
                     </div>
@@ -470,7 +470,7 @@ export default function LaunchPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <Field label="WEBSITE" error={errors.website?.message}><input {...register("website")} placeholder="https://..." className={inputClass} /></Field>
                         <Field label="TWITTER / X" error={errors.twitter?.message}><input {...register("twitter")} placeholder="@handle or URL" className={inputClass} /></Field>
                         <Field label="TELEGRAM" error={errors.telegram?.message}><input {...register("telegram")} placeholder="@group or URL" className={inputClass} /></Field>
@@ -498,13 +498,13 @@ export default function LaunchPage() {
                     </div>
 
                     {claimers.map((claimer, index) => (
-                        <div key={index} className="flex items-end gap-3 border border-[#00ff41]/10 bg-black/60 p-3">
+                        <div key={index} className="flex flex-col gap-3 border border-[#00ff41]/10 bg-black/60 p-3 sm:flex-row sm:items-end">
                             <div className="flex-1">
                                 <label className="mb-1 block text-[9px] tracking-[0.15em] text-[#00ff41]/25">RECIPIENT {index + 1}</label>
                                 <input value={claimer.recipient} onChange={(event) => setClaimerField(index, "recipient", event.target.value)} placeholder="Wallet or provider:username" className={inputClass} />
                                 {claimer.resolvedWallet && <p className="mt-1 text-[8px] tracking-wider text-[#00ff41]/25">RESOLVED: {shortenAddress(claimer.resolvedWallet)}</p>}
                             </div>
-                            <div className="w-28">
+                            <div className="w-full sm:w-28">
                                 <label className="mb-1 block text-[9px] tracking-[0.15em] text-[#00ff41]/25">BPS</label>
                                 <input type="number" min="0" max="10000" value={claimer.bps} onChange={(event) => setClaimerField(index, "bps", event.target.value)} className={inputClass} />
                             </div>
@@ -516,13 +516,13 @@ export default function LaunchPage() {
                         <Plus className="h-3 w-3" /> ADD RECIPIENT
                     </button>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <StatBox label="EXTERNAL RECIPIENTS" value={`${externalBps} / 10,000`} note="THESE RECIPIENTS ARE RESOLVED THROUGH BAGS BEFORE LAUNCH." invalid={externalBps > 10000} />
                         <StatBox label="CREATOR SHARE" value={`${creatorBps} BPS`} note="BAGS REQUIRES THE CREATOR SPLIT TO BE EXPLICITLY INCLUDED." />
                     </div>
 
                     <div className="space-y-3 border border-[#00ff41]/10 bg-black/60 p-4">
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                                 <p className="text-[10px] tracking-wider text-[#00ff41]/50">BAGSCAN PARTNER FEE</p>
                                 <p className="mt-1 text-[8px] tracking-wider text-[#00ff41]/20">KEEP THIS ENABLED TO INCLUDE THE BAGSCAN PARTNER CONFIG.</p>
@@ -532,7 +532,7 @@ export default function LaunchPage() {
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <Field label="INITIAL BUY (SOL)"><input type="number" min="0" step="0.001" value={initialBuyLamports > 0 ? initialBuyLamports / 1_000_000_000 : ""} onChange={(event) => setInitialBuyLamports(Math.max(0, Math.floor(Number(event.target.value || "0") * 1_000_000_000)))} placeholder="0.01" className={inputClass} /></Field>
                             <Field label="TIP AMOUNT (SOL)"><input type="number" min="0" step="0.000001" value={tipSol} onChange={(event) => setTipSol(event.target.value)} placeholder="0.001" className={inputClass} /></Field>
                         </div>
@@ -540,11 +540,11 @@ export default function LaunchPage() {
                         <Field label="TIP WALLET"><input value={tipWallet} onChange={(event) => setTipWallet(event.target.value)} placeholder="Optional Solana wallet for tipLamports" className={inputClass} /></Field>
                     </div>
 
-                    <div className="flex justify-between">
-                        <button onClick={() => { setErrorMsg(null); setTxStatus("idle"); setStep(1); }} className="flex items-center gap-1 border border-[#00ff41]/15 px-4 py-2 text-[10px] tracking-wider text-[#00ff41]/40 transition-colors hover:text-[#00ff41]">
+                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                        <button onClick={() => { setErrorMsg(null); setTxStatus("idle"); setStep(1); }} className="flex items-center justify-center gap-1 border border-[#00ff41]/15 px-4 py-2 text-[10px] tracking-wider text-[#00ff41]/40 transition-colors hover:text-[#00ff41]">
                             <ArrowLeft className="h-4 w-4" /> BACK
                         </button>
-                        <button onClick={async () => { try { setErrorMsg(null); await resolveClaimers(); setStep(3); } catch (error) { setErrorMsg(formatError(error)); setTxStatus("error"); } }} className="flex items-center gap-2 border-2 border-[#00ff41]/50 bg-[#00ff41]/10 px-6 py-2.5 text-xs tracking-wider text-[#00ff41] transition-all hover:bg-[#00ff41]/20">
+                        <button onClick={async () => { try { setErrorMsg(null); await resolveClaimers(); setStep(3); } catch (error) { setErrorMsg(formatError(error)); setTxStatus("error"); } }} className="flex items-center justify-center gap-2 border-2 border-[#00ff41]/50 bg-[#00ff41]/10 px-6 py-2.5 text-xs tracking-wider text-[#00ff41] transition-all hover:bg-[#00ff41]/20">
                             REVIEW <ArrowRight className="h-4 w-4" />
                         </button>
                     </div>
@@ -560,7 +560,7 @@ export default function LaunchPage() {
                         <ReviewRow label="SYMBOL" value={metadata.symbol} />
                         <ReviewRow label="DESCRIPTION" value={metadata.description} />
                         {(imagePreview || metadata.imageUrl) ? (
-                            <div className="flex items-start justify-between border-b border-[#00ff41]/5 py-1.5">
+                            <div className="flex flex-col gap-2 border-b border-[#00ff41]/5 py-1.5 sm:flex-row sm:items-start sm:justify-between">
                                 <span className="text-[9px] tracking-[0.15em] text-[#00ff41]/25">IMAGE</span>
                                 <div className="relative h-16 w-16 overflow-hidden border border-[#00ff41]/20"><Image src={imagePreview || metadata.imageUrl || ""} alt="Token" fill className="object-cover" unoptimized /></div>
                             </div>
@@ -585,11 +585,11 @@ export default function LaunchPage() {
                         <ReviewRow label="TIP" value={tipLamports > 0 ? `${tipSol || "0"} SOL -> ${tipWallet || "MISSING TIP WALLET"}` : "NONE"} />
                     </div>
 
-                    <div className="flex justify-between">
-                        <button onClick={() => { setErrorMsg(null); setTxStatus("idle"); setStep(2); }} className="flex items-center gap-1 border border-[#00ff41]/15 px-4 py-2 text-[10px] tracking-wider text-[#00ff41]/40 transition-colors hover:text-[#00ff41]">
+                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                        <button onClick={() => { setErrorMsg(null); setTxStatus("idle"); setStep(2); }} className="flex items-center justify-center gap-1 border border-[#00ff41]/15 px-4 py-2 text-[10px] tracking-wider text-[#00ff41]/40 transition-colors hover:text-[#00ff41]">
                             <ArrowLeft className="h-4 w-4" /> BACK
                         </button>
-                        <button onClick={() => { setErrorMsg(null); setTxStatus("idle"); setStep(4); }} className="flex items-center gap-2 border-2 border-[#00ff41]/50 bg-[#00ff41]/10 px-6 py-2.5 text-xs tracking-wider text-[#00ff41] transition-all hover:bg-[#00ff41]/20">
+                        <button onClick={() => { setErrorMsg(null); setTxStatus("idle"); setStep(4); }} className="flex items-center justify-center gap-2 border-2 border-[#00ff41]/50 bg-[#00ff41]/10 px-6 py-2.5 text-xs tracking-wider text-[#00ff41] transition-all hover:bg-[#00ff41]/20">
                             LAUNCH <Rocket className="h-4 w-4" />
                         </button>
                     </div>
@@ -602,11 +602,11 @@ export default function LaunchPage() {
                         <>
                             <h2 className="text-sm tracking-[0.15em] text-[#00ff41]/70">READY TO LAUNCH</h2>
                             {!connected ? (
-                                <button onClick={() => setVisible(true)} className="mx-auto flex items-center gap-2 border-2 border-[#00ff41]/50 bg-[#00ff41]/10 px-8 py-3 text-xs tracking-wider text-[#00ff41] transition-all hover:bg-[#00ff41]/20">
+                                <button onClick={() => setVisible(true)} className="mx-auto flex w-full items-center justify-center gap-2 border-2 border-[#00ff41]/50 bg-[#00ff41]/10 px-8 py-3 text-xs tracking-wider text-[#00ff41] transition-all hover:bg-[#00ff41]/20 sm:w-auto">
                                     <Wallet className="h-4 w-4" /> CONNECT WALLET AND LAUNCH
                                 </button>
                             ) : (
-                                <button onClick={executeLaunch} className="mx-auto flex items-center gap-2 border-2 border-[#00ff41]/50 bg-[#00ff41]/15 px-8 py-3 text-xs tracking-wider text-[#00ff41] transition-all hover:bg-[#00ff41]/25">
+                                <button onClick={executeLaunch} className="mx-auto flex w-full items-center justify-center gap-2 border-2 border-[#00ff41]/50 bg-[#00ff41]/15 px-8 py-3 text-xs tracking-wider text-[#00ff41] transition-all hover:bg-[#00ff41]/25 sm:w-auto">
                                     <Rocket className="h-4 w-4" /> EXECUTE LAUNCH
                                 </button>
                             )}
@@ -704,9 +704,9 @@ function StatBox({
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
     return (
-        <div className="flex items-start justify-between border-b border-[#00ff41]/5 py-1.5 last:border-0">
+        <div className="flex flex-col gap-1 border-b border-[#00ff41]/5 py-1.5 last:border-0 sm:flex-row sm:items-start sm:justify-between">
             <span className="flex-shrink-0 text-[9px] tracking-[0.15em] text-[#00ff41]/25">{label}</span>
-            <span className="ml-4 break-all text-right text-[10px] tracking-wider text-[#00ff41]/50">{value}</span>
+            <span className="break-all text-left text-[10px] tracking-wider text-[#00ff41]/50 sm:ml-4 sm:text-right">{value}</span>
         </div>
     );
 }

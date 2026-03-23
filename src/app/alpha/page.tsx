@@ -63,7 +63,7 @@ export default function AlphaPage() {
     const lastUpdatedLabel = data?.lastUpdated ? formatTimeAgo(data.lastUpdated) : "SYNCING";
 
     return (
-        <div className="alpha-premium-shell mx-auto max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">
+        <div className="alpha-premium-shell mx-auto max-w-[1680px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
             {/* â•”â•â• HEADER â•â•â•— */}
                         <section className="alpha-hero-panel mb-6 animate-fade-in">
                 <div className="relative z-[1] grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.95fr)] xl:items-end">
@@ -108,7 +108,7 @@ export default function AlphaPage() {
                         </div>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-2">
                         <div className="alpha-hero-metric">
                             <span className="alpha-hero-metric-label">Trending Pins</span>
                             <span className="alpha-hero-metric-value text-[#ffaa00]">{trendingTokens.length}</span>
@@ -120,7 +120,7 @@ export default function AlphaPage() {
                             <span className="alpha-hero-metric-note">Aggressive price and flow combinations demanding immediate review.</span>
                         </div>
                         <div className="alpha-hero-metric sm:col-span-3 xl:col-span-2">
-                            <div className="flex items-center justify-between gap-3">
+                            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
                                     <span className="alpha-hero-metric-label">Refresh Stream</span>
                                     <p className="alpha-hero-metric-note mt-1">
@@ -143,7 +143,7 @@ export default function AlphaPage() {
 
             {/* â•”â•â• SYSTEM STATUS GRID â•â•â•— */}
             {!isLoading && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 stagger-children">
+                <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 stagger-children">
                     <SystemStatusCard label="CRITICAL" value={criticalTokens.length} status="critical" icon={<AlertTriangle className="w-4 h-4" />} />
                     <SystemStatusCard label="HOT SIGNALS" value={hotTokens.length} status="warning" icon={<Flame className="w-4 h-4" />} />
                     <SystemStatusCard label="WATCHLIST" value={watchTokens.length} status="online" icon={<Eye className="w-4 h-4" />} />
@@ -230,7 +230,7 @@ export default function AlphaPage() {
                     {/* MOTHER terminal */}
                     <div className="crt-panel p-4">
                         <div className="panel-header">â•”â•â• MOTHER COMPUTER INTERFACE â•â•â•—</div>
-                        <div className="bg-black p-4 border border-[#00ff41]/10 font-mono text-[11px] leading-relaxed">
+                        <div className="border border-[#00ff41]/10 bg-black p-3 font-mono text-[11px] leading-relaxed sm:p-4">
                             <p className="text-[#00ff41]/70">READY_</p>
                             <p className="text-[#00ff41]/50 mt-1">&gt; QUERY: ALPHA SCAN STATUS</p>
                             <p className="text-[#00ff41]/70 mt-1">&gt; {filteredTokens.length} TOKENS MATCHING {quickFilter.toUpperCase()} :: {totalSignals} SIGNALS ACTIVE</p>
@@ -353,7 +353,7 @@ function TrendingBagsPanel({ tokens }: { tokens: AlphaToken[] }) {
                     PINNED LIVE {tokens.length}
                 </div>
             </div>
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3 stagger-children">
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3 stagger-children">
                 {tokens.map((token, index) => (
                     <AlphaCard key={token.tokenMint} token={token} trendingRank={index + 1} />
                 ))}
@@ -376,7 +376,7 @@ function BreakingRadarPanel({ trends }: { trends: RadarTrend[] }) {
                     LAST 120M
                 </div>
             </div>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 stagger-children">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 stagger-children">
                 {trends.slice(0, 6).map((trend) => (
                     <a
                         key={trend.id}
@@ -460,7 +460,7 @@ function AlphaSection({
                 </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3 stagger-children">
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3 stagger-children">
                 {tokens.map((token) => (
                     <AlphaCard key={token.tokenMint} token={token} />
                 ))}
@@ -505,7 +505,7 @@ function AlphaCard({ token, trendingRank }: { token: AlphaToken; trendingRank?: 
 
     return (
         <Link href={`/token/${token.tokenMint}`} className="alpha-card-shell group">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
                     {showTrendingBadge && (
                         <span className="alpha-badge-chip border-[#ffaa00]/22 bg-[#ffaa00]/10 text-[#ffd37a]">
@@ -671,7 +671,7 @@ function AlphaCard({ token, trendingRank }: { token: AlphaToken; trendingRank?: 
                 </div>
             )}
 
-            <div className="mt-4 flex items-center justify-between border-t border-white/6 pt-3 text-[10px] uppercase tracking-[0.24em] text-white/28">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-white/6 pt-3 text-[10px] uppercase tracking-[0.24em] text-white/28">
                 <span>{shortMint(token.tokenMint)}</span>
                 <ChevronRight className="h-4 w-4 text-[#00ff41]/25 transition-all group-hover:translate-x-0.5 group-hover:text-[#00ff41]/65" />
             </div>
@@ -698,7 +698,7 @@ function SignalBadge({ signal }: { signal: AlphaSignal }) {
 function AlphaSkeleton() {
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
                 {Array.from({ length: 4 }).map((_, i) => (
                     <div key={i} className="alpha-status-card animate-pulse">
                         <div className="h-11 w-11 rounded-2xl border border-white/8 bg-white/[0.04]" />
@@ -709,7 +709,7 @@ function AlphaSkeleton() {
             </div>
             <div className="alpha-section-panel crt-panel p-4">
                 <div className="h-4 w-56 rounded-full bg-white/[0.06]" />
-                <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                     {Array.from({ length: 4 }).map((_, i) => (
                         <div key={i} className="alpha-card-shell animate-pulse">
                             <div className="h-5 w-32 rounded-full bg-white/[0.05]" />

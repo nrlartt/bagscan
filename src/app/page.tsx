@@ -179,7 +179,7 @@ export default function HomePage() {
 
       {/* Platform Stats (only on leaderboard tab) */}
       {isLeaderboard && stats && (
-        <div className="grid grid-cols-3 gap-3 mb-6 stagger-children">
+        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3 stagger-children">
           <StatCard label="CREATOR EARNINGS" value={formatCompactUsd(stats.totalCreatorEarnings)} icon={<DollarSign className="w-4 h-4" />} />
           <StatCard label="TRADING VOLUME" value={formatCompactUsd(stats.totalVolume)} icon={<BarChart3 className="w-4 h-4" />} />
           <StatCard label="PROJECTS FUNDED" value={formatCompactNum(stats.totalProjects)} icon={<Layers className="w-4 h-4" />} />
@@ -214,8 +214,8 @@ export default function HomePage() {
 
       {/* Tab bar + controls */}
       {!isSearching && (
-        <div className="flex items-center justify-between gap-4 mb-5">
-          <div className="flex items-center gap-0.5 p-0.5 border border-[#00ff41]/15 bg-black/40">
+        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-stretch gap-1 border border-[#00ff41]/15 bg-black/40 p-1">
             <TabButton active={tab === "trending"} onClick={() => setTab("trending")} icon={<Flame className="w-3 h-3" />} label="TRENDING" />
             <TabButton active={tab === "new"} onClick={() => setTab("new")} icon={<Rocket className="w-3 h-3" />} label="NEW LAUNCHES" />
             <TabButton active={tab === "hackathon"} onClick={() => setTab("hackathon")} icon={<AppWindow className="w-3 h-3" />} label="HACKATHON" />
@@ -223,11 +223,11 @@ export default function HomePage() {
           </div>
 
           {tab === "trending" && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value)}
-                className="px-3 py-2 bg-black/80 border border-[#00ff41]/20 text-[10px] text-[#00ff41]/60 tracking-wider focus:outline-none focus:border-[#00ff41]/50 appearance-none cursor-pointer"
+                className="w-full min-w-0 px-3 py-2 bg-black/80 border border-[#00ff41]/20 text-[10px] text-[#00ff41]/60 tracking-wider focus:outline-none focus:border-[#00ff41]/50 appearance-none cursor-pointer sm:w-auto"
               >
                 <option value="volume-desc">VOLUME ↓</option>
                 <option value="liquidity-desc">LIQUIDITY ↓</option>
@@ -235,7 +235,7 @@ export default function HomePage() {
                 <option value="gainers">TOP GAINERS</option>
                 <option value="losers">TOP LOSERS</option>
               </select>
-              <div className="flex border border-[#00ff41]/15 overflow-hidden">
+              <div className="flex self-start overflow-hidden border border-[#00ff41]/15 sm:self-auto">
                 <button
                   onClick={() => setViewMode("grid")}
                   className={cn("p-2 transition-colors", viewMode === "grid" ? "bg-[#00ff41]/10 text-[#00ff41]" : "text-[#00ff41]/30 hover:text-[#00ff41]/60")}
@@ -256,7 +256,7 @@ export default function HomePage() {
               <select
                 value={hackathonFilter}
                 onChange={(e) => setHackathonFilter(e.target.value)}
-                className="px-3 py-2 bg-black/80 border border-[#00ff41]/20 text-[10px] text-[#00ff41]/60 tracking-wider focus:outline-none focus:border-[#00ff41]/50 appearance-none cursor-pointer"
+                className="w-full min-w-0 px-3 py-2 bg-black/80 border border-[#00ff41]/20 text-[10px] text-[#00ff41]/60 tracking-wider focus:outline-none focus:border-[#00ff41]/50 appearance-none cursor-pointer sm:w-auto"
               >
                 {hackathonCategories.map((cat) => (
                   <option key={cat} value={cat}>
@@ -297,7 +297,7 @@ export default function HomePage() {
           <EmptyState title="NO HACKATHON APPS" description="NO APPLICATIONS FOUND FOR THIS CATEGORY..." />
         ) : (
           <div>
-            <div className="flex items-center gap-2 mb-4 text-[10px] tracking-wider">
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-[10px] tracking-wider">
               <AppWindow className="w-3.5 h-3.5 text-[#00aaff]" />
               <span className="text-[#00ff41]/50">
                 HACKATHON APPS ({hackathonApps.length})
@@ -340,7 +340,7 @@ export default function HomePage() {
         <>
           {!isSearching && tab === "new" && (
             <div className="mb-5 p-3 border border-[#ffb800]/15 bg-[#ffb800]/[0.02] animate-fade-in">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="relative">
                     <Radio className="w-4 h-4 text-[#ffb800]" />
@@ -355,7 +355,7 @@ export default function HomePage() {
                     </span>
                   </div>
                 </div>
-                <span className="text-[8px] text-[#ffb800]/25 tracking-wider animate-pulse">
+                <span className="text-[8px] text-[#ffb800]/25 tracking-wider animate-pulse sm:text-right">
                   ● AUTO-REFRESHING
                 </span>
               </div>
@@ -401,7 +401,7 @@ function TabButton({ active, onClick, icon, label }: {
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 px-4 py-2 text-[10px] tracking-[0.12em] transition-all duration-200 border",
+        "flex grow items-center justify-center gap-1.5 px-3 py-2 text-center text-[10px] tracking-[0.12em] transition-all duration-200 border sm:grow-0 sm:px-4",
         active
           ? "border-[#00ff41]/50 bg-[#00ff41]/10 text-[#00ff41]"
           : "border-transparent text-[#00ff41]/30 hover:text-[#00ff41]/60 hover:bg-[#00ff41]/5"
@@ -421,7 +421,7 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
         <span className="text-[#00ff41]/40">{icon}</span>
       </div>
       <p className="text-[9px] text-[#00ff41]/30 uppercase tracking-[0.2em]">{label}</p>
-      <p className="text-xl font-medium text-[#00ff41] mt-0.5 tracking-wider" style={{ textShadow: '0 0 10px rgba(0,255,65,0.3)' }}>{value}</p>
+      <p className="mt-0.5 text-lg font-medium tracking-wider text-[#00ff41] sm:text-xl" style={{ textShadow: '0 0 10px rgba(0,255,65,0.3)' }}>{value}</p>
     </div>
   );
 }
@@ -451,7 +451,7 @@ function LeaderboardRow({ entry, rank }: { entry: LeaderboardEntry; rank: number
   return (
     <Link
       href={`/token/${entry.tokenMint}`}
-      className="flex items-center gap-4 px-4 py-3 border border-[#00ff41]/10 bg-black/60 hover:border-[#00ff41]/30 hover:bg-[#00ff41]/[0.02] transition-all group"
+      className="group flex flex-wrap items-center gap-3 border border-[#00ff41]/10 bg-black/60 px-3 py-3 transition-all hover:border-[#00ff41]/30 hover:bg-[#00ff41]/[0.02] sm:flex-nowrap sm:gap-4 sm:px-4"
     >
       <span className={cn("text-xs tracking-wider w-6 text-center", rankColors[rank] ?? "text-[#00ff41]/25")}
         style={rank <= 3 ? { textShadow: '0 0 6px currentColor' } : undefined}>
@@ -487,7 +487,7 @@ function LeaderboardRow({ entry, rank }: { entry: LeaderboardEntry; rank: number
         </div>
       </div>
 
-      <div className="text-right flex-shrink-0">
+      <div className="w-full flex-shrink-0 text-left sm:w-auto sm:text-right">
         <p className="text-xs text-[#ffaa00] tracking-wider" style={{ textShadow: '0 0 6px rgba(255,170,0,0.3)' }}>
           {formatCurrency(entry.earnedUsd)}
         </p>
@@ -546,7 +546,7 @@ function HackathonCard({ app }: { app: HackathonApp }) {
       </p>
 
       {/* Market data */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-1 gap-2 min-[440px]:grid-cols-3">
         <div className="p-1.5 border border-[#00aaff]/10 bg-black/40">
           <span className="text-[8px] text-[#00aaff]/30 tracking-[0.12em] block">FDV</span>
           <span className="text-[10px] text-[#00aaff]/70 tracking-wider">
