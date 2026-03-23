@@ -15,6 +15,20 @@ interface LoginPayload {
     signature?: string;
 }
 
+function toAlertLoginErrorMessage(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (/P1001|Can't reach database server/i.test(message)) {
+        return "Alerts database is unreachable. Update DATABASE_URL to the Supabase pooler connection string.";
+    }
+
+    if (/P2021|table.*AlertPreference|relation .*AlertPreference/i.test(message)) {
+        return "Alert tables are missing. Run prisma db push or execute scripts/alerts-postgres.sql.";
+    }
+
+    return message || "Alert sign-in failed";
+}
+
 export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as LoginPayload;
     const wallet = body.wallet?.trim();
@@ -61,11 +75,19 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    await prisma.alertPreference.upsert({
-        where: { walletAddress: wallet },
-        create: { walletAddress: wallet },
-        update: {},
-    });
+    try {
+        await prisma.alertPreference.upsert({
+            where: { walletAddress: wallet },
+            create: { walletAddress: wallet },
+            update: {},
+        });
+    } catch (error) {
+        console.error("[api/alerts/auth/login] error:", error);
+        return NextResponse.json(
+            { success: false, error: toAlertLoginErrorMessage(error) },
+            { status: 500 }
+        );
+    }
 
     const response = NextResponse.json({ success: true, wallet });
     clearAlertChallengeCookie(response);
