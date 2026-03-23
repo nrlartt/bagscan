@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
-import { Rocket, Info, Menu, X, Zap, Scan, Bot } from "lucide-react";
+import { Rocket, Info, Menu, X, Zap, Scan, Bot, Wallet } from "lucide-react";
 import { useState, useEffect } from "react";
 import { BagLogo } from "./BagLogo";
 
@@ -17,6 +17,7 @@ const WalletMultiButtonDynamic = dynamic(
 const NAV_ITEMS = [
     { href: "/", label: "DISCOVER", icon: Scan },
     { href: "/alpha", label: "ALPHA", icon: Zap, highlight: true },
+    { href: "/portfolio", label: "PORTFOLIO", icon: Wallet },
     { href: "/agents", label: "AGENTS", icon: Bot },
     { href: "/launch", label: "LAUNCH", icon: Rocket },
     { href: "/about", label: "ABOUT", icon: Info },
