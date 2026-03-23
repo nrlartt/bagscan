@@ -41,6 +41,7 @@ interface HackathonApp {
   name: string;
   description: string;
   category: string;
+  status?: string;
   icon: string;
   tokenAddress: string;
   twitterUrl?: string;

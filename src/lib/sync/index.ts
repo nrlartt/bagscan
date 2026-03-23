@@ -570,6 +570,7 @@ export interface EnrichedHackathonApp {
     name: string;
     description: string;
     category: string;
+    status?: string;
     icon: string;
     tokenAddress: string;
     twitterUrl?: string;
@@ -628,6 +629,7 @@ export async function syncHackathonApps(): Promise<EnrichedHackathonApp[]> {
                 name: app.name,
                 description: app.description,
                 category: app.category,
+                status: app.status,
                 icon: app.icon,
                 tokenAddress: app.tokenAddress,
                 twitterUrl: app.twitterUrl,
