@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Rocket, Info, Menu, X, Zap, Scan, Bot } from "lucide-react";
+import { Rocket, Menu, X, Zap, Scan, Bot } from "lucide-react";
 import { useState, useEffect } from "react";
 import { BagLogo } from "./BagLogo";
+import { NotificationCenter } from "./NotificationCenter";
 import { WalletPortfolioButton } from "./WalletPortfolioButton";
 
 const NAV_ITEMS = [
@@ -13,7 +14,6 @@ const NAV_ITEMS = [
     { href: "/alpha", label: "ALPHA", icon: Zap, highlight: true },
     { href: "/agents", label: "AGENTS", icon: Bot },
     { href: "/launch", label: "LAUNCH", icon: Rocket },
-    { href: "/about", label: "ABOUT", icon: Info },
 ];
 
 export function TopNav() {
@@ -129,6 +129,7 @@ export function TopNav() {
                             </div>
                         </div>
 
+                        <NotificationCenter />
                         <WalletPortfolioButton key={pathname} />
                         <button
                             className="md:hidden p-2 text-[#00ff41]/60 hover:text-[#00ff41] transition-colors border border-[#00ff41]/30"

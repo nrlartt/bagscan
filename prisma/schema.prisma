@@ -6,6 +6,21 @@ datasource db {
   provider = "postgresql"
 }
 
+enum AlertKind {
+  alpha_hot
+  alpha_critical
+  portfolio_profit
+  portfolio_drawdown
+  fee_claim
+  system
+}
+
+enum AlertSeverity {
+  info
+  hot
+  critical
+}
+
 model TokenSnapshot {
   id             String   @id @default(cuid())
   tokenMint      String
@@ -81,4 +96,66 @@ model PartnerSnapshot {
   unclaimedFees Float?
   rawJson       String?
   capturedAt    DateTime @default(now())
+}
+
+model AlertPreference {
+  id                       String              @id @default(cuid())
+  walletAddress            String              @unique
+  inAppEnabled             Boolean             @default(true)
+  browserPushEnabled       Boolean             @default(false)
+  telegramEnabled          Boolean             @default(false)
+  alphaHotEnabled          Boolean             @default(true)
+  alphaCriticalEnabled     Boolean             @default(true)
+  portfolioProfitEnabled   Boolean             @default(true)
+  portfolioDrawdownEnabled Boolean             @default(true)
+  feesEnabled              Boolean             @default(true)
+  profitThresholdPercent   Float               @default(25)
+  drawdownThresholdPercent Float               @default(-15)
+  claimableFeesThresholdSol Float              @default(0.25)
+  telegramChatId           String?
+  lastEvaluatedAt          DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  notifications            AlertNotification[]
+  pushSubscriptions        PushSubscription[]
+
+  @@index([lastEvaluatedAt])
+}
+
+model PushSubscription {
+  id             String          @id @default(cuid())
+  walletAddress  String
+  endpoint       String          @unique
+  p256dh         String
+  auth           String
+  expirationTime String?
+  userAgent      String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  preference     AlertPreference @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
+
+  @@index([walletAddress])
+}
+
+model AlertNotification {
+  id                 String          @id @default(cuid())
+  walletAddress      String
+  kind               AlertKind
+  severity           AlertSeverity
+  title              String
+  message            String
+  eventKey           String
+  tokenMint          String?
+  actionUrl          String?
+  imageUrl           String?
+  readAt             DateTime?
+  deliveredPushAt    DateTime?
+  deliveredTelegramAt DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  preference         AlertPreference @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
+
+  @@unique([walletAddress, eventKey])
+  @@index([walletAddress, createdAt(sort: Desc)])
+  @@index([walletAddress, readAt])
 }

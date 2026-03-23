@@ -187,7 +187,7 @@ export default function HomePage() {
       )}
 
       {/* LIVE Ticker */}
-      {!isSearching && tab === "trending" && trendingTokens.length > 0 && (
+      {!isSearching && tab === "trending" && (
         <LiveTicker tokens={trendingTokens} />
       )}
 

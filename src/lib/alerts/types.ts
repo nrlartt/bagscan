@@ -1,0 +1,73 @@
+export type AlertSeverity = "info" | "hot" | "critical";
+export type AlertKind =
+    | "alpha_hot"
+    | "alpha_critical"
+    | "portfolio_profit"
+    | "portfolio_drawdown"
+    | "fee_claim"
+    | "system";
+
+export interface AlertPreferenceState {
+    walletAddress: string;
+    inAppEnabled: boolean;
+    browserPushEnabled: boolean;
+    telegramEnabled: boolean;
+    alphaHotEnabled: boolean;
+    alphaCriticalEnabled: boolean;
+    portfolioProfitEnabled: boolean;
+    portfolioDrawdownEnabled: boolean;
+    feesEnabled: boolean;
+    profitThresholdPercent: number;
+    drawdownThresholdPercent: number;
+    claimableFeesThresholdSol: number;
+    telegramChatId?: string | null;
+    lastEvaluatedAt?: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface AlertNotificationItem {
+    id: string;
+    kind: AlertKind;
+    severity: AlertSeverity;
+    title: string;
+    message: string;
+    tokenMint?: string | null;
+    actionUrl?: string | null;
+    imageUrl?: string | null;
+    createdAt: string;
+    readAt?: string | null;
+}
+
+export interface AlertStateResponse {
+    wallet: string;
+    unreadCount: number;
+    preference: AlertPreferenceState;
+    notifications: AlertNotificationItem[];
+    config: {
+        browserPushConfigured: boolean;
+        telegramConfigured: boolean;
+        vapidPublicKey?: string;
+        requiresSecureOrigin: boolean;
+    };
+}
+
+export interface AlertSyncResponse {
+    state: AlertStateResponse;
+    createdCount: number;
+}
+
+export interface AlertPreferenceUpdateInput {
+    inAppEnabled?: boolean;
+    browserPushEnabled?: boolean;
+    telegramEnabled?: boolean;
+    alphaHotEnabled?: boolean;
+    alphaCriticalEnabled?: boolean;
+    portfolioProfitEnabled?: boolean;
+    portfolioDrawdownEnabled?: boolean;
+    feesEnabled?: boolean;
+    profitThresholdPercent?: number;
+    drawdownThresholdPercent?: number;
+    claimableFeesThresholdSol?: number;
+    telegramChatId?: string | null;
+}
