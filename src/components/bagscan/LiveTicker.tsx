@@ -68,8 +68,10 @@ export function LiveTicker({ tokens }: LiveTickerProps) {
                                 </span>
                             </div>
                             <p className="mt-2 max-w-2xl text-[11px] leading-6 tracking-[0.14em] text-[#d8ffe6]/62">
-                                BagScan&apos;in kendi token vitrini. BAGS sayfası, DexScreener market
-                                görünümü ve Bags Hackathon uygulama kaydı doğrudan burada görünür.
+                                $SCAN is the native token of the BagScan ecosystem, tying together
+                                discovery, launch infrastructure, and community growth across the
+                                Bags platform. This panel highlights the official token listing,
+                                live market access, and the BagScan Hackathon presence in one place.
                             </p>
                         </div>
                     </div>
