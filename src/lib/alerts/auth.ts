@@ -7,7 +7,7 @@ const CHALLENGE_COOKIE = "bagscan_alerts_challenge";
 const SESSION_COOKIE = "bagscan_alerts_session";
 const CHALLENGE_TTL_SECONDS = 10 * 60;
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
-const TELEGRAM_CONNECT_TTL_MS = 15 * 60 * 1000;
+export const TELEGRAM_CONNECT_TTL_MS = 15 * 60 * 1000;
 
 interface SignedPayload {
     exp: number;
@@ -173,7 +173,8 @@ export function requireAlertSessionWallet(request: NextRequest) {
 }
 
 export function createTelegramConnectToken(wallet: string, now = Date.now()) {
-    const expiresAt = (Math.floor(now / TELEGRAM_CONNECT_TTL_MS) + 1) * TELEGRAM_CONNECT_TTL_MS;
+    const bucketStart = Math.floor(now / TELEGRAM_CONNECT_TTL_MS) * TELEGRAM_CONNECT_TTL_MS;
+    const expiresAt = bucketStart + (2 * TELEGRAM_CONNECT_TTL_MS);
     const payload: TelegramConnectPayload = {
         wallet,
         purpose: "telegram-connect",

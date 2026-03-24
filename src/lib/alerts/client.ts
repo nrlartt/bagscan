@@ -147,10 +147,24 @@ export async function ensureAlertServiceWorker() {
         return null;
     }
 
-    return navigator.serviceWorker.register("/bagscan-alerts-sw.js");
+    await navigator.serviceWorker.register("/bagscan-alerts-sw.js");
+    return navigator.serviceWorker.ready;
 }
 
 export async function subscribeBrowserPush(wallet: string, vapidPublicKey: string) {
+    if (!("Notification" in window)) {
+        throw new Error("Browser notifications are not available in this browser");
+    }
+
+    if (Notification.permission === "default") {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+            throw new Error("Browser notification permission was not granted");
+        }
+    } else if (Notification.permission !== "granted") {
+        throw new Error("Browser notification permission is blocked");
+    }
+
     const registration = await ensureAlertServiceWorker();
     if (!registration) {
         throw new Error("Service workers are not available in this browser");

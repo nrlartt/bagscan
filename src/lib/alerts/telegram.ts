@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/db";
-import { createTelegramConnectToken } from "./auth";
+import {
+    TELEGRAM_CONNECT_TTL_MS,
+    createTelegramConnectToken,
+} from "./auth";
 
 interface TelegramApiEnvelope<T> {
     ok: boolean;
@@ -132,7 +135,8 @@ function getChatLabel(chat: TelegramChat) {
     return `${chat.type} chat`;
 }
 
-async function findChatByConnectToken(token: string) {
+async function findChatByConnectToken(tokens: string[]) {
+    const tokenSet = new Set(tokens);
     const updates = await telegramApi<TelegramUpdate[]>("getUpdates", {
         offset: -100,
         limit: 100,
@@ -141,7 +145,7 @@ async function findChatByConnectToken(token: string) {
 
     for (const update of [...updates].reverse()) {
         const payload = extractTelegramStartPayload(update.message?.text);
-        if (payload === token && update.message?.chat) {
+        if (payload && tokenSet.has(payload) && update.message?.chat) {
             return update.message.chat;
         }
     }
@@ -170,6 +174,10 @@ export async function getTelegramConnectState(walletAddress: string): Promise<Te
     ]);
 
     const connect = createTelegramConnectToken(walletAddress);
+    const previousConnect = createTelegramConnectToken(
+        walletAddress,
+        Date.now() - TELEGRAM_CONNECT_TTL_MS
+    );
     const botUsername = profile?.username ?? null;
     const botUrl = botUsername ? `https://t.me/${botUsername}` : null;
     const connectUrl = botUsername
@@ -180,7 +188,10 @@ export async function getTelegramConnectState(walletAddress: string): Promise<Te
     let chatLabel: string | null = null;
 
     if (!chatId) {
-        const chat = await findChatByConnectToken(connect.token);
+        const chat = await findChatByConnectToken([
+            connect.token,
+            previousConnect.token,
+        ]);
         if (chat) {
             chatId = String(chat.id);
             chatLabel = getChatLabel(chat);
