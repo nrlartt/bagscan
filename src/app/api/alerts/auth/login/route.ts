@@ -26,6 +26,10 @@ function toAlertLoginErrorMessage(error: unknown) {
         return "Alert tables are missing. Run prisma db push or execute scripts/alerts-postgres.sql.";
     }
 
+    if (/self-signed certificate|TLS connection/i.test(message)) {
+        return "Supabase TLS verification failed. Use a pooler DATABASE_URL with uselibpqcompat=true and restart the app.";
+    }
+
     return message || "Alert sign-in failed";
 }
 
