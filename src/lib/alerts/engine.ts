@@ -11,6 +11,7 @@ import {
 import { prisma } from "@/lib/db";
 import { generateAlphaFeed } from "@/lib/alpha/engine";
 import { getPortfolioForWallet } from "@/lib/portfolio/service";
+import { getAlertAccess } from "./access";
 import { getTelegramConfig } from "./telegram";
 import type { AlphaToken } from "@/lib/alpha/types";
 import type { PortfolioHolding } from "@/lib/portfolio/types";
@@ -411,6 +412,15 @@ async function deliverNotifications(
 
 export async function evaluateAlertsForWallet(walletAddress: string, force = false) {
     const preference = await getOrCreatePreference(walletAddress);
+    const access = await getAlertAccess(walletAddress);
+
+    if (!access.eligible) {
+        await prisma.alertPreference.update({
+            where: { walletAddress },
+            data: { lastEvaluatedAt: new Date() },
+        });
+        return { preference, created: [] as AlertNotificationRecord[] };
+    }
 
     if (!hasAnyDeliveryEnabled(preference)) {
         return { preference, created: [] as AlertNotificationRecord[] };
@@ -479,7 +489,7 @@ export async function getAlertState(walletAddress: string, evaluate = true): Pro
         await getOrCreatePreference(walletAddress);
     }
 
-    const [preference, notifications, unreadCount] = await Promise.all([
+    const [preference, notifications, unreadCount, access] = await Promise.all([
         prisma.alertPreference.findUniqueOrThrow({
             where: { walletAddress },
         }),
@@ -494,6 +504,7 @@ export async function getAlertState(walletAddress: string, evaluate = true): Pro
                 readAt: null,
             },
         }),
+        getAlertAccess(walletAddress),
     ]);
 
     const pushConfig = getPushConfig();
@@ -505,6 +516,7 @@ export async function getAlertState(walletAddress: string, evaluate = true): Pro
         preference: mapPreference(preference),
         notifications: notifications.map(mapNotification),
         config: {
+            access,
             browserPushConfigured: pushConfig.configured,
             telegramConfigured: telegramConfig.configured,
             vapidPublicKey: pushConfig.publicKey,

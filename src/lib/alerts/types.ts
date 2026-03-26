@@ -8,6 +8,16 @@ export type AlertKind =
     | "system";
 export type AlertTestChannel = "inbox" | "push" | "telegram";
 
+export interface AlertAccessState {
+    wallet: string;
+    eligible: boolean;
+    mint: string;
+    balanceUi: string;
+    requiredUi: string;
+    shortfallUi: string;
+    checkedAt: string;
+}
+
 export interface AlertPreferenceState {
     walletAddress: string;
     inAppEnabled: boolean;
@@ -46,6 +56,7 @@ export interface AlertStateResponse {
     preference: AlertPreferenceState;
     notifications: AlertNotificationItem[];
     config: {
+        access: AlertAccessState;
         browserPushConfigured: boolean;
         telegramConfigured: boolean;
         vapidPublicKey?: string;

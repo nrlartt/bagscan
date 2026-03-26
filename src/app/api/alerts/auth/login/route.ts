@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 import { prisma } from "@/lib/db";
+import { AlertAccessError, ensureAlertAccess } from "@/lib/alerts/access";
 import {
     buildAlertSignInMessage,
     clearAlertChallengeCookie,
@@ -80,12 +81,19 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+        await ensureAlertAccess(wallet);
         await prisma.alertPreference.upsert({
             where: { walletAddress: wallet },
             create: { walletAddress: wallet },
             update: {},
         });
     } catch (error) {
+        if (error instanceof AlertAccessError) {
+            return NextResponse.json(
+                { success: false, error: error.message, data: error.access },
+                { status: error.status }
+            );
+        }
         console.error("[api/alerts/auth/login] error:", error);
         return NextResponse.json(
             { success: false, error: toAlertLoginErrorMessage(error) },

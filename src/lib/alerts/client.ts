@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+    AlertAccessState,
     AlertTelegramConnectState,
     AlertTestChannel,
     AlertTestResponse,
@@ -56,6 +57,13 @@ export async function fetchAlertState(wallet: string) {
         headers: buildAuthHeaders(wallet),
     });
     return parseApiResponse<AlertStateResponse>(response);
+}
+
+export async function fetchAlertAccess(wallet: string) {
+    const response = await fetch(`/api/alerts/access?wallet=${encodeURIComponent(wallet)}`, {
+        cache: "no-store",
+    });
+    return parseApiResponse<AlertAccessState>(response);
 }
 
 export async function syncAlertState(wallet: string) {

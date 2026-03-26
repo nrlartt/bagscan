@@ -3,6 +3,7 @@ import {
     deletePushSubscription,
     savePushSubscription,
 } from "@/lib/alerts/engine";
+import { AlertAccessError, ensureAlertAccess } from "@/lib/alerts/access";
 import { requireAlertSessionWallet } from "@/lib/alerts/auth";
 
 interface PushSubscriptionPayload {
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+        await ensureAlertAccess(wallet);
         await savePushSubscription(
             wallet,
             body.subscription,
@@ -47,6 +49,12 @@ export async function POST(request: NextRequest) {
         );
         return NextResponse.json({ success: true });
     } catch (error) {
+        if (error instanceof AlertAccessError) {
+            return NextResponse.json(
+                { success: false, error: error.message, data: error.access },
+                { status: error.status }
+            );
+        }
         return NextResponse.json(
             {
                 success: false,
@@ -75,6 +83,23 @@ export async function DELETE(request: NextRequest) {
         );
     }
 
-    await deletePushSubscription(wallet, endpoint);
-    return NextResponse.json({ success: true });
+    try {
+        await ensureAlertAccess(wallet);
+        await deletePushSubscription(wallet, endpoint);
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        if (error instanceof AlertAccessError) {
+            return NextResponse.json(
+                { success: false, error: error.message, data: error.access },
+                { status: error.status }
+            );
+        }
+        return NextResponse.json(
+            {
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+            },
+            { status: 400 }
+        );
+    }
 }

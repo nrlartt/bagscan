@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
-import { AlertAccessError, ensureAlertAccess } from "@/lib/alerts/access";
-import {
-    createAlertChallenge,
-    setAlertChallengeCookie,
-} from "@/lib/alerts/auth";
+import { getAlertAccess } from "@/lib/alerts/access";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
     const wallet = request.nextUrl.searchParams.get("wallet")?.trim();
@@ -25,15 +24,9 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-        await ensureAlertAccess(wallet);
+        const access = await getAlertAccess(wallet);
+        return NextResponse.json({ success: true, data: access });
     } catch (error) {
-        if (error instanceof AlertAccessError) {
-            return NextResponse.json(
-                { success: false, error: error.message, data: error.access },
-                { status: error.status }
-            );
-        }
-
         return NextResponse.json(
             {
                 success: false,
@@ -42,14 +35,4 @@ export async function GET(request: NextRequest) {
             { status: 502 }
         );
     }
-
-    const challenge = createAlertChallenge(wallet);
-    const response = NextResponse.json({
-        success: true,
-        wallet,
-        message: challenge.message,
-        issuedAt: challenge.issuedAt,
-    });
-    setAlertChallengeCookie(response, challenge.token);
-    return response;
 }

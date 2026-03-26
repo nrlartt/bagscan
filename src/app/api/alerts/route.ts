@@ -3,6 +3,7 @@ import {
     getAlertState,
     updateAlertPreference,
 } from "@/lib/alerts/engine";
+import { AlertAccessError, ensureAlertAccess } from "@/lib/alerts/access";
 import { requireAlertSessionWallet } from "@/lib/alerts/auth";
 import type { AlertPreferenceUpdateInput } from "@/lib/alerts/types";
 
@@ -47,9 +48,16 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        await ensureAlertAccess(wallet);
         const state = await getAlertState(wallet, true);
         return NextResponse.json({ success: true, data: state });
     } catch (error) {
+        if (error instanceof AlertAccessError) {
+            return NextResponse.json(
+                { success: false, error: error.message, data: error.access },
+                { status: error.status }
+            );
+        }
         console.error("[api/alerts] get error:", error);
         return NextResponse.json(
             {
@@ -73,10 +81,17 @@ export async function PATCH(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
     try {
+        await ensureAlertAccess(wallet);
         await updateAlertPreference(wallet, parsePreferenceUpdate(body));
         const state = await getAlertState(wallet, false);
         return NextResponse.json({ success: true, data: state });
     } catch (error) {
+        if (error instanceof AlertAccessError) {
+            return NextResponse.json(
+                { success: false, error: error.message, data: error.access },
+                { status: error.status }
+            );
+        }
         console.error("[api/alerts] patch error:", error);
         return NextResponse.json(
             {

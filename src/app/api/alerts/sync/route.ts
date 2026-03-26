@@ -3,6 +3,7 @@ import {
     evaluateAlertsForWallet,
     getAlertState,
 } from "@/lib/alerts/engine";
+import { AlertAccessError, ensureAlertAccess } from "@/lib/alerts/access";
 import { requireAlertSessionWallet } from "@/lib/alerts/auth";
 
 export async function POST(request: NextRequest) {
@@ -15,6 +16,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+        await ensureAlertAccess(wallet);
         const result = await evaluateAlertsForWallet(wallet, true);
         const state = await getAlertState(wallet, false);
         return NextResponse.json({
@@ -25,6 +27,12 @@ export async function POST(request: NextRequest) {
             },
         });
     } catch (error) {
+        if (error instanceof AlertAccessError) {
+            return NextResponse.json(
+                { success: false, error: error.message, data: error.access },
+                { status: error.status }
+            );
+        }
         console.error("[api/alerts/sync] error:", error);
         return NextResponse.json(
             {

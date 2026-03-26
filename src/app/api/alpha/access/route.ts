@@ -1,70 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Connection, PublicKey } from "@solana/web3.js";
-import { getRpcUrl } from "@/lib/solana";
+import { PublicKey } from "@solana/web3.js";
+import { getTokenHolderAccess } from "@/lib/scan/access";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
-const MIN_SCAN_REQUIRED = BigInt(2_000_000);
-
-function getRpcFallbackUrls(): string[] {
-    const candidates = [
-        getRpcUrl(),
-        "https://api.mainnet-beta.solana.com",
-        "https://solana-rpc.publicnode.com",
-    ];
-
-    return Array.from(
-        new Set(
-            candidates
-                .map((url) => url.trim())
-                .filter((url) => url.length > 0)
-        )
-    );
-}
-
-function parseRawAmount(value: unknown): bigint | null {
-    if (typeof value === "string") {
-        try {
-            return BigInt(value);
-        } catch {
-            return null;
-        }
-    }
-
-    if (typeof value === "number" && Number.isFinite(value)) {
-        return BigInt(Math.max(0, Math.floor(value)));
-    }
-
-    return null;
-}
-
-function formatTokenAmount(raw: bigint, decimals: number): string {
-    const safeDecimals = Math.max(0, decimals);
-    if (safeDecimals === 0) return raw.toString();
-
-    const scale = BigInt(10) ** BigInt(safeDecimals);
-    const whole = raw / scale;
-    const fraction = raw % scale;
-
-    if (fraction === BigInt(0)) return whole.toString();
-
-    const fractionText = fraction
-        .toString()
-        .padStart(safeDecimals, "0")
-        .replace(/0+$/, "");
-
-    return `${whole.toString()}.${fractionText}`;
-}
-
-function formatRpcAccessError(error: unknown): string {
-    const raw = error instanceof Error ? error.message : String(error ?? "Unknown RPC error");
-    if (/403|forbidden/i.test(raw)) {
-        return "RPC access forbidden (403). Endpoint fallback also failed.";
-    }
-    return raw;
-}
+const MIN_SCAN_REQUIRED = 2_000_000;
 
 export async function GET(req: NextRequest) {
     const wallet = req.nextUrl.searchParams.get("wallet");
@@ -75,11 +17,9 @@ export async function GET(req: NextRequest) {
         );
     }
 
-    let owner: PublicKey;
-    let mint: PublicKey;
     try {
-        owner = new PublicKey(wallet);
-        mint = new PublicKey(SCAN_MINT);
+        new PublicKey(wallet);
+        new PublicKey(SCAN_MINT);
     } catch {
         return NextResponse.json(
             { success: false, error: "Invalid wallet address" },
@@ -87,65 +27,29 @@ export async function GET(req: NextRequest) {
         );
     }
 
-    const rpcUrls = getRpcFallbackUrls();
-    let tokenAccounts: Awaited<
-        ReturnType<Connection["getParsedTokenAccountsByOwner"]>
-    > | null = null;
-    let lastError: unknown = null;
+    try {
+        const access = await getTokenHolderAccess({
+            wallet,
+            mint: SCAN_MINT,
+            minimumUi: MIN_SCAN_REQUIRED,
+        });
 
-    for (const rpcUrl of rpcUrls) {
-        try {
-            const connection = new Connection(rpcUrl, "confirmed");
-            tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-                owner,
-                { mint }
-            );
-            break;
-        } catch (error) {
-            lastError = error;
-        }
-    }
-
-    if (!tokenAccounts) {
+        return NextResponse.json({
+            success: true,
+            data: {
+                eligible: access.eligible,
+                balanceUi: access.balanceUi,
+                requiredUi: access.requiredUi,
+                mint: access.mint,
+            },
+        });
+    } catch (error) {
         return NextResponse.json(
-            { success: false, error: formatRpcAccessError(lastError) },
+            {
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+            },
             { status: 502 }
         );
     }
-
-    let totalRaw = BigInt(0);
-    let decimals = 0;
-
-    for (const account of tokenAccounts.value) {
-        const parsedData = account.account.data as {
-            parsed?: {
-                info?: {
-                    tokenAmount?: {
-                        amount?: string | number;
-                        decimals?: number;
-                    };
-                };
-            };
-        };
-
-        const tokenAmount = parsedData.parsed?.info?.tokenAmount;
-        const rawAmount = parseRawAmount(tokenAmount?.amount);
-        if (rawAmount === null) continue;
-
-        totalRaw += rawAmount;
-        if (typeof tokenAmount?.decimals === "number") {
-            decimals = tokenAmount.decimals;
-        }
-    }
-
-    const thresholdRaw = MIN_SCAN_REQUIRED * (BigInt(10) ** BigInt(decimals));
-    return NextResponse.json({
-        success: true,
-        data: {
-            eligible: totalRaw >= thresholdRaw,
-            balanceUi: formatTokenAmount(totalRaw, decimals),
-            requiredUi: Number(MIN_SCAN_REQUIRED).toLocaleString("en-US"),
-            mint: SCAN_MINT,
-        },
-    });
 }

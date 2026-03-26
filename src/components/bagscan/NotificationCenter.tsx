@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import {
     ensureAlertServiceWorker,
+    fetchAlertAccess,
     fetchAlertState,
     fetchTelegramConnectState,
     logoutAlertSession,
@@ -41,6 +42,7 @@ import {
     updateAlertSettings,
 } from "@/lib/alerts/client";
 import type {
+    AlertAccessState,
     AlertNotificationItem,
     AlertPreferenceState,
     AlertStateResponse,
@@ -51,6 +53,8 @@ import { cn, shortenAddress } from "@/lib/utils";
 type PushStatus = "unknown" | "unsupported" | "permission-denied" | "not-subscribed" | "subscribed";
 
 const QUERY_KEY_BASE = "bagscan-alert-center";
+const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
+const SCAN_BAGS_URL = `https://bags.fm/${SCAN_MINT}`;
 
 export function NotificationCenter() {
     const { connected, publicKey, signMessage } = useWallet();
@@ -84,10 +88,25 @@ function NotificationCenterInner({
     const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const connectedTelegramChatIdRef = useRef<string | null>(null);
+    const accessQuery = useQuery<AlertAccessState>({
+        queryKey: [QUERY_KEY_BASE, "access", walletAddress],
+        enabled: connected && Boolean(walletAddress) && (open || sessionState === "authorized"),
+        queryFn: async () => fetchAlertAccess(walletAddress),
+        retry: false,
+        staleTime: 20_000,
+        refetchInterval: open || sessionState === "authorized" ? 60_000 : false,
+        refetchOnWindowFocus: false,
+    });
+    const alertAccess = accessQuery.data;
+    const alertAccessEligible = alertAccess?.eligible ?? false;
 
     const alertsQuery = useQuery<AlertStateResponse>({
         queryKey: [QUERY_KEY_BASE, walletAddress],
-        enabled: connected && Boolean(walletAddress) && (open || sessionState === "authorized"),
+        enabled:
+            connected &&
+            Boolean(walletAddress) &&
+            (open || sessionState === "authorized") &&
+            alertAccessEligible,
         queryFn: async () => {
             try {
                 const data = await fetchAlertState(walletAddress);
@@ -109,7 +128,7 @@ function NotificationCenterInner({
 
     const telegramConnectQuery = useQuery<AlertTelegramConnectState>({
         queryKey: [QUERY_KEY_BASE, "telegram-connect", walletAddress],
-        enabled: open && signedIn && Boolean(walletAddress),
+        enabled: open && signedIn && alertAccessEligible && Boolean(walletAddress),
         queryFn: async () => fetchTelegramConnectState(walletAddress),
         retry: false,
         staleTime: 0,
@@ -330,6 +349,14 @@ function NotificationCenterInner({
 
     const unreadCount = alertsQuery.data?.unreadCount ?? 0;
     const notifications = alertsQuery.data?.notifications ?? [];
+    const checkingAccess =
+        connected &&
+        Boolean(walletAddress) &&
+        (open || sessionState === "authorized") &&
+        accessQuery.isLoading &&
+        !alertAccess;
+    const accessBlocked = connected && Boolean(walletAddress) && Boolean(alertAccess) && !alertAccessEligible;
+    const accessError = accessQuery.error instanceof Error ? accessQuery.error.message : null;
 
     return (
         <div ref={containerRef} className="relative">
@@ -369,7 +396,15 @@ function NotificationCenterInner({
                                         Notification Center
                                     </div>
                                     <h3 className="mt-2 text-lg tracking-[0.16em] text-[#d8ffe6]">
-                                        {!connected ? "NOTIFICATIONS" : signedIn ? "SMART ALERTS" : "AUTHORIZE ALERTS"}
+                                        {!connected
+                                            ? "NOTIFICATIONS"
+                                            : checkingAccess
+                                                ? "VERIFYING ACCESS"
+                                                : accessBlocked
+                                                    ? "ALERT ACCESS LOCKED"
+                                                    : signedIn
+                                                        ? "SMART ALERTS"
+                                                        : "AUTHORIZE ALERTS"}
                                     </h3>
                                     <p className="mt-2 text-[11px] tracking-[0.16em] text-[#9dffb8]/70">
                                         {connected ? shortenAddress(walletAddress, 6) : "Connect a wallet to personalize alerts"}
@@ -390,6 +425,37 @@ function NotificationCenterInner({
                                         Connect a wallet first. Alerts are wallet-scoped and use a one-time signed message for secure preferences.
                                     </div>
                                 </div>
+                            ) : checkingAccess ? (
+                                <div className="space-y-4 px-4 py-5">
+                                    <div className="grid gap-3 sm:grid-cols-3">
+                                        <SmallStat label="ACCESS" value="CHECKING" icon={<Shield className="h-4 w-4" />} />
+                                        <SmallStat label="MIN" value="2.5M" icon={<Sparkles className="h-4 w-4" />} />
+                                        <SmallStat label="TOKEN" value="$SCAN" icon={<Bell className="h-4 w-4" />} />
+                                    </div>
+                                    <div className="border border-[#00ff41]/14 bg-[#00ff41]/8 p-4 text-sm leading-6 text-[#9dffb8]">
+                                        Verifying whether this wallet meets the 2.5 million $SCAN holder requirement for Smart Alerts.
+                                    </div>
+                                </div>
+                            ) : accessQuery.isError ? (
+                                <div className="space-y-4 px-4 py-5">
+                                    <div className="border border-[#ff8f70]/20 bg-[#ff8f70]/8 p-4 text-sm leading-6 text-[#ffb39f]">
+                                        {accessError ?? "BagScan could not verify your $SCAN balance right now. Try refreshing in a moment."}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        <ActionButton
+                                            label={accessQuery.isFetching ? "CHECKING..." : "RETRY ACCESS CHECK"}
+                                            icon={<RefreshCw className={cn("h-3.5 w-3.5", accessQuery.isFetching && "animate-spin")} />}
+                                            onClick={() => void accessQuery.refetch()}
+                                            disabled={accessQuery.isFetching}
+                                        />
+                                    </div>
+                                </div>
+                            ) : accessBlocked && alertAccess ? (
+                                <AlertAccessLockedPanel
+                                    access={alertAccess}
+                                    onRefresh={() => void accessQuery.refetch()}
+                                    checking={accessQuery.isFetching}
+                                />
                             ) : !signedIn ? (
                                 <div className="space-y-4 px-4 py-5">
                                     <div className="grid gap-3 sm:grid-cols-3">
@@ -397,6 +463,11 @@ function NotificationCenterInner({
                                         <SmallStat label="BROWSER" value="PUSH" icon={<Smartphone className="h-4 w-4" />} />
                                         <SmallStat label="TELEGRAM" value="BOT" icon={<Send className="h-4 w-4" />} />
                                     </div>
+                                    {alertAccess ? (
+                                        <div className="border border-[#00aaff]/18 bg-[#00aaff]/10 p-4 text-sm leading-6 text-[#8dd8ff]">
+                                            Holder access verified. {alertAccess.balanceUi} $SCAN detected against the {alertAccess.requiredUi} $SCAN requirement.
+                                        </div>
+                                    ) : null}
                                     <div className="border border-[#00ff41]/14 bg-[#00ff41]/8 p-4 text-sm leading-6 text-[#9dffb8]">
                                         Sign once with your wallet to manage alert rules. No transaction is created and no funds can move.
                                     </div>
@@ -423,6 +494,7 @@ function NotificationCenterInner({
                             ) : (
                                 <AlertCenterBody
                                     walletAddress={walletAddress}
+                                    access={alertsQuery.data?.config.access ?? alertAccess ?? null}
                                     draft={activeDraft}
                                     setDraft={setDraft}
                                     pushStatus={pushStatus}
@@ -458,6 +530,7 @@ function NotificationCenterInner({
 
 function AlertCenterBody({
     walletAddress,
+    access,
     draft,
     setDraft,
     pushStatus,
@@ -481,6 +554,7 @@ function AlertCenterBody({
     onRefresh,
 }: {
     walletAddress: string;
+    access: AlertAccessState | null;
     draft: AlertPreferenceState | null;
     setDraft: Dispatch<SetStateAction<AlertPreferenceState | null>>;
     pushStatus: PushStatus;
@@ -505,6 +579,11 @@ function AlertCenterBody({
 }) {
     return (
         <div className="space-y-5 px-4 py-5">
+            {access ? (
+                <div className="border border-[#00aaff]/18 bg-[#00aaff]/10 px-3 py-3 text-sm leading-6 text-[#8dd8ff]">
+                    Holder gate active. {access.balanceUi} $SCAN verified for this wallet and alerts remain unlocked above the {access.requiredUi} $SCAN threshold.
+                </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-3">
                 <SmallStat label="UNREAD" value={String(unreadCount)} icon={<Bell className="h-4 w-4" />} />
                 <SmallStat label="PUSH" value={pushStatus === "subscribed" ? "ARMED" : "OFF"} icon={<Smartphone className="h-4 w-4" />} />
@@ -828,6 +907,51 @@ function AlertCenterBody({
                     )}
                 </div>
             </section>
+        </div>
+    );
+}
+
+function AlertAccessLockedPanel({
+    access,
+    onRefresh,
+    checking,
+}: {
+    access: AlertAccessState;
+    onRefresh: () => void;
+    checking: boolean;
+}) {
+    return (
+        <div className="space-y-4 px-4 py-5">
+            <div className="grid gap-3 sm:grid-cols-3">
+                <SmallStat label="ACCESS" value="LOCKED" icon={<Shield className="h-4 w-4" />} />
+                <SmallStat label="BALANCE" value={access.balanceUi} icon={<Bell className="h-4 w-4" />} />
+                <SmallStat label="REQUIRED" value={access.requiredUi} icon={<Sparkles className="h-4 w-4" />} />
+            </div>
+            <div className="border border-[#ffaa00]/20 bg-[#ffaa00]/10 p-4 text-sm leading-6 text-[#ffd37a]">
+                Smart Alerts are reserved for wallets holding at least {access.requiredUi} $SCAN. This wallet currently holds {access.balanceUi} $SCAN and needs {access.shortfallUi} more to unlock in-app inbox, browser push, and Telegram delivery.
+            </div>
+            <div className="flex flex-wrap gap-2">
+                <a
+                    href={SCAN_BAGS_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-10 items-center justify-center border border-[#00ff41]/24 bg-[#00ff41]/10 px-4 text-[11px] tracking-[0.18em] text-[#9dffb8] transition-all hover:bg-[#00ff41]/14"
+                >
+                    BUY $SCAN
+                </a>
+                <Link
+                    href={`/token/${SCAN_MINT}`}
+                    className="inline-flex h-10 items-center justify-center border border-[#00aaff]/18 bg-[#00aaff]/10 px-4 text-[11px] tracking-[0.18em] text-[#8dd8ff] transition-all hover:bg-[#00aaff]/14"
+                >
+                    OPEN $SCAN PAGE
+                </Link>
+                <ActionButton
+                    label={checking ? "CHECKING..." : "REFRESH ACCESS"}
+                    icon={<RefreshCw className={cn("h-3.5 w-3.5", checking && "animate-spin")} />}
+                    onClick={onRefresh}
+                    disabled={checking}
+                />
+            </div>
         </div>
     );
 }

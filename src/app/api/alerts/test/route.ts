@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { AlertAccessError, ensureAlertAccess } from "@/lib/alerts/access";
 import { requireAlertSessionWallet } from "@/lib/alerts/auth";
 import { sendTestAlert } from "@/lib/alerts/engine";
 import type { AlertTestChannel } from "@/lib/alerts/types";
@@ -29,9 +30,16 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+        await ensureAlertAccess(wallet);
         const data = await sendTestAlert(wallet, body.channel);
         return NextResponse.json({ success: true, data });
     } catch (error) {
+        if (error instanceof AlertAccessError) {
+            return NextResponse.json(
+                { success: false, error: error.message, data: error.access },
+                { status: error.status }
+            );
+        }
         console.error("[api/alerts/test] error:", error);
         return NextResponse.json(
             {
