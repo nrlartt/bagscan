@@ -5,9 +5,9 @@ import { Footer } from "@/components/bagscan/Footer";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BagScan — Bags-Native Token Discovery Terminal",
+  title: "BagScan - Bags-Native Token Discovery Terminal",
   description:
-    "Browse Bags-launched tokens, inspect creator details, view FDV and fee metrics, quick-buy tokens, and launch through BagScan with native partner revenue sharing.",
+    "Browse Bags-launched tokens, inspect creator details, track official market cap or clearly labeled FDV fallback alongside fee metrics, quick-buy tokens, and launch through BagScan with native partner revenue sharing.",
   icons: { icon: "/favicon.svg" },
 };
 
@@ -20,7 +20,6 @@ export default function RootLayout({
     <html lang="en">
       <body className="min-h-screen flex flex-col antialiased">
         <Providers>
-          {/* CRT scan lines overlay */}
           <div className="crt-scanlines" />
           <div className="crt-flicker" />
 

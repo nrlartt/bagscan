@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ExternalLink, Loader2, Radio } from "lucide-react";
 import type { NormalizedToken } from "@/lib/bags/types";
-import { formatCurrency, shortenAddress } from "@/lib/utils";
+import { formatCurrency, shortenAddress, getValuationMetric } from "@/lib/utils";
 
 interface NewLaunchesResponse {
     success: boolean;
@@ -111,6 +111,7 @@ export function RecentBagscanLaunches() {
                         const launchedAgo = timeAgo(token.pairCreatedAt);
                         const change = token.priceChange24h;
                         const isPositive = (change ?? 0) >= 0;
+                        const valuation = getValuationMetric(token);
 
                         return (
                             <Link
@@ -153,7 +154,7 @@ export function RecentBagscanLaunches() {
 
                                 <div className="hidden sm:block text-right">
                                     <p className="text-[10px] text-[#00ff41]/55 tracking-wider">
-                                        FDV {formatCurrency(token.marketCap ?? token.fdvUsd)}
+                                        {valuation.shortLabel} {formatCurrency(valuation.value)}
                                     </p>
                                     <p className="text-[9px] text-[#00ff41]/30 tracking-wider">
                                         24H VOL {formatCurrency(token.volume24hUsd)}

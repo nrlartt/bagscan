@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getBagsPoolInfo, getDexScreenerPairs } from "@/lib/bags/client";
+import { getBagsPoolInfo, getBagsPools, getDexScreenerPairs } from "@/lib/bags/client";
 import type { NormalizedToken } from "@/lib/bags/types";
 
 interface RecentLaunchesResponse {
@@ -83,8 +83,16 @@ export async function GET(req: NextRequest) {
             .map((draft) => draft.tokenMint)
             .filter((mint): mint is string => !!mint);
 
-        const dexPairs = await getDexScreenerPairs(mints);
+        const [dexPairs, bagsPools] = await Promise.all([
+            getDexScreenerPairs(mints),
+            getBagsPools().catch(() => []),
+        ]);
         const dexByMint = new Map<string, DexPair>();
+        const bagsPoolByMint = new Map(
+            bagsPools
+                .filter((pool) => typeof pool?.tokenMint === "string")
+                .map((pool) => [pool.tokenMint as string, pool])
+        );
         for (const pair of dexPairs) {
             const mint = pair?.baseToken?.address;
             if (!mint || dexByMint.has(mint)) continue;
@@ -99,6 +107,7 @@ export async function GET(req: NextRequest) {
         const tokens: NormalizedToken[] = selectedWithMint
             .map((draft) => {
                 const dex = dexByMint.get(draft.tokenMint);
+                const bagsPool = bagsPoolByMint.get(draft.tokenMint);
                 return {
                     tokenMint: draft.tokenMint,
                     name: dex?.baseToken?.name ?? draft.name,
@@ -110,7 +119,7 @@ export async function GET(req: NextRequest) {
                     telegram: draft.telegram || undefined,
                     priceUsd: Number(dex?.priceUsd) || undefined,
                     fdvUsd: Number(dex?.fdv) || undefined,
-                    marketCap: Number(dex?.marketCap) || undefined,
+                    marketCap: Number(bagsPool?.marketCap) || undefined,
                     liquidityUsd: Number(dex?.liquidity?.usd) || undefined,
                     volume24hUsd: Number(dex?.volume?.h24) || undefined,
                     priceChange24h: Number(dex?.priceChange?.h24) || undefined,

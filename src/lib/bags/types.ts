@@ -35,6 +35,7 @@ export interface BagsPool {
     providerUsername?: string;
     tokenPrice?: number;
     tokenPriceUsd?: number;
+    marketCap?: number;
     fdv?: number;
     fdvUsd?: number;
     liquidity?: number;
@@ -410,6 +411,22 @@ export interface NormalizedToken {
     buyCount24h?: number;
     sellCount24h?: number;
     pairCreatedAt?: string;
+
+    // Alpha enrichment
+    alphaScore?: number;
+    socialScore?: number;
+    creatorFollowers?: number;
+    trendingNowScore?: number;
+    rugRiskScore?: number;
+    isTrendingNow?: boolean;
+    discoverySource?: string;
+
+    // Spotlight
+    spotlightScore?: number;
+    spotlightReasons?: string[];
+    spotlightSources?: string[];
+    spotlightProfile?: string;
+    spotlightAgeLabel?: string;
 
     raw?: unknown;
 }

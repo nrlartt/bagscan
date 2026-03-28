@@ -14,7 +14,7 @@ import {
     Sparkles,
 } from "lucide-react";
 import { syncHackathonApps, type EnrichedHackathonApp } from "@/lib/sync";
-import { cn, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
+import { cn, formatCurrency, formatNumber, shortenAddress, getValuationMetric } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -29,13 +29,16 @@ const AI_AGENTS_CATEGORY = "ai agents";
 export default async function AgentsPage() {
     const apps = await syncHackathonApps();
     const aiAgentApps = apps
-        .filter((app) => normalizeLabel(app.category) === AI_AGENTS_CATEGORY)
+        .filter((app) => {
+            const categories = app.categories && app.categories.length > 0 ? app.categories : [app.category];
+            return categories.some((category) => normalizeLabel(category) === AI_AGENTS_CATEGORY);
+        })
         .sort(compareAiAgentApps);
 
     const acceptedCount = aiAgentApps.filter((app) => normalizeStatus(app.status) === "accepted").length;
     const liveTokenCount = aiAgentApps.filter((app) => Boolean(app.tokenAddress)).length;
     const totalVolume24h = aiAgentApps.reduce((sum, app) => sum + (app.volume24hUsd ?? 0), 0);
-    const totalTrackedFdv = aiAgentApps.reduce((sum, app) => sum + (app.fdvUsd ?? 0), 0);
+    const totalTrackedValuation = aiAgentApps.reduce((sum, app) => sum + (getValuationMetric(app).value ?? 0), 0);
 
     return (
         <div className="mx-auto max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">
@@ -106,9 +109,9 @@ export default async function AgentsPage() {
                             icon={<Activity className="h-4 w-4" />}
                         />
                         <StatCard
-                            label="Tracked FDV"
-                            value={formatCurrency(totalTrackedFdv)}
-                            hint="Combined FDV from tokenized AI agent apps."
+                            label="Tracked Value"
+                            value={formatCurrency(totalTrackedValuation)}
+                            hint="Official market cap first, FDV fallback for tokenized AI agent apps."
                             accent="text-[#ffb36b]"
                             icon={<Layers className="h-4 w-4" />}
                         />
@@ -157,6 +160,11 @@ function AgentAppCard({ app, rank }: { app: EnrichedHackathonApp; rank: number }
     const twitterHandle = getTwitterHandle(app.twitterUrl);
     const hasToken = Boolean(app.tokenAddress);
     const changePositive = (app.priceChange24h ?? 0) >= 0;
+    const valuation = getValuationMetric(app);
+    const categories = app.categories && app.categories.length > 0 ? app.categories : [app.category];
+    const displayCategory = categories.some((category) => normalizeLabel(category) === AI_AGENTS_CATEGORY)
+        ? "AI Agents"
+        : app.category;
 
     return (
         <article className="group relative overflow-hidden border border-[#00ff41]/12 bg-[linear-gradient(180deg,rgba(0,0,0,0.92),rgba(0,22,10,0.94))] p-4 transition-all duration-300 hover:border-[#00ff41]/28 hover:shadow-[0_20px_60px_rgba(0,255,65,0.08)] sm:p-5">
@@ -199,7 +207,7 @@ function AgentAppCard({ app, rank }: { app: EnrichedHackathonApp; rank: number }
 
                             <h3 className="mt-3 truncate text-lg tracking-[0.08em] text-[#d8ffe6]">{app.name}</h3>
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] tracking-[0.18em] text-[#00ff41]/45">
-                                <span>{app.category.toUpperCase()}</span>
+                                <span>{displayCategory.toUpperCase()}</span>
                                 {app.symbol ? <span className="text-[#8dd8ff]">${app.symbol}</span> : null}
                                 {twitterHandle ? <span>@{twitterHandle}</span> : null}
                             </div>
@@ -225,7 +233,7 @@ function AgentAppCard({ app, rank }: { app: EnrichedHackathonApp; rank: number }
             <p className="mt-4 line-clamp-4 text-sm leading-6 text-[#d8ffe6]/66">{app.description}</p>
 
             <div className="mt-5 grid grid-cols-2 gap-2 xl:grid-cols-4">
-                <MetricTile label="FDV" value={formatCurrency(app.fdvUsd)} />
+                <MetricTile label={valuation.shortLabel} value={formatCurrency(valuation.value)} />
                 <MetricTile label="24H VOL" value={formatCurrency(app.volume24hUsd)} />
                 <MetricTile label="LIQUIDITY" value={formatCurrency(app.liquidityUsd)} />
                 <MetricTile
@@ -353,8 +361,8 @@ function compareAiAgentApps(a: EnrichedHackathonApp, b: EnrichedHackathonApp) {
     const volumeDiff = (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0);
     if (volumeDiff !== 0) return volumeDiff;
 
-    const fdvDiff = (b.fdvUsd ?? 0) - (a.fdvUsd ?? 0);
-    if (fdvDiff !== 0) return fdvDiff;
+    const marketCapDiff = (b.marketCap ?? 0) - (a.marketCap ?? 0);
+    if (marketCapDiff !== 0) return marketCapDiff;
 
     return a.name.localeCompare(b.name);
 }

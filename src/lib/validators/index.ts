@@ -22,9 +22,17 @@ export const feeShareWalletProviderSchema = z.enum([
 export const tokensQuerySchema = z.object({
     search: z.string().optional().default(""),
     tab: z
-        .enum(["trending", "new", "hackathon", "leaderboard"])
+        .enum(["trending", "spotlight", "new", "hackathon", "leaderboard"])
         .optional()
         .default("trending"),
+    scope: z
+        .enum(["platform", "hackathon"])
+        .optional()
+        .default("platform"),
+    mode: z
+        .enum(["votes", "market"])
+        .optional()
+        .default("votes"),
     sort: z
         .enum([
             "newest",

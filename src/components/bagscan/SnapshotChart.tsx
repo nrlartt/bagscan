@@ -14,7 +14,6 @@ import { format } from "date-fns";
 
 interface SnapshotPoint {
     capturedAt: string;
-    fdvUsd?: number | null;
     priceUsd?: number | null;
     liquidityUsd?: number | null;
     lifetimeFees?: number | null;
@@ -38,11 +37,9 @@ export function SnapshotChart({ data, className }: SnapshotChartProps) {
 
     const chartData = data.map((d) => ({
         time: new Date(d.capturedAt).getTime(),
-        fdv: d.fdvUsd ?? null,
         price: d.priceUsd ?? null,
     }));
 
-    const hasFdv = chartData.some((d) => d.fdv !== null);
     const hasPrice = chartData.some((d) => d.price !== null);
 
     const timeSpanMs = chartData.length >= 2
@@ -55,10 +52,6 @@ export function SnapshotChart({ data, className }: SnapshotChartProps) {
             <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
                     <defs>
-                        <linearGradient id="fdvGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#00ff41" stopOpacity={0.2} />
-                            <stop offset="95%" stopColor="#00ff41" stopOpacity={0} />
-                        </linearGradient>
                         <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#ffbf00" stopOpacity={0.2} />
                             <stop offset="95%" stopColor="#ffbf00" stopOpacity={0} />
@@ -88,30 +81,19 @@ export function SnapshotChart({ data, className }: SnapshotChartProps) {
                             fontFamily: "'Share Tech Mono', monospace",
                             color: "#00ff41",
                         }}
-                        labelFormatter={(v: any) => format(new Date(v as number), "MMM d, HH:mm")}
-                        formatter={(v: any, name: any) => [
-                            formatCurrency(v as number),
-                            name === "fdv" ? "FDV" : "PRICE",
+                        labelFormatter={(value) => format(new Date(Number(value)), "MMM d, HH:mm")}
+                        formatter={(value, name) => [
+                            formatCurrency(Number(value)),
+                            name === "price" ? "PRICE" : String(name).toUpperCase(),
                         ]}
                     />
-                    {hasFdv && (
-                        <Area
-                            type="monotone"
-                            dataKey="fdv"
-                            stroke="#00ff41"
-                            strokeWidth={2}
-                            fill="url(#fdvGrad)"
-                            dot={chartData.length <= 10}
-                            connectNulls
-                        />
-                    )}
                     {hasPrice && (
                         <Area
                             type="monotone"
                             dataKey="price"
                             stroke="#ffbf00"
-                            strokeWidth={hasFdv ? 1 : 2}
-                            fill={hasFdv ? "none" : "url(#priceGrad)"}
+                            strokeWidth={2}
+                            fill="url(#priceGrad)"
                             dot={chartData.length <= 10}
                             connectNulls
                         />

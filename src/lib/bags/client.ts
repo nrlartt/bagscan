@@ -496,6 +496,18 @@ export interface HackathonApp {
     icon: string;
     tokenAddress: string;
     twitterUrl?: string;
+    upvotes?: number;
+    downvotes?: number;
+    twitterUser?: {
+        username?: string;
+        name?: string;
+        verified?: boolean;
+        verified_type?: string;
+        public_metrics?: {
+            followers_count?: number;
+            tweet_count?: number;
+        };
+    } | null;
 }
 
 export interface HackathonListResponse {

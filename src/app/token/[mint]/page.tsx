@@ -17,6 +17,7 @@ import {
     formatNumber,
     shortenAddress,
     bpsToPercent,
+    getValuationMetric,
 } from "@/lib/utils";
 import { getExplorerTokenUrl } from "@/lib/solana";
 import type { NormalizedToken, BagsClaimEvent, BagsCreatorV3, BagsClaimStatEntry } from "@/lib/bags/types";
@@ -79,6 +80,7 @@ export default function TokenDetailPage() {
 
     const { token, claimEvents, snapshots } = data.data;
     const priceChangePositive = (token.priceChange24h ?? 0) >= 0;
+    const valuation = getValuationMetric(token);
 
     return (
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8">
@@ -188,9 +190,9 @@ export default function TokenDetailPage() {
                             subValue={token.priceChange24h !== undefined ? `${token.priceChange24h >= 0 ? "+" : ""}${token.priceChange24h.toFixed(1)}% 24h` : undefined}
                         />
                         <MetricCard
-                            label={token.marketCap ? "Market Cap" : "Est. FDV"}
-                            value={formatCurrency(token.marketCap ?? token.fdvUsd)}
-                            tooltip="BagScan shows FDV when circulating supply cannot be verified."
+                            label={valuation.longLabel}
+                            value={formatCurrency(valuation.value)}
+                            tooltip={valuation.source === "market-cap" ? "BagScan displays the official market cap when Bags provides it." : valuation.source === "fdv" ? "FDV fallback shown because official Bags market cap is unavailable." : undefined}
                             icon={<TrendingUp className="w-5 h-5" />}
                         />
                         <MetricCard
@@ -232,7 +234,7 @@ export default function TokenDetailPage() {
                     <div className="crt-panel p-5 animate-fade-in">
                         <div className="panel-header flex items-center gap-2">
                             <BarChart3 className="w-4 h-4 text-[#00ff41]/50" />
-                            ╔══ PRICE & FDV HISTORY ══╗
+                            ╔══ PRICE HISTORY ══╗
                         </div>
                         <SnapshotChart data={snapshots} />
                     </div>

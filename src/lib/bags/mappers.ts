@@ -20,6 +20,7 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 export function normalizePool(raw: BagsPool): NormalizedToken {
     const priceUsd = safeNum(raw.tokenPriceUsd ?? raw.tokenPrice);
     const totalSupply = safeNum(raw.totalSupply);
+    const marketCap = safeNum(raw.marketCap);
 
     let fdvUsd = safeNum(raw.fdvUsd ?? raw.fdv);
     if (fdvUsd === undefined && priceUsd !== undefined && totalSupply !== undefined) {
@@ -49,6 +50,7 @@ export function normalizePool(raw: BagsPool): NormalizedToken {
 
         priceUsd,
         fdvUsd,
+        marketCap,
         liquidityUsd: safeNum(raw.liquidityUsd ?? raw.liquidity),
         volume24hUsd: safeNum(raw.volume24hUsd ?? raw.volume24h),
         totalSupply,
@@ -233,7 +235,7 @@ export function mergeDexScreenerData(
         website: pair.info?.websites?.[0]?.url ?? token.website,
         priceUsd: safeNum(pair.priceUsd) ?? token.priceUsd,
         fdvUsd: safeNum(pair.fdv) ?? token.fdvUsd,
-        marketCap: safeNum(pair.marketCap) ?? token.marketCap,
+        marketCap: token.marketCap,
         liquidityUsd: safeNum(pair.liquidity?.usd) ?? token.liquidityUsd,
         volume24hUsd: safeNum(pair.volume?.h24) ?? token.volume24hUsd,
         pairAddress: pair.pairAddress ?? token.pairAddress,

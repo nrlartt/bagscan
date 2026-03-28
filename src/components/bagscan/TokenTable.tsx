@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
+import { formatCurrency, formatNumber, shortenAddress, getValuationMetric } from "@/lib/utils";
 import { ProviderBadge } from "./Badges";
 import type { NormalizedToken } from "@/lib/bags/types";
 import { ChevronRight } from "lucide-react";
@@ -20,7 +20,7 @@ export function TokenTable({ tokens }: TokenTableProps) {
                         <th className="text-left py-3 px-3 text-[9px] uppercase tracking-[0.15em] text-[#00ff41]/30 font-normal">TOKEN</th>
                         <th className="text-right py-3 px-3 text-[9px] uppercase tracking-[0.15em] text-[#00ff41]/30 font-normal">PRICE</th>
                         <th className="text-right py-3 px-3 text-[9px] uppercase tracking-[0.15em] text-[#00ff41]/30 font-normal hidden sm:table-cell">24H %</th>
-                        <th className="text-right py-3 px-3 text-[9px] uppercase tracking-[0.15em] text-[#00ff41]/30 font-normal">FDV</th>
+                        <th className="text-right py-3 px-3 text-[9px] uppercase tracking-[0.15em] text-[#00ff41]/30 font-normal">VAL</th>
                         <th className="text-right py-3 px-3 text-[9px] uppercase tracking-[0.15em] text-[#00ff41]/30 font-normal hidden md:table-cell">VOLUME</th>
                         <th className="text-right py-3 px-3 text-[9px] uppercase tracking-[0.15em] text-[#00ff41]/30 font-normal hidden lg:table-cell">LIQUIDITY</th>
                         <th className="text-right py-3 px-3 text-[9px] uppercase tracking-[0.15em] text-[#00ff41]/30 font-normal hidden xl:table-cell">TXNS</th>
@@ -28,7 +28,9 @@ export function TokenTable({ tokens }: TokenTableProps) {
                     </tr>
                 </thead>
                 <tbody>
-                    {tokens.map((token) => (
+                    {tokens.map((token) => {
+                        const valuation = getValuationMetric(token);
+                        return (
                         <tr key={token.tokenMint} className="border-b border-[#00ff41]/5 hover:bg-[#00ff41]/[0.03] transition-colors group">
                             <td className="py-3 px-3">
                                 <Link href={`/token/${token.tokenMint}`} className="flex items-center gap-3">
@@ -67,7 +69,10 @@ export function TokenTable({ tokens }: TokenTableProps) {
                                 )}
                             </td>
                             <td className="py-3 px-3 text-right">
-                                <span className="text-[#00ff41]/60 tracking-wider">{formatCurrency(token.marketCap ?? token.fdvUsd)}</span>
+                                <div className="tracking-wider">
+                                    <span className="text-[9px] text-[#00ff41]/24">{valuation.shortLabel}</span>
+                                    <div className="text-[#00ff41]/60">{formatCurrency(valuation.value)}</div>
+                                </div>
                             </td>
                             <td className="py-3 px-3 text-right hidden md:table-cell">
                                 <span className="text-[#00ff41]/40 tracking-wider">{formatCurrency(token.volume24hUsd)}</span>
@@ -95,7 +100,8 @@ export function TokenTable({ tokens }: TokenTableProps) {
                                 </Link>
                             </td>
                         </tr>
-                    ))}
+                        );
+                    })}
                 </tbody>
             </table>
         </div>

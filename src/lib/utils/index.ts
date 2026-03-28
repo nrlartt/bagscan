@@ -36,6 +36,46 @@ export function formatCurrency(
     }).format(value);
 }
 
+export type ValuationSource = "market-cap" | "fdv" | "none";
+
+export function getValuationMetric(input: {
+    marketCap?: number | null;
+    fdvUsd?: number | null;
+}): {
+    value: number | undefined;
+    shortLabel: "MCAP" | "FDV" | "VAL";
+    longLabel: "Market Cap" | "FDV" | "Valuation";
+    source: ValuationSource;
+    description?: string;
+} {
+    if (input.marketCap !== null && input.marketCap !== undefined && Number.isFinite(input.marketCap)) {
+        return {
+            value: input.marketCap,
+            shortLabel: "MCAP",
+            longLabel: "Market Cap",
+            source: "market-cap",
+            description: "Official Bags market cap",
+        };
+    }
+
+    if (input.fdvUsd !== null && input.fdvUsd !== undefined && Number.isFinite(input.fdvUsd)) {
+        return {
+            value: input.fdvUsd,
+            shortLabel: "FDV",
+            longLabel: "FDV",
+            source: "fdv",
+            description: "Estimated fully diluted valuation fallback",
+        };
+    }
+
+    return {
+        value: undefined,
+        shortLabel: "VAL",
+        longLabel: "Valuation",
+        source: "none",
+    };
+}
+
 /** Format plain number compactly: 1.2M */
 export function formatNumber(
     value: number | null | undefined,

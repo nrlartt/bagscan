@@ -3,19 +3,22 @@ export const maxDuration = 25;
 
 import { NextRequest, NextResponse } from "next/server";
 import {
+    syncSpotlightTokens,
     syncTrendingTokens,
     syncNewLaunches,
     syncLeaderboard,
     syncHackathonApps,
+    syncHackathonLeaderboard,
+    getHackathonFeedMeta,
     searchAllTokens,
     getPlatformStats,
 } from "@/lib/sync";
 import { tokensQuerySchema } from "@/lib/validators";
 import type { NormalizedToken } from "@/lib/bags/types";
 
-function jsonOk(data: unknown) {
+function jsonOk(data: unknown, cacheControl = "public, s-maxage=10, stale-while-revalidate=30") {
     return NextResponse.json(data, {
-        headers: { "Cache-Control": "public, s-maxage=10, stale-while-revalidate=30" },
+        headers: { "Cache-Control": cacheControl },
     });
 }
 
@@ -42,6 +45,7 @@ export async function GET(req: NextRequest) {
 
         if (query.tab === "hackathon") {
             const apps = await syncHackathonApps();
+            const hackathonMeta = await getHackathonFeedMeta();
             return jsonOk({
                 success: true,
                 data: apps,
@@ -51,11 +55,36 @@ export async function GET(req: NextRequest) {
                     pageSize: apps.length,
                     totalPages: 1,
                     tab: "hackathon",
+                    totalHackathonApps: hackathonMeta.totalItems,
+                    acceptedOverall: hackathonMeta.acceptedOverall,
                 },
             });
         }
 
         if (query.tab === "leaderboard") {
+            if (query.scope === "hackathon") {
+                const apps = await syncHackathonApps();
+                const hackathonMeta = await getHackathonFeedMeta();
+                const entries = await syncHackathonLeaderboard(query.mode);
+                const trackedMarketCap = apps.reduce((sum, app) => sum + (app.marketCap ?? app.fdvUsd ?? 0), 0);
+                return jsonOk({
+                    success: true,
+                    data: entries,
+                    meta: {
+                        total: entries.length,
+                        page: 1,
+                        pageSize: entries.length,
+                        totalPages: 1,
+                        tab: "leaderboard",
+                        scope: "hackathon",
+                        mode: query.mode,
+                        totalHackathonApps: hackathonMeta.totalItems,
+                        acceptedOverall: hackathonMeta.acceptedOverall,
+                        trackedMarketCap,
+                    },
+                });
+            }
+
             let leaderboard: Awaited<ReturnType<typeof syncLeaderboard>> = [];
             let stats: Awaited<ReturnType<typeof getPlatformStats>> | null = null;
             try {
@@ -76,6 +105,7 @@ export async function GET(req: NextRequest) {
                     pageSize: leaderboard.length,
                     totalPages: 1,
                     tab: "leaderboard",
+                    scope: "platform",
                     totalPools: stats?.totalProjects,
                 },
             });
@@ -83,7 +113,9 @@ export async function GET(req: NextRequest) {
 
         let tokens: NormalizedToken[];
 
-        if (query.tab === "new") {
+        if (query.tab === "spotlight") {
+            tokens = await syncSpotlightTokens();
+        } else if (query.tab === "new") {
             tokens = await syncNewLaunches();
         } else {
             tokens = await syncTrendingTokens();
@@ -106,7 +138,9 @@ export async function GET(req: NextRequest) {
                 tab: query.tab,
                 totalPools: total,
             },
-        });
+        }, query.tab === "spotlight"
+            ? "public, s-maxage=30, stale-while-revalidate=240"
+            : "public, s-maxage=10, stale-while-revalidate=30");
     } catch (e) {
         console.error("[api/tokens] error:", e);
         return NextResponse.json(

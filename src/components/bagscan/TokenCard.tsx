@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { formatCurrency, formatNumber, shortenAddress, cn } from "@/lib/utils";
+import { formatCurrency, formatNumber, shortenAddress, cn, getValuationMetric } from "@/lib/utils";
 import { ProviderBadge } from "./Badges";
 import type { NormalizedToken } from "@/lib/bags/types";
 import { TrendingUp, Activity, ArrowUpDown, Zap, ArrowRightLeft, Radio, Clock } from "lucide-react";
@@ -25,26 +25,62 @@ interface TokenCardProps {
     token: NormalizedToken;
     isNewLaunch?: boolean;
     index?: number;
+    surfaceVariant?: "default" | "trending" | "new";
 }
 
-export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
+export function TokenCard({
+    token,
+    isNewLaunch,
+    index = 0,
+    surfaceVariant = "default",
+}: TokenCardProps) {
     const changePositive = (token.priceChange24h ?? 0) >= 0;
-    const hasMarketData = !!(token.priceUsd || token.fdvUsd || token.volume24hUsd);
+    const valuation = getValuationMetric(token);
+    const hasMarketData = !!(token.priceUsd || valuation.value || token.volume24hUsd);
     const isMigrated = !!token.isMigrated;
     const isNew = isNewLaunch && !hasMarketData;
     const launchTime = timeAgo(token.pairCreatedAt);
+    const isPremiumTrending = surfaceVariant === "trending";
+    const isPremiumNew = surfaceVariant === "new";
+    const isPremium = isPremiumTrending || isPremiumNew;
+    const useLaunchPalette = isPremiumNew || isNew;
 
     return (
         <Link
             href={`/token/${token.tokenMint}`}
             className={cn(
-                "group block border bg-black/70 p-4 relative overflow-hidden transition-all",
-                isNew
-                    ? "border-[#ffb800]/15 new-launch-card hover:border-[#ffb800]/50"
-                    : "border-[#00ff41]/15 hover:border-[#00ff41]/40 hover:bg-[#00ff41]/[0.02]"
+                "group block border p-4 relative overflow-hidden transition-all duration-300",
+                isPremium
+                    ? useLaunchPalette
+                        ? "border-[#ffb800]/16 bg-[linear-gradient(180deg,rgba(0,0,0,0.92),rgba(40,22,0,0.92))] shadow-[0_0_28px_rgba(255,184,0,0.04)] hover:border-[#ffb800]/38 hover:shadow-[0_20px_60px_rgba(255,184,0,0.10)]"
+                        : "border-[#00ff41]/16 bg-[linear-gradient(180deg,rgba(0,0,0,0.92),rgba(0,22,10,0.92))] shadow-[0_0_28px_rgba(0,255,65,0.04)] hover:border-[#00ff41]/38 hover:shadow-[0_20px_60px_rgba(0,255,65,0.08)]"
+                    : isNew
+                        ? "bg-black/70 border-[#ffb800]/15 new-launch-card hover:border-[#ffb800]/50"
+                        : "bg-black/70 border-[#00ff41]/15 hover:border-[#00ff41]/40 hover:bg-[#00ff41]/[0.02]"
             )}
             style={isNew ? { animationDelay: `${index * 150}ms` } : undefined}
         >
+            {isPremium && (
+                <>
+                    <div
+                        className={cn(
+                            "absolute inset-x-0 top-0 h-px opacity-85",
+                            useLaunchPalette
+                                ? "bg-[linear-gradient(90deg,transparent,rgba(255,184,0,0.7),transparent)]"
+                                : "bg-[linear-gradient(90deg,transparent,rgba(0,255,65,0.6),transparent)]"
+                        )}
+                    />
+                    <div
+                        className={cn(
+                            "absolute inset-0 opacity-90",
+                            useLaunchPalette
+                                ? "bg-[radial-gradient(circle_at_top_right,rgba(255,184,0,0.12),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(255,120,0,0.08),transparent_36%)]"
+                                : "bg-[radial-gradient(circle_at_top_right,rgba(0,255,65,0.12),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(0,170,255,0.08),transparent_36%)]"
+                        )}
+                    />
+                </>
+            )}
+
             {/* Animated scanline for new tokens */}
             {isNew && (
                 <div className="absolute inset-0 pointer-events-none z-0">
@@ -56,7 +92,7 @@ export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
             <div className="relative flex items-start gap-3 z-[1]">
                 <div className={cn(
                     "relative w-10 h-10 overflow-hidden flex-shrink-0 border transition-all",
-                    isNew
+                    useLaunchPalette
                         ? "border-[#ffb800]/25 group-hover:border-[#ffb800]/50"
                         : "border-[#00ff41]/20 group-hover:border-[#00ff41]/40"
                 )}>
@@ -65,7 +101,7 @@ export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
                     ) : (
                         <div className={cn(
                             "w-full h-full flex items-center justify-center text-sm",
-                            isNew ? "text-[#ffb800]/40 bg-[#ffb800]/5" : "text-[#00ff41]/40 bg-[#00ff41]/5"
+                            useLaunchPalette ? "text-[#ffb800]/40 bg-[#ffb800]/5" : "text-[#00ff41]/40 bg-[#00ff41]/5"
                         )}>
                             {token.symbol?.charAt(0) ?? "?"}
                         </div>
@@ -82,14 +118,14 @@ export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
                     <div className="flex items-center gap-2">
                         <h3 className={cn(
                             "text-xs truncate tracking-wider transition-colors",
-                            isNew ? "text-[#ffb800] group-hover:text-[#ffb800]" : "text-[#00ff41] group-hover:text-[#00ff41]"
-                        )} style={{ textShadow: isNew ? '0 0 6px rgba(255,184,0,0.3)' : '0 0 6px rgba(0,255,65,0.3)' }}>
+                            useLaunchPalette ? "text-[#ffb800] group-hover:text-[#ffcf63]" : "text-[#00ff41] group-hover:text-[#8dffb1]"
+                        )} style={{ textShadow: useLaunchPalette ? '0 0 6px rgba(255,184,0,0.3)' : '0 0 6px rgba(0,255,65,0.3)' }}>
                             {token.name ?? shortenAddress(token.tokenMint)}
                         </h3>
                         {token.symbol && (
                             <span className={cn(
                                 "text-[9px] tracking-wider border px-1.5 py-0.5",
-                                isNew ? "text-[#ffb800]/30 border-[#ffb800]/10" : "text-[#00ff41]/30 border-[#00ff41]/10"
+                                useLaunchPalette ? "text-[#ffb800]/40 border-[#ffb800]/14 bg-[#ffb800]/[0.04]" : "text-[#00ff41]/35 border-[#00ff41]/12 bg-[#00ff41]/[0.03]"
                             )}>
                                 ${token.symbol}
                             </span>
@@ -97,7 +133,7 @@ export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                         {token.creatorDisplay && (
-                            <span className={cn("text-[10px] truncate tracking-wider", isNew ? "text-[#ffb800]/25" : "text-[#00ff41]/30")}>
+                            <span className={cn("text-[10px] truncate tracking-wider", useLaunchPalette ? "text-[#ffb800]/28" : "text-[#00ff41]/30")}>
                                 {token.creatorDisplay}
                             </span>
                         )}
@@ -124,23 +160,23 @@ export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
             <div className="relative mt-4 grid grid-cols-2 gap-2 z-[1]">
                 {hasMarketData ? (
                     <>
-                        <div className="p-2 border border-[#00ff41]/10 bg-black/40">
+                        <div className={cn("p-2 border bg-black/40", useLaunchPalette ? "border-[#ffb800]/10" : "border-[#00ff41]/10")}>
                             <div className="flex items-center gap-1">
-                                <TrendingUp className="w-3 h-3 text-[#00ff41]/30" />
-                                <span className="text-[9px] text-[#00ff41]/30 uppercase tracking-[0.15em]">
-                                    {token.marketCap ? "MCAP" : "FDV"}
+                                <TrendingUp className={cn("w-3 h-3", useLaunchPalette ? "text-[#ffb800]/35" : "text-[#00ff41]/30")} />
+                                <span className={cn("text-[9px] uppercase tracking-[0.15em]", useLaunchPalette ? "text-[#ffb800]/35" : "text-[#00ff41]/30")}>
+                                    {valuation.shortLabel}
                                 </span>
                             </div>
-                            <p className="text-xs text-[#00ff41]/80 mt-0.5 tracking-wider">
-                                {formatCurrency(token.marketCap ?? token.fdvUsd)}
+                            <p className={cn("text-xs mt-0.5 tracking-wider", useLaunchPalette ? "text-[#fff0bd]/80" : "text-[#00ff41]/80")}>
+                                {formatCurrency(valuation.value)}
                             </p>
                         </div>
-                        <div className="p-2 border border-[#00ff41]/10 bg-black/40">
+                        <div className={cn("p-2 border bg-black/40", useLaunchPalette ? "border-[#ffb800]/10" : "border-[#00ff41]/10")}>
                             <div className="flex items-center gap-1">
-                                <Activity className="w-3 h-3 text-[#00ff41]/30" />
-                                <span className="text-[9px] text-[#00ff41]/30 uppercase tracking-[0.15em]">24H VOL</span>
+                                <Activity className={cn("w-3 h-3", useLaunchPalette ? "text-[#ffb800]/35" : "text-[#00ff41]/30")} />
+                                <span className={cn("text-[9px] uppercase tracking-[0.15em]", useLaunchPalette ? "text-[#ffb800]/35" : "text-[#00ff41]/30")}>24H VOL</span>
                             </div>
-                            <p className="text-xs text-[#00ff41]/80 mt-0.5 tracking-wider">
+                            <p className={cn("text-xs mt-0.5 tracking-wider", useLaunchPalette ? "text-[#fff0bd]/80" : "text-[#00ff41]/80")}>
                                 {formatCurrency(token.volume24hUsd)}
                             </p>
                         </div>
@@ -170,8 +206,8 @@ export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
             </div>
 
             {/* Bottom row */}
-            <div className="relative mt-3 flex items-center justify-between z-[1]">
-                <span className={cn("text-[9px] tracking-wider", isNew ? "text-[#ffb800]/15" : "text-[#00ff41]/15")}>
+            <div className={cn("relative mt-3 flex items-center justify-between z-[1]", isPremium ? "border-t pt-3" : "", useLaunchPalette ? "border-[#ffb800]/10" : "border-[#00ff41]/10")}>
+                <span className={cn("text-[9px] tracking-wider", useLaunchPalette ? "text-[#ffb800]/18" : "text-[#00ff41]/15")}>
                     {shortenAddress(token.tokenMint)}
                 </span>
                 <div className="flex items-center gap-2">
@@ -182,12 +218,12 @@ export function TokenCard({ token, isNewLaunch, index = 0 }: TokenCardProps) {
                         </span>
                     )}
                     {token.txCount24h !== undefined && token.txCount24h > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-[9px] text-[#00ff41]/25 tracking-wider">
+                        <span className={cn("inline-flex items-center gap-1 text-[9px] tracking-wider", useLaunchPalette ? "text-[#ffb800]/35" : "text-[#00ff41]/25")}>
                             <ArrowUpDown className="w-2.5 h-2.5" />
                             {formatNumber(token.txCount24h)} TXS
                         </span>
                     ) : token.priceUsd ? (
-                        <span className="text-[9px] text-[#00ff41]/25 tracking-wider">
+                        <span className={cn("text-[9px] tracking-wider", useLaunchPalette ? "text-[#ffb800]/35" : "text-[#00ff41]/25")}>
                             ${token.priceUsd < 0.0001 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}
                         </span>
                     ) : isNew && !launchTime ? (
