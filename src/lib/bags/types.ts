@@ -26,6 +26,8 @@ export interface BagsPool {
     description?: string;
     website?: string;
     twitter?: string;
+    projectTwitterHandle?: string;
+    projectTwitterFollowers?: number;
     telegram?: string;
     creatorWallet?: string;
     creatorDisplayName?: string;
@@ -356,6 +358,8 @@ export interface NormalizedToken {
     description?: string;
     website?: string;
     twitter?: string;
+    projectTwitterHandle?: string;
+    projectTwitterFollowers?: number;
     telegram?: string;
 
     // Pool state

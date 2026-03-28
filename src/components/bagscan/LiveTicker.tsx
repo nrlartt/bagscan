@@ -2,6 +2,7 @@
 
 import { ExternalLink, Radio, Rocket, AppWindow, Copy, Check } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import Image from "next/image";
 import { formatCurrency, shortenAddress } from "@/lib/utils";
 import type { NormalizedToken } from "@/lib/bags/types";
 
@@ -15,6 +16,7 @@ const SCAN_LINKS = {
     dexscreener: "https://dexscreener.com/solana/gcnkpzr8rjnsv973cnk81dx58yudedjtatwt2lu8lclt",
     hackathon: "https://bags.fm/apps/e982488c-b22c-42f6-ad86-d41e5d4aaa6b",
 };
+const SCAN_IMAGE_FALLBACK = "https://ipfs.io/ipfs/QmTGhFhBXSaRApTMwTuoX1uswHAbw4Br6kCfSTAMtt6Mta";
 
 export function LiveTicker({ tokens }: LiveTickerProps) {
     const scanToken = useMemo(
@@ -47,13 +49,14 @@ export function LiveTicker({ tokens }: LiveTickerProps) {
             <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)] lg:items-start">
                 <div className="space-y-4">
                     <div className="flex flex-wrap items-start gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center border border-[#00ff41]/25 bg-[#00ff41]/[0.04] shadow-[0_0_18px_rgba(0,255,65,0.08)]">
-                            <span
-                                className="text-lg tracking-[0.12em] text-[#00ff41]"
-                                style={{ textShadow: "0 0 10px rgba(0,255,65,0.35)" }}
-                            >
-                                $S
-                            </span>
+                        <div className="relative h-12 w-12 overflow-hidden border border-[#00ff41]/25 bg-[#00ff41]/[0.04] shadow-[0_0_18px_rgba(0,255,65,0.08)]">
+                            <Image
+                                src={scanToken?.image || SCAN_IMAGE_FALLBACK}
+                                alt="$SCAN"
+                                fill
+                                className="object-cover"
+                                unoptimized
+                            />
                         </div>
                         <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
@@ -67,12 +70,6 @@ export function LiveTicker({ tokens }: LiveTickerProps) {
                                     BAGSCAN NATIVE
                                 </span>
                             </div>
-                            <p className="mt-2 max-w-2xl text-[11px] leading-6 tracking-[0.14em] text-[#d8ffe6]/62">
-                                $SCAN is the native token of the BagScan ecosystem, tying together
-                                discovery, launch infrastructure, and community growth across the
-                                Bags platform. This panel highlights the official token listing,
-                                live market access, and the BagScan Hackathon presence in one place.
-                            </p>
                         </div>
                     </div>
 

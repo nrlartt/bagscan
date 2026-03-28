@@ -12,7 +12,7 @@ import type { NormalizedToken } from "@/lib/bags/types";
 import {
   Flame, Rocket, Trophy, Search, SearchX, X, LayoutGrid, List,
   DollarSign, BarChart3, Layers, Cpu, AppWindow, Radio, Sparkles,
-  BadgeCheck, Activity, ExternalLink, Clock3,
+  BadgeCheck, Activity, ExternalLink, Clock3, Globe2, Users,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -1322,70 +1322,240 @@ function HackathonMetric({
 }
 
 function SpotlightSection({ tokens }: { tokens: NormalizedToken[] }) {
-  const averageScore = tokens.reduce((sum, token) => sum + (token.spotlightScore ?? 0), 0) / Math.max(tokens.length, 1);
   const combinedVolume = tokens.reduce((sum, token) => sum + (token.volume24hUsd ?? 0), 0);
   const combinedValuation = tokens.reduce((sum, token) => sum + (getValuationMetric(token).value ?? 0), 0);
-  const establishedCount = tokens.filter((token) => token.spotlightProfile === "ESTABLISHED").length;
+  const totalTransactions = tokens.reduce((sum, token) => sum + (token.txCount24h ?? 0), 0);
+  const pulseProject = pickDailySpotlightPulseProject(tokens);
+  const pulseValuation = pulseProject ? getValuationMetric(pulseProject) : null;
+  const pulsePositive = (pulseProject?.priceChange24h ?? 0) >= 0;
+  const pulseSourceLabels = (pulseProject?.spotlightSources ?? []).slice(0, 3).map(formatSpotlightSourceLabel);
+  const pulseReasons = (pulseProject?.spotlightReasons ?? []).slice(0, 3);
+  const pulseSubline =
+    pulseProject?.creatorDisplay ||
+    pulseProject?.providerUsername ||
+    pulseProject?.bagsUsername ||
+    "BAGS PROJECT";
+  const pulseProfile = pulseProject ? getSpotlightCreatorProfile(pulseProject) : null;
+  const pulseWebsite = pulseProject?.website ? getDisplayHost(pulseProject.website) : null;
+  const pulseFollowers = pulseProject?.creatorFollowers ? formatCompactNum(pulseProject.creatorFollowers) : null;
+  const pulseIdentity = pulseProfile?.label ?? "OFFICIAL CREATOR PROFILE PENDING";
+  const pulseBuyPressure = formatPulseBuyPressure(pulseProject);
 
   return (
     <div className="animate-fade-in">
-      <div className="mb-5 overflow-hidden border border-[#ffaa00]/18 bg-[linear-gradient(135deg,rgba(255,170,0,0.08),rgba(255,170,0,0.02)_28%,rgba(0,0,0,0.82)_72%)] shadow-[0_0_40px_rgba(255,170,0,0.05)]">
-        <div className="grid gap-4 p-5 xl:grid-cols-[1.35fr,0.95fr]">
-          <div className="relative overflow-hidden border border-[#ffaa00]/10 bg-black/35 p-5">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,170,0,0.12),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(0,255,65,0.08),transparent_40%)]" />
+      <div className="mb-6 overflow-hidden border border-[#ffb84d]/22 bg-[linear-gradient(135deg,rgba(255,184,77,0.12),rgba(255,184,77,0.03)_24%,rgba(0,0,0,0.9)_62%,rgba(0,40,22,0.92)_100%)] shadow-[0_0_65px_rgba(255,170,0,0.08)]">
+        <div className="relative grid gap-4 p-5 xl:grid-cols-[1.18fr,0.82fr] xl:p-6">
+          <div className="pointer-events-none absolute -left-16 top-[-58px] h-44 w-44 rounded-full bg-[#ffaa00]/18 blur-3xl" />
+          <div className="pointer-events-none absolute right-[-40px] top-10 h-48 w-48 rounded-full bg-[#00ff41]/10 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-[-84px] left-1/3 h-48 w-48 rounded-full bg-[#00aaff]/12 blur-3xl" />
+
+          <div className="relative overflow-hidden border border-[#ffcf7b]/16 bg-[linear-gradient(145deg,rgba(255,180,55,0.09),rgba(255,180,55,0.03)_22%,rgba(0,0,0,0.74)_58%,rgba(0,255,65,0.05)_100%)] p-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),0_0_30px_rgba(255,170,0,0.05)] xl:p-6">
+            <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,214,143,0.95),transparent)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,196,87,0.22),transparent_32%),radial-gradient(circle_at_70%_25%,rgba(0,255,65,0.12),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(0,170,255,0.10),transparent_42%)]" />
             <div className="relative">
-              <div className="flex items-center gap-2 text-[10px] tracking-wider">
-                <Sparkles className="w-3.5 h-3.5 text-[#ffaa00]" />
-                <span className="text-[#ffaa00]/80 tracking-[0.18em]">SPOTLIGHT ({tokens.length})</span>
-                <span className="text-[#00ff41]/20">PREMIUM FEATURED BOARD</span>
+              <div className="flex flex-wrap items-center gap-2 text-[10px] tracking-wider">
+                <span className="inline-flex items-center gap-2 border border-[#ffcf7b]/26 bg-black/35 px-2.5 py-1 text-[#ffe4a8] shadow-[0_0_18px_rgba(255,196,87,0.08)]">
+                  <Sparkles className="h-3.5 w-3.5 text-[#ffaa00]" />
+                  SPOTLIGHT
+                </span>
+                <span className="inline-flex items-center gap-2 border border-[#00ff41]/18 bg-[#00ff41]/[0.05] px-2.5 py-1 text-[#b9ffc8]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#00ff41] shadow-[0_0_10px_rgba(0,255,65,0.9)]" />
+                  LIVE CURATION
+                </span>
               </div>
-              <h2 className="mt-4 text-[18px] tracking-[0.18em] text-[#fff3d1] sm:text-[22px]" style={{ textShadow: "0 0 14px rgba(255,170,0,0.14)" }}>
-                FEATURED TOKENS WITH REAL CONVICTION
+
+              <h2 className="mt-5 max-w-3xl text-[20px] tracking-[0.2em] text-[#fff6dc] sm:text-[24px]" style={{ textShadow: "0 0 18px rgba(255,186,82,0.22)" }}>
+                FEATURED BAGS PROJECTS
               </h2>
-              <p className="mt-4 max-w-3xl text-[10px] leading-relaxed text-[#ffd37a]/70 tracking-[0.15em]">
-                Spotlight continuously re-scores the wider Bags market using valuation quality, live volume, liquidity depth, trade flow,
-                creator traction, alpha support, and durability. Fresh launches can surface here, but older leaders stay on the board when
-                they continue to earn their place.
+              <p className="mt-4 max-w-3xl text-[10px] leading-relaxed tracking-[0.16em] text-[#ffe4a8]/78 sm:text-[11px]">
+                A premium showcase of standout Bags projects, enriched with live valuation, trading flow, and activity context.
               </p>
-              <div className="mt-4 border-l-2 border-[#ffaa00]/25 pl-4 text-[9px] leading-6 tracking-[0.16em] text-[#00ff41]/45">
-                THE BOARD RE-RANKS ITSELF AUTOMATICALLY SO ESTABLISHED WINNERS CAN OUTRUN PURELY FRESH MOMENTUM.
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                <SpotlightHeroPill label="Curated selection" accent="amber" />
+                <SpotlightHeroPill label="Live market data" accent="green" />
+                <SpotlightHeroPill label="Dynamic rotation" accent="cyan" />
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <SpotlightStatTile label="AVG SCORE" value={averageScore.toFixed(1)} hint="featured conviction" />
-            <SpotlightStatTile label="COMBINED VALUE" value={formatCompactUsd(combinedValuation)} hint="MCAP first, FDV fallback" />
-            <SpotlightStatTile label="24H VOLUME" value={formatCompactUsd(combinedVolume)} hint="live flow on board" />
-            <SpotlightStatTile label="ESTABLISHED" value={`${establishedCount}/${tokens.length}`} hint="durable leaders on board" />
+          <div className="relative grid gap-3">
+            <div className="relative overflow-hidden border border-[#ffcf7b]/16 bg-[linear-gradient(145deg,rgba(255,170,0,0.1),rgba(255,170,0,0.02)_28%,rgba(0,0,0,0.8)_64%,rgba(0,170,255,0.06)_100%)] p-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),0_0_35px_rgba(255,170,0,0.06)]">
+              <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,214,143,0.9),transparent)]" />
+              <div className="absolute -right-10 top-[-28px] h-28 w-28 rounded-full bg-[#ffaa00]/18 blur-3xl" />
+              <div className="absolute -left-8 bottom-[-38px] h-24 w-24 rounded-full bg-[#00ff41]/10 blur-3xl" />
+              <div className="relative">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[9px] tracking-[0.18em] text-[#ffcf7b]/75">CURRENT PULSE</div>
+                  <div className="inline-flex items-center gap-2 border border-[#00ff41]/18 bg-black/35 px-2 py-1 text-[8px] tracking-[0.18em] text-[#b9ffc8]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#00ff41] shadow-[0_0_10px_rgba(0,255,65,0.9)]" />
+                    DAILY ROTATION
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-start gap-4">
+                  <div className="relative h-16 w-16 overflow-hidden border border-[#ffcf7b]/20 bg-black/45 shadow-[0_0_24px_rgba(255,170,0,0.08)]">
+                    {pulseProject?.image ? (
+                      <Image src={pulseProject.image} alt={pulseProject.name ?? "Spotlight project"} fill className="object-cover" unoptimized />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-lg text-[#ffaa00]/50">
+                        {pulseProject?.symbol?.charAt(0) ?? "?"}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[16px] tracking-[0.16em] text-[#fff6dc]" style={{ textShadow: "0 0 12px rgba(255,186,82,0.16)" }}>
+                      {pulseProject?.name ?? "Spotlight Feed"}
+                    </div>
+                    <div className="mt-1 text-[10px] tracking-[0.16em] text-[#00ff41]/46">
+                      {pulseProject?.symbol ? `$${pulseProject.symbol}` : "LIVE BAGS PROJECT"}
+                    </div>
+                    <div className="mt-1 text-[9px] tracking-[0.15em] text-[#b9ffc8]/34">
+                      {pulseSubline}
+                    </div>
+                  </div>
+                </div>
+
+                {pulseSourceLabels.length > 0 ? (
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    {pulseSourceLabels.map((source) => (
+                      <span
+                        key={`pulse-${source}`}
+                        className="border border-[#00ff41]/14 bg-[linear-gradient(90deg,rgba(0,255,65,0.08),rgba(0,255,65,0.03))] px-2 py-1 text-[8px] tracking-[0.16em] text-[#c8ffd4]"
+                      >
+                        {source}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <PulseProofTile
+                    label="OFFICIAL X"
+                    value={pulseIdentity}
+                    hint={pulseProfile ? "creator account from Bags" : "official creator profile unavailable"}
+                    icon={<X className="h-3.5 w-3.5" />}
+                    href={pulseProfile?.href ?? undefined}
+                  />
+                  <PulseProofTile
+                    label="FOLLOWERS"
+                    value={pulseFollowers ?? "--"}
+                    hint={pulseFollowers ? "creator account reach" : "followers unavailable"}
+                    icon={<Users className="h-3.5 w-3.5" />}
+                    href={pulseProfile?.href ?? undefined}
+                  />
+                  <PulseProofTile
+                    label="WEBSITE"
+                    value={pulseWebsite ?? "--"}
+                    hint={pulseWebsite ? "public project site" : "link unavailable"}
+                    icon={<Globe2 className="h-3.5 w-3.5" />}
+                    href={pulseProject?.website ?? undefined}
+                  />
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <SpotlightMetric label={pulseValuation?.shortLabel ?? "VALUE"} value={formatCurrency(pulseValuation?.value)} />
+                  <SpotlightMetric label="24H VOL" value={formatCurrency(pulseProject?.volume24hUsd)} />
+                  <SpotlightMetric label="24H TX" value={pulseProject?.txCount24h ? formatCompactNum(pulseProject.txCount24h) : "--"} />
+                  <SpotlightMetric
+                    label="MOTION"
+                    value={pulseProject?.priceChange24h !== undefined ? `${pulsePositive ? "+" : ""}${pulseProject.priceChange24h.toFixed(1)}%` : "--"}
+                    tone={pulseProject?.priceChange24h === undefined ? "muted" : pulsePositive ? "green" : "red"}
+                  />
+                  <SpotlightMetric label="FEES" value={formatCurrency(pulseProject?.lifetimeFees)} />
+                  <SpotlightMetric label="FLOW" value={pulseBuyPressure} />
+                </div>
+
+                {pulseReasons.length > 0 ? (
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    {pulseReasons.map((reason) => (
+                      <span
+                        key={`pulse-reason-${reason}`}
+                        className="border border-[#ffaa00]/12 bg-[#ffaa00]/[0.04] px-2 py-1 text-[8px] tracking-[0.14em] text-[#ffd37a]/80"
+                      >
+                        {reason}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    href={pulseProject ? `/token/${pulseProject.tokenMint}` : "#"}
+                    className="inline-flex items-center gap-2 border border-[#ffcf7b]/18 bg-[#ffaa00]/[0.07] px-3 py-2 text-[9px] tracking-[0.16em] text-[#ffe4a8] transition-colors hover:border-[#ffcf7b]/34 hover:bg-[#ffaa00]/[0.12]"
+                  >
+                    OPEN TOKEN
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
+                  {pulseProfile?.href ? (
+                    <a
+                      href={pulseProfile.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 border border-[#00ff41]/16 bg-[#00ff41]/[0.05] px-3 py-2 text-[9px] tracking-[0.16em] text-[#c8ffd4] transition-colors hover:border-[#00ff41]/30 hover:bg-[#00ff41]/[0.09]"
+                    >
+                      OPEN PROFILE
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : null}
+                  {pulseProject?.website ? (
+                    <a
+                      href={pulseProject.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 border border-[#00aaff]/16 bg-[#00aaff]/[0.05] px-3 py-2 text-[9px] tracking-[0.16em] text-[#9edfff] transition-colors hover:border-[#00aaff]/30 hover:bg-[#00aaff]/[0.09]"
+                    >
+                      OPEN SITE
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#ffcf7b]/10 pt-3 text-[8px] tracking-[0.18em] text-[#b9ffc8]/34">
+                  <span>{tokens.length} PROJECTS</span>
+                  <span>{formatCompactUsd(combinedValuation)} VALUE</span>
+                  <span>{formatCompactUsd(combinedVolume)} FLOW</span>
+                  <span>{formatCompactNum(totalTransactions)} 24H TX</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 stagger-children">
-        {tokens.map((token, index) => (
-          <SpotlightCard key={token.tokenMint} token={token} rank={index + 1} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 stagger-children">
+        {tokens.map((token) => (
+          <SpotlightCard key={token.tokenMint} token={token} />
         ))}
       </div>
     </div>
   );
 }
 
-function SpotlightCard({ token, rank }: { token: NormalizedToken; rank: number }) {
+function SpotlightCard({ token }: { token: NormalizedToken }) {
   const changePositive = (token.priceChange24h ?? 0) >= 0;
   const reasons = token.spotlightReasons ?? [];
   const sources = token.spotlightSources ?? [];
   const valuation = getValuationMetric(token);
+  const projectTitle = token.name ?? token.symbol ?? "BAGS PROJECT";
+  const projectSubline = token.creatorDisplay || token.providerUsername || token.bagsUsername || "BAGS PROJECT";
+  const sourceLabels = sources.slice(0, 3).map(formatSpotlightSourceLabel);
 
   return (
     <Link
       href={`/token/${token.tokenMint}`}
-      className="group relative block overflow-hidden border border-[#ffaa00]/16 bg-black/80 p-4 shadow-[0_0_28px_rgba(255,170,0,0.03)] transition-all hover:border-[#ffaa00]/40 hover:bg-[#ffaa00]/[0.03] hover:shadow-[0_0_40px_rgba(255,170,0,0.08)]"
+      className="group relative block overflow-hidden border border-[#ffcf7b]/18 bg-[linear-gradient(145deg,rgba(255,170,0,0.08),rgba(255,170,0,0.02)_26%,rgba(0,0,0,0.86)_64%,rgba(0,255,65,0.05)_100%)] p-[1px] shadow-[0_0_35px_rgba(255,170,0,0.04)] transition-all duration-300 hover:border-[#ffd891]/32 hover:shadow-[0_0_55px_rgba(255,170,0,0.11)] hover:-translate-y-[2px]"
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,170,0,0.14),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(0,255,65,0.08),transparent_38%)] opacity-80" />
-      <div className="relative">
-        <div className="flex items-start justify-between gap-3">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,185,72,0.22),transparent_22%),radial-gradient(circle_at_bottom_left,rgba(0,255,65,0.12),transparent_34%),radial-gradient(circle_at_70%_80%,rgba(0,170,255,0.10),transparent_28%)] opacity-90" />
+      <div className="relative overflow-hidden bg-[linear-gradient(180deg,rgba(0,0,0,0.62),rgba(0,0,0,0.88))] p-4 sm:p-5">
+        <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,221,148,0.95),transparent)]" />
+        <div className="absolute -right-8 top-[-24px] h-24 w-24 rounded-full bg-[#ffaa00]/18 blur-3xl transition-opacity duration-300 group-hover:opacity-100" />
+        <div className="absolute -left-8 bottom-[-30px] h-20 w-20 rounded-full bg-[#00ff41]/10 blur-3xl" />
+
+        <div className="relative flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
-            <div className="relative h-12 w-12 overflow-hidden border border-[#ffaa00]/20 bg-black/50 flex-shrink-0 shadow-[0_0_18px_rgba(255,170,0,0.06)]">
+            <div className="relative h-14 w-14 overflow-hidden border border-[#ffcf7b]/22 bg-black/55 flex-shrink-0 shadow-[0_0_22px_rgba(255,170,0,0.08)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,200,110,0.18),transparent_48%)]" />
               {token.image ? (
                 <Image src={token.image} alt={token.name ?? "Token"} fill className="object-cover" unoptimized />
               ) : (
@@ -1396,45 +1566,40 @@ function SpotlightCard({ token, rank }: { token: NormalizedToken; rank: number }
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="border border-[#ffaa00]/20 bg-[#ffaa00]/10 px-1.5 py-0.5 text-[8px] tracking-[0.18em] text-[#ffd37a]">
-                  SPOTLIGHT #{rank}
+                <span className="inline-flex items-center gap-2 border border-[#ffcf7b]/24 bg-[#ffaa00]/10 px-2 py-1 text-[8px] tracking-[0.18em] text-[#ffe4a8] shadow-[0_0_16px_rgba(255,170,0,0.07)]">
+                  <BadgeCheck className="h-3 w-3 text-[#ffaa00]" />
+                  FEATURED
                 </span>
-                {token.spotlightProfile ? (
-                  <span className="border border-[#00ff41]/14 bg-[#00ff41]/[0.05] px-1.5 py-0.5 text-[8px] tracking-[0.18em] text-[#9dffb8]">
-                    {token.spotlightProfile}
-                  </span>
-                ) : null}
                 {token.spotlightAgeLabel ? (
-                  <span className="border border-[#ffaa00]/12 bg-black/45 px-1.5 py-0.5 text-[8px] tracking-[0.16em] text-[#ffaa00]/60">
+                  <span className="border border-[#00ff41]/14 bg-[#00ff41]/[0.05] px-2 py-1 text-[8px] tracking-[0.16em] text-[#b9ffc8]">
                     {token.spotlightAgeLabel}
                   </span>
                 ) : null}
                 {token.symbol ? (
-                  <span className="text-[9px] tracking-[0.14em] text-[#ffaa00]/45">${token.symbol}</span>
+                  <span className="text-[9px] tracking-[0.14em] text-[#ffcf7b]/55">${token.symbol}</span>
                 ) : null}
               </div>
-              <h3 className="mt-2 truncate text-[15px] tracking-[0.14em] text-[#fff3d1] group-hover:text-[#fff7e3]">
-                {token.name ?? `${token.tokenMint.slice(0, 4)}...${token.tokenMint.slice(-4)}`}
+              <h3 className="mt-3 truncate text-[16px] tracking-[0.14em] text-[#fff7e3] group-hover:text-white" style={{ textShadow: "0 0 12px rgba(255,170,0,0.12)" }}>
+                {projectTitle}
               </h3>
-              <p className="mt-1 truncate text-[10px] tracking-[0.14em] text-[#00ff41]/35">
-                {token.creatorDisplay || token.providerUsername || token.creatorWallet || token.tokenMint}
+              <p className="mt-1 truncate text-[10px] tracking-[0.14em] text-[#9dffb8]/42">
+                {projectSubline}
               </p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-xl tracking-[0.08em] text-[#ffaa00]" style={{ textShadow: "0 0 10px rgba(255,170,0,0.25)" }}>
-              {token.spotlightScore ?? 0}
-            </p>
-            <p className="text-[8px] tracking-[0.18em] text-[#ffaa00]/35">SCORE</p>
+
+          <div className="inline-flex items-center gap-2 border border-[#00aaff]/18 bg-black/35 px-2 py-1 text-[8px] tracking-[0.18em] text-[#8dd8ff]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#00ff41] shadow-[0_0_10px_rgba(0,255,65,0.9)]" />
+            LIVE
           </div>
         </div>
 
-        {sources.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {sources.map((source) => (
+        {sourceLabels.length > 0 ? (
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {sourceLabels.map((source) => (
               <span
                 key={`${token.tokenMint}-${source}`}
-                className="border border-[#00ff41]/14 bg-[#00ff41]/[0.04] px-1.5 py-0.5 text-[8px] tracking-[0.16em] text-[#9dffb8]"
+                className="border border-[#00ff41]/14 bg-[linear-gradient(90deg,rgba(0,255,65,0.08),rgba(0,255,65,0.03))] px-2 py-1 text-[8px] tracking-[0.16em] text-[#c8ffd4]"
               >
                 {source}
               </span>
@@ -1466,20 +1631,21 @@ function SpotlightCard({ token, rank }: { token: NormalizedToken; rank: number }
           />
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="text-[9px] tracking-[0.14em] text-[#00ff41]/28">
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#ffcf7b]/10 pt-3">
+          <div className="text-[9px] tracking-[0.14em] text-[#b9ffc8]/34">
             {token.txCount24h
               ? `${token.txCount24h.toLocaleString()} TX / 24H`
               : token.priceUsd
                 ? formatCurrency(token.priceUsd, { compact: false, decimals: 6 })
-                : token.tokenMint}
+                : "LIVE BAGS PROJECT"}
           </div>
-          <div className="text-[9px] tracking-[0.14em] text-[#ffaa00]/45">
-            {token.alphaScore
-              ? `ALPHA ${Math.round(token.alphaScore)}`
-              : token.lifetimeFees
-                ? `FEES ${formatCurrency(token.lifetimeFees)}`
+          <div className="inline-flex items-center gap-1.5 text-[9px] tracking-[0.14em] text-[#ffe4a8]/58">
+            {token.lifetimeFees
+              ? `FEES ${formatCurrency(token.lifetimeFees)}`
+              : token.isTrendingNow
+                ? "LIVE MOMENTUM"
                 : "LIVE PROFILE"}
+            <ExternalLink className="h-3 w-3" />
           </div>
         </div>
 
@@ -1500,24 +1666,6 @@ function SpotlightCard({ token, rank }: { token: NormalizedToken; rank: number }
   );
 }
 
-function SpotlightStatTile({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <div className="border border-[#ffaa00]/12 bg-black/40 p-4">
-      <span className="block text-[8px] tracking-[0.18em] text-[#ffaa00]/38">{label}</span>
-      <span className="mt-2 block text-[18px] tracking-[0.08em] text-[#fff3d1]">{value}</span>
-      <span className="mt-2 block text-[9px] tracking-[0.14em] text-[#00ff41]/28">{hint}</span>
-    </div>
-  );
-}
-
 function SpotlightMetric({
   label,
   value,
@@ -1528,24 +1676,223 @@ function SpotlightMetric({
   tone?: "default" | "green" | "red" | "muted";
 }) {
   return (
-    <div className="border border-[#ffaa00]/10 bg-black/35 p-2">
-      <span className="block text-[8px] tracking-[0.16em] text-[#ffaa00]/35">{label}</span>
+    <div className="overflow-hidden border border-[#ffcf7b]/10 bg-[linear-gradient(180deg,rgba(255,170,0,0.07),rgba(0,0,0,0.62))] p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
+      <span className="block text-[8px] tracking-[0.16em] text-[#ffcf7b]/38">{label}</span>
       <span
         className={cn(
-          "mt-1 block text-[10px] tracking-[0.14em]",
+          "mt-1.5 block text-[10px] tracking-[0.14em]",
           tone === "green"
-            ? "text-[#00ff41]/75"
+            ? "text-[#b9ffc8]"
             : tone === "red"
-              ? "text-[#ff4400]/75"
+              ? "text-[#ff8a5b]"
               : tone === "muted"
-                ? "text-[#ffaa00]/35"
-                : "text-[#fff3d1]/80"
+                ? "text-[#ffcf7b]/35"
+                : "text-[#fff6dc]/88"
         )}
       >
         {value}
       </span>
     </div>
   );
+}
+
+function PulseProofTile({
+  label,
+  value,
+  hint,
+  icon,
+  href,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  icon: React.ReactNode;
+  href?: string;
+}) {
+  const content = (
+    <>
+      <div className="flex items-center gap-2 text-[#00ff41]/38">
+        {icon}
+        <span className="text-[8px] tracking-[0.16em]">{label}</span>
+      </div>
+      <span className="mt-1.5 block truncate text-[10px] tracking-[0.14em] text-[#dfffe8]">{value}</span>
+      <span className="mt-1 block truncate text-[8px] tracking-[0.14em] text-[#9dffb8]/32">{hint}</span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="overflow-hidden border border-[#00ff41]/10 bg-[linear-gradient(180deg,rgba(0,255,65,0.06),rgba(0,0,0,0.62))] p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)] transition-colors hover:border-[#00ff41]/26 hover:bg-[linear-gradient(180deg,rgba(0,255,65,0.1),rgba(0,0,0,0.62))]"
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden border border-[#00ff41]/10 bg-[linear-gradient(180deg,rgba(0,255,65,0.06),rgba(0,0,0,0.62))] p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
+      {content}
+    </div>
+  );
+}
+
+function SpotlightHeroPill({
+  label,
+  accent,
+}: {
+  label: string;
+  accent: "amber" | "green" | "cyan";
+}) {
+  const classes =
+    accent === "green"
+      ? "border-[#00ff41]/18 bg-[#00ff41]/[0.06] text-[#c8ffd4]"
+      : accent === "cyan"
+        ? "border-[#00aaff]/18 bg-[#00aaff]/[0.06] text-[#9edfff]"
+        : "border-[#ffaa00]/20 bg-[#ffaa00]/[0.08] text-[#ffe4a8]";
+
+  return (
+    <span className={cn("border px-2.5 py-1 text-[8px] tracking-[0.18em] shadow-[0_0_14px_rgba(255,255,255,0.02)]", classes)}>
+      {label}
+    </span>
+  );
+}
+
+function formatSpotlightSourceLabel(source: string) {
+  const normalized = source.trim().toUpperCase();
+
+  switch (normalized) {
+    case "POOL INDEX":
+      return "MARKET";
+    case "TRENDING":
+      return "LIVE FLOW";
+    case "LEADERBOARD":
+      return "FEES";
+    case "NEW LAUNCH":
+      return "NEW";
+    default:
+      return normalized;
+  }
+}
+
+function pickDailySpotlightPulseProject(tokens: NormalizedToken[]) {
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  const rotationKey = new Date().toISOString().slice(0, 10);
+  const liveCandidates = tokens.filter((token) => token.volume24hUsd || token.txCount24h || token.priceChange24h !== undefined);
+  const pool = liveCandidates.length > 0 ? liveCandidates : tokens;
+
+  return [...pool].sort((a, b) => {
+    const aHash = getDailyPulseHash(`${rotationKey}:${a.tokenMint}:${a.symbol ?? ""}`);
+    const bHash = getDailyPulseHash(`${rotationKey}:${b.tokenMint}:${b.symbol ?? ""}`);
+
+    if (aHash !== bHash) {
+      return bHash - aHash;
+    }
+
+    return (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0);
+  })[0] ?? null;
+}
+
+function getDailyPulseHash(input: string) {
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 33 + input.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function getSpotlightCreatorProfile(token: NormalizedToken) {
+  const normalizedCreatorSocials = (token.creators ?? []).map((creator) => ({
+    provider: creator.provider?.toLowerCase(),
+    providerUsername: normalizeSocialHandle(creator.providerUsername),
+    twitterUsername: normalizeSocialHandle(creator.twitterUsername),
+  }));
+
+  const twitterHandle =
+    normalizedCreatorSocials.find((creator) => creator.twitterUsername)?.twitterUsername ||
+    normalizedCreatorSocials.find((creator) => creator.provider === "twitter" && creator.providerUsername)?.providerUsername ||
+    normalizeSocialHandle(token.twitterUsername) ||
+    (token.provider === "twitter" ? normalizeSocialHandle(token.providerUsername) : undefined);
+
+  if (twitterHandle) {
+    return {
+      label: `X @${twitterHandle}`,
+      href: `https://x.com/${twitterHandle}`,
+    };
+  }
+
+  const creatorGithubHandle =
+    normalizedCreatorSocials.find((creator) => creator.provider === "github" && creator.providerUsername)?.providerUsername;
+
+  if (creatorGithubHandle) {
+    return {
+      label: `GH @${creatorGithubHandle}`,
+      href: `https://github.com/${creatorGithubHandle}`,
+    };
+  }
+
+  const providerUsername = normalizeSocialHandle(token.providerUsername);
+
+  if (providerUsername && token.provider) {
+    const provider = token.provider.toLowerCase();
+    if (provider === "github") {
+      return {
+        label: `GH @${providerUsername}`,
+        href: `https://github.com/${providerUsername}`,
+      };
+    }
+
+    return {
+      label: `${provider.toUpperCase()} @${providerUsername}`,
+      href: null,
+    };
+  }
+
+  if (token.bagsUsername) {
+    return {
+      label: `BAGS @${token.bagsUsername}`,
+      href: null,
+    };
+  }
+
+  return null;
+}
+
+function normalizeSocialHandle(handle?: string | null) {
+  if (!handle) {
+    return undefined;
+  }
+
+  return handle.trim().replace(/^@+/, "") || undefined;
+}
+
+function getDisplayHost(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    return url.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0] || url;
+  }
+}
+
+function formatPulseBuyPressure(token: NormalizedToken | null) {
+  if (!token) {
+    return "--";
+  }
+
+  const buys = token.buyCount24h ?? 0;
+  const sells = token.sellCount24h ?? 0;
+
+  if (buys === 0 && sells === 0) {
+    return "--";
+  }
+
+  return `${buys}/${sells}`;
 }
 
 function LeaderboardSkeleton() {

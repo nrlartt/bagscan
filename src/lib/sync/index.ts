@@ -20,6 +20,7 @@ import {
     getSolPriceUsd,
     getHackathonApps,
 } from "@/lib/bags/client";
+import { getXUserCached, isXquikConfigured } from "@/lib/xquik/client";
 import {
     normalizePoolInfo,
     mergeCreatorsV3,
@@ -28,7 +29,7 @@ import {
     mergeDexScreenerData,
     mergeHeliusData,
 } from "@/lib/bags/mappers";
-import { getTokenMetadataBatch } from "@/lib/solana/metadata";
+import { getTokenMetadataBatch, type TokenMetadata } from "@/lib/solana/metadata";
 import type { BagsPool, NormalizedToken } from "@/lib/bags/types";
 import type { AlphaToken } from "@/lib/alpha/types";
 
@@ -42,6 +43,7 @@ interface PoolEntry {
     name?: string;
     symbol?: string;
     image?: string;
+    twitter?: string;
     priceUsd?: number;
     marketCap?: number;
     fdvUsd?: number;
@@ -71,6 +73,24 @@ const NEW_LAUNCH_TTL = 20_000;
 const NEW_LAUNCH_STALE_TTL = 3 * 60_000;
 const SPOTLIGHT_TTL = 2 * 60_000;
 const SPOTLIGHT_STALE_TTL = 12 * 60_000;
+const CURATED_SPOTLIGHT_ORDER = [
+    "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS",
+    "2TsmuYUrsctE57VLckZBYEEzdokUF8j8e1GavekWBAGS",
+    "AwGg6CLP5P5LreVbgD4RuSmwXgnu71SmVr6GYsDaBAGS",
+    "DEffWzJyaFRNyA4ogUox631hfHuv3KLeCcpBh2ipBAGS",
+    "Fnmq5udTPPkxGjw8nDtnRsjJWfHfdNmsfKGLhUerBAGS",
+    "677CpPEoKVo9tyCyBHqtiXZivUPdPXEigd3FspWuBAGS",
+    "8116V1BW9zaXUM6pVhWVaAduKrLcEBi3RGXedKTrBAGS",
+    "Hv3rHWYcpkngFNYkjLaQXb9m9NXyzuwEoFz13yMTBAGS",
+    "6JfonM6a24xngXh5yJ1imZzbMhpfvEsiafkb4syHBAGS",
+    "ABadLP3asy88raGZciQf61Lb4ZWhVbdpptjnZ4JuBAGS",
+    "Byb8WojwPWthyMm8iwtcd9CQhcZjnjQmhTRi5GN7BAGS",
+    "Ga7oQU8gvAoRU65Krm2ipy8QVEm2ksc7ZY25EVqFBAGS",
+    "Faw8wwB6MnyAm9xG3qeXgN1isk9agXBoaRZX9Ma8BAGS",
+    "9kkz3QiYemzHQndyE6acHJ8wb19WwPHAdck6FMEGBAGS",
+    "s64RinoknMmndiAMH2hcFC4yRJkT58VeMT93jJFBAGS",
+] as const;
+const CURATED_SPOTLIGHT_SET = new Set<string>(CURATED_SPOTLIGHT_ORDER);
 
 // ═══════════════════════════════════════════════
 // Pool index (for search)
@@ -105,6 +125,7 @@ async function getAllPools(): Promise<PoolEntry[]> {
                     name: p.name,
                     symbol: p.symbol,
                     image: p.image,
+                    twitter: p.twitter,
                     priceUsd: Number(p.tokenPriceUsd) || Number(p.priceUsd) || undefined,
                     marketCap: undefined,
                     fdvUsd: Number(p.fdvUsd) || Number(p.fdv) || undefined,
@@ -136,6 +157,7 @@ function mergeBagsPoolMarketData(
         name: pool.name ?? token.name,
         symbol: pool.symbol ?? token.symbol,
         image: pool.image ?? token.image,
+        twitter: pool.twitter ?? token.twitter,
         priceUsd: pool.priceUsd ?? token.priceUsd,
         marketCap: pool.marketCap ?? token.marketCap,
         fdvUsd: pool.fdvUsd ?? token.fdvUsd,
@@ -489,6 +511,7 @@ function mergeSpotlightTokens(existing: NormalizedToken, incoming: NormalizedTok
         website: pickDefined(incoming.website, existing.website),
         twitter: pickDefined(incoming.twitter, existing.twitter),
         telegram: pickDefined(incoming.telegram, existing.telegram),
+        projectTwitterHandle: pickDefined(incoming.projectTwitterHandle, existing.projectTwitterHandle),
         creatorWallet: pickDefined(incoming.creatorWallet, existing.creatorWallet),
         creatorDisplay: pickDefined(incoming.creatorDisplay, existing.creatorDisplay),
         creatorUsername: pickDefined(incoming.creatorUsername, existing.creatorUsername),
@@ -510,6 +533,7 @@ function mergeSpotlightTokens(existing: NormalizedToken, incoming: NormalizedTok
         holderCount: pickDefined(incoming.holderCount, existing.holderCount),
         alphaScore: pickMaxNumber(existing.alphaScore, incoming.alphaScore),
         socialScore: pickMaxNumber(existing.socialScore, incoming.socialScore),
+        projectTwitterFollowers: pickMaxNumber(existing.projectTwitterFollowers, incoming.projectTwitterFollowers),
         creatorFollowers: pickMaxNumber(existing.creatorFollowers, incoming.creatorFollowers),
         trendingNowScore: pickMaxNumber(existing.trendingNowScore, incoming.trendingNowScore),
         rugRiskScore: pickMaxNumber(existing.rugRiskScore, incoming.rugRiskScore),
@@ -552,120 +576,6 @@ function getSpotlightValuationLabel(token: Pick<NormalizedToken, "marketCap" | "
     return "VALUE";
 }
 
-function getPoolEntryValuation(entry: Pick<PoolEntry, "marketCap" | "fdvUsd">) {
-    return entry.marketCap ?? entry.fdvUsd ?? 0;
-}
-
-function getVolumeLiquidityRatio(token: NormalizedToken) {
-    const liquidity = token.liquidityUsd ?? 0;
-    if (liquidity <= 0) {
-        return 0;
-    }
-    return (token.volume24hUsd ?? 0) / liquidity;
-}
-
-function getLiquidityCoverageRatio(token: NormalizedToken) {
-    const valuation = getSpotlightValuation(token);
-    if (valuation <= 0) {
-        return 0;
-    }
-    return (token.liquidityUsd ?? 0) / valuation;
-}
-
-function getMarketCapTierScore(marketCap: number) {
-    if (marketCap >= 500_000) return 14;
-    if (marketCap >= 150_000) return 12;
-    if (marketCap >= 40_000) return 10;
-    if (marketCap >= 15_000) return 8;
-    if (marketCap >= 5_000) return 5;
-    if (marketCap >= 1_500) return 2;
-    return 0;
-}
-
-function getEstablishedStrengthBonus(token: NormalizedToken, earnedUsd: number) {
-    const marketCap = getSpotlightValuation(token);
-    const liquidity = token.liquidityUsd ?? 0;
-    const volume = token.volume24hUsd ?? 0;
-    const txCount = token.txCount24h ?? 0;
-    const ageHours = hoursSince(token.pairCreatedAt);
-
-    if (ageHours === null) {
-        return marketCap >= 8_000 && liquidity >= 3_000 && (volume >= 4_000 || txCount >= 45)
-            ? 8
-            : 0;
-    }
-
-    if (ageHours < 120) {
-        return 0;
-    }
-
-    let score = 0;
-    if (ageHours >= 216 && marketCap >= 4_000 && liquidity >= 2_000 && (volume >= 2_500 || txCount >= 30)) {
-        score += 3;
-    }
-    if (ageHours >= 168 && liquidity >= 3_500 && (volume >= 3_000 || txCount >= 35)) {
-        score += 6;
-    }
-    if (ageHours >= 336 && marketCap >= 8_000 && liquidity >= 4_500) {
-        score += 6;
-    }
-    if (ageHours >= 720 && marketCap >= 15_000 && (volume >= 5_000 || earnedUsd >= 300)) {
-        score += 8;
-    }
-
-    return Math.min(score, 18);
-}
-
-function getFreshMomentumBonus(token: NormalizedToken) {
-    const ageHours = hoursSince(token.pairCreatedAt);
-    const volume = token.volume24hUsd ?? 0;
-    const txCount = token.txCount24h ?? 0;
-    const priceChange = Math.max(0, token.priceChange24h ?? 0);
-
-    if (ageHours === null || ageHours > 168) {
-        return 0;
-    }
-    if (ageHours <= 24 && (volume >= 10_000 || txCount >= 100)) {
-        return 4;
-    }
-    if (ageHours <= 72 && (volume >= 7_500 || txCount >= 75 || priceChange >= 12)) {
-        return 3;
-    }
-    if (ageHours <= 168 && priceChange >= 16 && volume >= 10_000) {
-        return 1;
-    }
-    return 0;
-}
-
-function getAlphaSupportBonus(token: NormalizedToken) {
-    let score = 0;
-
-    score += Math.min((token.alphaScore ?? 0) / 8, 10);
-    score += Math.min((token.trendingNowScore ?? 0) / 10, 8);
-    score += Math.min((token.socialScore ?? 0) / 10, 5);
-
-    if (token.isTrendingNow) {
-        score += 8;
-    }
-    if ((token.creatorFollowers ?? 0) >= 25_000) {
-        score += 4;
-    } else if ((token.creatorFollowers ?? 0) >= 10_000) {
-        score += 2;
-    }
-
-    return Math.min(score, 22);
-}
-
-function getSpotlightRiskPenalty(token: NormalizedToken) {
-    const rugRiskScore = token.rugRiskScore ?? 0;
-
-    if (rugRiskScore >= 80) return 28;
-    if (rugRiskScore >= 65) return 16;
-    if (rugRiskScore >= 50) return 8;
-    if (rugRiskScore >= 35) return 4;
-    return 0;
-}
-
 function formatSpotlightAgeLabel(ageHours: number | null) {
     if (ageHours === null) {
         return undefined;
@@ -684,129 +594,6 @@ function formatSpotlightAgeLabel(ageHours: number | null) {
     return `${Math.max(1, Math.round(ageDays / 30))}M LIVE`;
 }
 
-function deriveSpotlightProfile(token: NormalizedToken, sourceCount: number) {
-    const ageHours = hoursSince(token.pairCreatedAt);
-    const marketCap = getSpotlightValuation(token);
-    const liquidity = token.liquidityUsd ?? 0;
-    const volume = token.volume24hUsd ?? 0;
-    const priceChange = Math.max(0, token.priceChange24h ?? 0);
-
-    const looksEstablished = ageHours === null
-        ? marketCap >= 8_000 && liquidity >= 3_000 && volume >= 4_000
-        : ageHours >= 336 && marketCap >= 6_000 && liquidity >= 2_500;
-
-    if (looksEstablished) {
-        return "ESTABLISHED";
-    }
-    if (token.isTrendingNow || (token.trendingNowScore ?? 0) >= 82) {
-        return "MOMENTUM";
-    }
-    if (ageHours !== null && ageHours <= 96 && (priceChange >= 10 || volume >= 10_000)) {
-        return "BREAKOUT";
-    }
-    if ((token.alphaScore ?? 0) >= 70 || sourceCount >= 3) {
-        return "CONVICTION";
-    }
-    return "FEATURED";
-}
-
-function passesSpotlightFloor(
-    token: NormalizedToken,
-    earnedUsd: number,
-    sourceCount: number
-) {
-    const marketCap = getSpotlightValuation(token);
-    const liquidity = token.liquidityUsd ?? 0;
-    const volume = token.volume24hUsd ?? 0;
-    const txCount = token.txCount24h ?? 0;
-    const priceStrength = Math.max(0, token.priceChange24h ?? 0);
-    const ageHours = hoursSince(token.pairCreatedAt);
-    const alphaScore = token.alphaScore ?? 0;
-    const trendingNow = token.isTrendingNow || (token.trendingNowScore ?? 0) >= 75;
-
-    const establishedLane = ageHours === null
-        ? marketCap >= 8_000 && liquidity >= 3_000 && (volume >= 3_000 || txCount >= 35 || earnedUsd >= 200)
-        : ageHours >= 120 &&
-            marketCap >= 4_000 &&
-            liquidity >= 2_000 &&
-            (volume >= 2_500 || txCount >= 30 || earnedUsd >= 160);
-
-    const momentumLane =
-        (((volume >= 14_000 && liquidity >= 5_000) ||
-            txCount >= 165 ||
-            (priceStrength >= 14 && volume >= 8_000)) &&
-            (marketCap >= 1_500 || liquidity >= 2_000));
-
-    const creatorLane = earnedUsd >= 250 && (marketCap >= 3_000 || liquidity >= 2_500);
-
-    const alphaLane =
-        (alphaScore >= 65 || trendingNow || sourceCount >= 3) &&
-        (marketCap >= 2_000 || liquidity >= 2_000 || volume >= 3_000);
-
-    const freshLane =
-        ageHours !== null &&
-        ageHours <= 72 &&
-        liquidity >= 4_000 &&
-        (volume >= 7_000 || txCount >= 70 || (priceStrength >= 12 && volume >= 4_500));
-
-    return establishedLane || momentumLane || creatorLane || alphaLane || freshLane;
-}
-
-function calculateSpotlightScore(
-    token: NormalizedToken,
-    earnedUsd: number,
-    leaderboardRank: number | null,
-    sourceCount: number
-) {
-    const marketCap = getSpotlightValuation(token);
-    const volume = token.volume24hUsd ?? 0;
-    const liquidity = token.liquidityUsd ?? 0;
-    const txCount = token.txCount24h ?? 0;
-    const priceChange = token.priceChange24h ?? 0;
-    const buys = token.buyCount24h ?? 0;
-    const sells = token.sellCount24h ?? 0;
-    const volumeLiquidityRatio = getVolumeLiquidityRatio(token);
-    const liquidityCoverage = getLiquidityCoverageRatio(token);
-
-    let score = 0;
-    score += getMarketCapTierScore(marketCap);
-    score += Math.min(volume / 3_500, 20);
-    score += Math.min(liquidity / 3_000, 18);
-    score += Math.min(txCount / 22, 14);
-    score += priceChange >= 0
-        ? Math.min(priceChange / 2.5, 10)
-        : -Math.min(Math.abs(priceChange) / 5, 8);
-    score += Math.min(earnedUsd / 180, 10);
-    score += sourceCount > 1 ? Math.min((sourceCount - 1) * 4, 12) : 0;
-    score += leaderboardRank && leaderboardRank <= 15 ? Math.max(0, 11 - leaderboardRank) : 0;
-    score += token.holderCount && token.holderCount >= 600 ? 4 : token.holderCount && token.holderCount >= 250 ? 2 : 0;
-
-    if (buys > sells && txCount >= 40) {
-        score += Math.min(((buys - sells) / Math.max(1, sells)) * 4, 6);
-    }
-
-    if (volumeLiquidityRatio >= 0.8) {
-        score += Math.min(volumeLiquidityRatio * 1.5, 8);
-    } else if (volume > 0 && volumeLiquidityRatio < 0.25) {
-        score -= 3;
-    }
-
-    if (liquidityCoverage >= 0.08) {
-        score += 8;
-    } else if (liquidityCoverage >= 0.04) {
-        score += 5;
-    } else if (marketCap >= 15_000 && liquidityCoverage > 0 && liquidityCoverage < 0.01) {
-        score -= 4;
-    }
-
-    score += getEstablishedStrengthBonus(token, earnedUsd);
-    score += getFreshMomentumBonus(token);
-    score += getAlphaSupportBonus(token);
-    score -= getSpotlightRiskPenalty(token);
-
-    return Math.max(0, Math.round(score));
-}
-
 function buildSpotlightReasons(
     token: NormalizedToken,
     earnedUsd: number,
@@ -823,11 +610,11 @@ function buildSpotlightReasons(
     const sells = token.sellCount24h ?? 0;
     const ageHours = hoursSince(token.pairCreatedAt);
 
-    if (sourceCount > 1) reasons.push("Cross-feed conviction");
+    if (sourceCount > 1) reasons.push("Cross-feed coverage");
     if (token.isTrendingNow || (token.trendingNowScore ?? 0) >= 82) {
-        reasons.push(`Alpha now ${Math.round(token.trendingNowScore ?? token.alphaScore ?? 0)}`);
+        reasons.push("Alpha support");
     } else if ((token.alphaScore ?? 0) >= 70) {
-        reasons.push(`Alpha conviction ${Math.round(token.alphaScore ?? 0)}`);
+        reasons.push("Strong social signal");
     }
     if (marketCap >= 5_000) reasons.push(`${valuationLabel} ${formatCompactUsdLabel(marketCap)}`);
     if (volume >= 10_000) reasons.push(`Live volume ${formatCompactUsdLabel(volume)}`);
@@ -879,6 +666,7 @@ function mapPoolEntryToToken(entry: PoolEntry): NormalizedToken {
         name: entry.name,
         symbol: entry.symbol,
         image: entry.image,
+        twitter: entry.twitter,
         priceUsd: entry.priceUsd,
         fdvUsd: entry.fdvUsd,
         marketCap: entry.marketCap,
@@ -923,32 +711,6 @@ function mapAlphaTokenToSpotlightToken(token: AlphaToken): NormalizedToken {
     };
 }
 
-function getPoolSeedScore(entry: PoolEntry) {
-    const marketCap = getPoolEntryValuation(entry);
-    const volume = entry.volume24hUsd ?? 0;
-    const liquidity = entry.liquidityUsd ?? 0;
-
-    let score = 0;
-    score += Math.min(volume / 3_000, 20);
-    score += Math.min(liquidity / 1_500, 16);
-    score += Math.min(marketCap / 25_000, 12);
-
-    if (marketCap >= 15_000 && liquidity >= 3_500) {
-        score += 6;
-    }
-    if (volume >= 8_000) {
-        score += 5;
-    }
-    if (entry.creatorWallet) {
-        score += 2;
-    }
-    if (entry.name || entry.symbol) {
-        score += 1;
-    }
-
-    return score;
-}
-
 async function withTimeoutFallback<T>(
     promise: Promise<T>,
     timeoutMs: number,
@@ -980,90 +742,49 @@ async function withTimeoutFallback<T>(
 }
 
 function compareSpotlightTokens(a: NormalizedToken, b: NormalizedToken) {
-    const scoreDiff = (b.spotlightScore ?? 0) - (a.spotlightScore ?? 0);
-    if (scoreDiff !== 0) return scoreDiff;
-
     const valuationDiff = getSpotlightValuation(b) - getSpotlightValuation(a);
     if (valuationDiff !== 0) return valuationDiff;
 
     const volumeDiff = (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0);
     if (volumeDiff !== 0) return volumeDiff;
 
+    const txDiff = (b.txCount24h ?? 0) - (a.txCount24h ?? 0);
+    if (txDiff !== 0) return txDiff;
+
     return (b.liquidityUsd ?? 0) - (a.liquidityUsd ?? 0);
 }
 
-function pickBalancedSpotlightBoard(tokens: NormalizedToken[], limit: number) {
-    if (tokens.length <= limit) {
-        return tokens;
+function getSpotlightRotationHash(input: string) {
+    let hash = 0;
+    for (let index = 0; index < input.length; index += 1) {
+        hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
     }
-
-    const selected: NormalizedToken[] = [];
-    const seen = new Set<string>();
-    const topScore = tokens[0]?.spotlightScore ?? 0;
-    const profileQualityFloor = Math.max(22, Math.floor(topScore * 0.4));
-    const profileTargets = [
-        { profile: "ESTABLISHED", count: 4 },
-        { profile: "MOMENTUM", count: 3 },
-        { profile: "CONVICTION", count: 2 },
-        { profile: "BREAKOUT", count: 2 },
-    ] as const;
-
-    const addToken = (token: NormalizedToken) => {
-        if (selected.length >= limit || seen.has(token.tokenMint)) {
-            return;
-        }
-        seen.add(token.tokenMint);
-        selected.push(token);
-    };
-
-    for (const target of profileTargets) {
-        const bucket = tokens
-            .filter(
-                (token) =>
-                    token.spotlightProfile === target.profile &&
-                    (token.spotlightScore ?? 0) >= profileQualityFloor
-            )
-            .slice(0, target.count);
-
-        bucket.forEach(addToken);
-    }
-
-    const veteranBucket = tokens
-        .filter((token) => {
-            const ageHours = hoursSince(token.pairCreatedAt);
-            return ageHours !== null &&
-                ageHours >= 168 &&
-                (token.spotlightScore ?? 0) >= Math.max(20, profileQualityFloor - 4);
-        })
-        .slice(0, 2);
-
-    veteranBucket.forEach(addToken);
-
-    tokens.forEach(addToken);
-
-    return selected
-        .sort(compareSpotlightTokens)
-        .slice(0, limit);
+    return hash;
 }
 
-function buildSpotlightFallbackBoard(tokens: NormalizedToken[], limit: number) {
-    return tokens
-        .filter(
-            (token) =>
-                (token.spotlightScore ?? 0) >= 18 &&
-                (
-                    (token.volume24hUsd ?? 0) >= 4_000 ||
-                    (token.liquidityUsd ?? 0) >= 3_000 ||
-                    getSpotlightValuation(token) >= 60_000 ||
-                    (token.alphaScore ?? 0) >= 60 ||
-                    (token.lifetimeFees ?? 0) >= 200
-                )
-        )
-        .sort(compareSpotlightTokens)
-        .slice(0, limit);
+function sortRotatingSpotlightTokens(tokens: NormalizedToken[]) {
+    const now = Date.now();
+    const fastBucket = Math.floor(now / (1000 * 60 * 3));
+    const slowBucket = Math.floor(now / (1000 * 60 * 17));
+
+    return [...tokens].sort((a, b) => {
+        const aSeed = getSpotlightRotationHash(
+            `${fastBucket}:${slowBucket}:${a.tokenMint}:${Math.round(getSpotlightValuation(a))}:${Math.round(a.volume24hUsd ?? 0)}:${a.symbol ?? ""}:${a.txCount24h ?? 0}`
+        );
+        const bSeed = getSpotlightRotationHash(
+            `${fastBucket}:${slowBucket}:${b.tokenMint}:${Math.round(getSpotlightValuation(b))}:${Math.round(b.volume24hUsd ?? 0)}:${b.symbol ?? ""}:${b.txCount24h ?? 0}`
+        );
+
+        if (aSeed !== bSeed) {
+            return bSeed - aSeed;
+        }
+
+        return compareSpotlightTokens(a, b);
+    });
 }
 
 async function fetchSpotlightBoard(): Promise<NormalizedToken[]> {
+    const curatedMints = [...CURATED_SPOTLIGHT_ORDER];
     const alphaFeedPromise = import("@/lib/alpha/engine")
         .then(({ generateAlphaFeed }) => generateAlphaFeed())
         .catch((error) => {
@@ -1122,7 +843,7 @@ async function fetchSpotlightBoard(): Promise<NormalizedToken[]> {
         );
 
         const addCandidate = (token: NormalizedToken, source: string) => {
-            if (!token.tokenMint) return;
+            if (!token.tokenMint || !CURATED_SPOTLIGHT_SET.has(token.tokenMint)) return;
 
             const existing = candidates.get(token.tokenMint);
             if (!existing) {
@@ -1145,29 +866,220 @@ async function fetchSpotlightBoard(): Promise<NormalizedToken[]> {
         newLaunches.slice(0, 24).forEach((token) => addCandidate(token, "NEW LAUNCH"));
 
         const poolSeedEntries = pools
-            .filter((entry) =>
-                getPoolEntryValuation(entry) >= 1_500 ||
-                (entry.liquidityUsd ?? 0) >= 1_000 ||
-                (entry.volume24hUsd ?? 0) >= 2_000
-            )
-            .sort((a, b) => getPoolSeedScore(b) - getPoolSeedScore(a))
-            .slice(0, 72);
+            .filter((entry) => CURATED_SPOTLIGHT_SET.has(entry.tokenMint))
+            .sort(
+                (a, b) =>
+                    CURATED_SPOTLIGHT_ORDER.indexOf(a.tokenMint as (typeof CURATED_SPOTLIGHT_ORDER)[number]) -
+                    CURATED_SPOTLIGHT_ORDER.indexOf(b.tokenMint as (typeof CURATED_SPOTLIGHT_ORDER)[number])
+            );
 
         poolSeedEntries.forEach((entry) => addCandidate(mapPoolEntryToToken(entry), "POOL INDEX"));
 
-        const poolSeedMintsToEnrich = poolSeedEntries
-            .filter((entry) => {
-                const candidate = candidates.get(entry.tokenMint)?.token;
-                return (
-                    !candidate ||
-                    candidate.txCount24h === undefined ||
-                    candidate.priceChange24h === undefined ||
-                    candidate.volume24hUsd === undefined
+        const metadataMap = await withTimeoutFallback(
+            getTokenMetadataBatch(curatedMints),
+            4_000,
+            new Map<string, TokenMetadata>(),
+            "spotlight metadata"
+        );
+
+        curatedMints.forEach((mint) => {
+            const meta = metadataMap.get(mint);
+            if (!meta) {
+                return;
+            }
+
+            addCandidate(
+                {
+                    tokenMint: mint,
+                    name: meta.name,
+                    symbol: meta.symbol,
+                },
+                "CURATED"
+            );
+        });
+
+        const heliusImageFallbackMints = curatedMints.filter((mint) => {
+            const candidateImage = candidates.get(mint)?.token.image;
+            return !candidateImage;
+        });
+
+        const heliusImageFallbacks = await withTimeoutFallback(
+            Promise.all(
+                heliusImageFallbackMints.map(async (mint) => ({
+                    mint,
+                    asset: await getHeliusAsset(mint),
+                }))
+            ),
+            5_000,
+            [] as Array<{ mint: string; asset: Awaited<ReturnType<typeof getHeliusAsset>> }>,
+            "spotlight helius assets"
+        );
+
+        heliusImageFallbacks.forEach(({ mint, asset }) => {
+            if (!asset) {
+                return;
+            }
+
+            const heliusImage =
+                asset.content?.links?.image ??
+                asset.content?.files?.find((file) => typeof file?.cdn_uri === "string")?.cdn_uri ??
+                asset.content?.files?.find((file) => typeof file?.uri === "string")?.uri;
+
+            if (!heliusImage) {
+                return;
+            }
+
+            addCandidate(
+                {
+                    tokenMint: mint,
+                    name: asset.content?.metadata?.name,
+                    symbol: asset.content?.metadata?.symbol,
+                    image: heliusImage,
+                },
+                "CURATED"
+            );
+        });
+
+        const curatedCreatorData = await withTimeoutFallback(
+            Promise.all(
+                curatedMints.map(async (mint) => ({
+                    mint,
+                    creators: await getCreatorsV3(mint),
+                    feesLamports: await getLifetimeFees(mint),
+                }))
+            ),
+            6_000,
+            [] as Array<{ mint: string; creators: Awaited<ReturnType<typeof getCreatorsV3>>; feesLamports: string | null }>,
+            "spotlight creator enrichment"
+        );
+
+        curatedCreatorData.forEach(({ mint, creators, feesLamports }) => {
+            let enriched: NormalizedToken = { tokenMint: mint };
+            if (creators.length > 0) {
+                enriched = mergeCreatorsV3(enriched, creators);
+            }
+            if (feesLamports) {
+                const feesSol = Number(feesLamports) / 1e9;
+                if (Number.isFinite(feesSol)) {
+                    enriched.lifetimeFeesLamports = feesLamports;
+                    enriched.lifetimeFeesSol = feesSol;
+                }
+            }
+
+            addCandidate(enriched, "CURATED");
+        });
+
+        const hackathonFollowerFallbacks = await withTimeoutFallback(
+            syncHackathonApps(),
+            5_000,
+            [],
+            "spotlight hackathon enrichment"
+        );
+
+        hackathonFollowerFallbacks
+            .filter((app) => app.tokenAddress && CURATED_SPOTLIGHT_SET.has(app.tokenAddress))
+            .forEach((app) => {
+                addCandidate(
+                    {
+                        tokenMint: app.tokenAddress,
+                        twitter: app.twitterUrl,
+                        projectTwitterHandle: app.twitterHandle,
+                    },
+                    "CURATED"
                 );
-            })
-            .map((entry) => entry.tokenMint)
-            .filter((mint, index, arr) => arr.indexOf(mint) === index)
-            .slice(0, 24);
+            });
+
+        if (isXquikConfigured()) {
+            const followerEnrichment = await withTimeoutFallback(
+                Promise.all(
+                    curatedMints.map(async (mint) => {
+                        const candidate = candidates.get(mint)?.token;
+                        const twitterHandle =
+                            candidate?.twitterUsername ??
+                            (candidate?.provider === "twitter" ? candidate.providerUsername : undefined);
+
+                        if (!twitterHandle) {
+                            return { mint, user: null };
+                        }
+
+                        return {
+                            mint,
+                            user: await getXUserCached(twitterHandle),
+                        };
+                    })
+                ),
+                5_000,
+                [] as Array<{ mint: string; user: Awaited<ReturnType<typeof getXUserCached>> }>,
+                "spotlight x profile enrichment"
+            );
+
+            followerEnrichment.forEach(({ mint, user }) => {
+                if (!user) {
+                    return;
+                }
+
+                addCandidate(
+                    {
+                        tokenMint: mint,
+                        creatorFollowers: user.followers,
+                        creatorPfp: user.profilePicture,
+                    },
+                    "CURATED"
+                );
+            });
+
+            const projectFollowerEnrichment = await withTimeoutFallback(
+                Promise.all(
+                    curatedMints.map(async (mint) => {
+                        const candidate = candidates.get(mint)?.token;
+                        const projectTwitterHandle =
+                            candidate?.projectTwitterHandle ??
+                            candidate?.twitter
+                                ?.replace(/^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i, "")
+                                .replace(/^@+/, "")
+                                .split(/[/?#]/)[0]
+                                .trim();
+
+                        if (!projectTwitterHandle) {
+                            return { mint, user: null };
+                        }
+
+                        return {
+                            mint,
+                            user: await getXUserCached(projectTwitterHandle),
+                        };
+                    })
+                ),
+                5_000,
+                [] as Array<{ mint: string; user: Awaited<ReturnType<typeof getXUserCached>> }>,
+                "spotlight project x enrichment"
+            );
+
+            projectFollowerEnrichment.forEach(({ mint, user }) => {
+                if (!user) {
+                    return;
+                }
+
+                addCandidate(
+                    {
+                        tokenMint: mint,
+                        projectTwitterFollowers: user.followers,
+                    },
+                    "CURATED"
+                );
+            });
+        }
+
+        const poolSeedMintsToEnrich = curatedMints.filter((mint) => {
+            const candidate = candidates.get(mint)?.token;
+            return (
+                !candidate ||
+                candidate.txCount24h === undefined ||
+                candidate.priceChange24h === undefined ||
+                candidate.volume24hUsd === undefined ||
+                candidate.name === undefined
+            );
+        });
 
         const enrichedPoolTokens = await withTimeoutFallback(
             fetchSpotlightDexPairs(poolSeedMintsToEnrich),
@@ -1177,43 +1089,34 @@ async function fetchSpotlightBoard(): Promise<NormalizedToken[]> {
         );
         enrichedPoolTokens.forEach((token) => addCandidate(token, "POOL INDEX"));
 
-        const rankedCandidates = [...candidates.values()]
-            .map(({ token, sources }) => {
+        const curatedCandidates = curatedMints
+            .map((mint) => {
+                const candidate = candidates.get(mint);
+                if (!candidate) {
+                    return null;
+                }
+
+                const { token, sources } = candidate;
                 const leaderboardData = leaderboardByMint.get(token.tokenMint);
                 const earnedUsd = leaderboardData?.entry.earnedUsd ?? token.lifetimeFees ?? 0;
-                const score = calculateSpotlightScore(
-                    token,
-                    earnedUsd,
-                    leaderboardData?.rank ?? null,
-                    sources.size
-                );
                 const reasons = buildSpotlightReasons(token, earnedUsd, sources.size);
 
                 return {
                     ...token,
                     lifetimeFees: pickDefined(token.lifetimeFees, earnedUsd),
-                    spotlightScore: score,
-                    spotlightReasons: reasons,
-                    spotlightSources: [...sources],
-                    spotlightProfile: deriveSpotlightProfile(token, sources.size),
+                    spotlightReasons: reasons.length > 0 ? reasons : ["Curated spotlight"],
+                    spotlightSources: sources.size > 0 ? [...sources] : ["CURATED"],
                     spotlightAgeLabel: formatSpotlightAgeLabel(hoursSince(token.pairCreatedAt)),
                 } satisfies NormalizedToken;
             })
-            .filter((token) => {
-                const sourceCount = token.spotlightSources?.length ?? 0;
-                const earnedUsd = token.lifetimeFees ?? 0;
-                return (
-                    (token.spotlightScore ?? 0) >= 24 &&
-                    (token.spotlightReasons?.length ?? 0) > 0 &&
-                    passesSpotlightFloor(token, earnedUsd, sourceCount)
-                );
-            })
-            .sort(compareSpotlightTokens);
+            .filter((token) => token !== null) as NormalizedToken[];
 
-        const spotlight = pickBalancedSpotlightBoard(rankedCandidates, 12);
-        const finalSpotlight = spotlight.length > 0
-            ? spotlight
-            : buildSpotlightFallbackBoard(rankedCandidates, 12);
+        const rankedByMint = new Map(curatedCandidates.map((token) => [token.tokenMint, token]));
+        const finalSpotlight = sortRotatingSpotlightTokens(
+            curatedMints
+                .map((mint) => rankedByMint.get(mint))
+                .filter((token): token is NormalizedToken => Boolean(token))
+        );
 
         for (const token of finalSpotlight) {
             metadataCache.set(token.tokenMint, token);
@@ -1513,19 +1416,17 @@ function getHackathonTwitterHandle(app: {
     twitterUrl?: string;
     twitterUser?: { username?: string | null } | null;
 }) {
-    if (app.twitterUser?.username) {
-        return app.twitterUser.username;
-    }
-
-    if (!app.twitterUrl) {
-        return undefined;
-    }
-
-    return app.twitterUrl
-        .replace(/^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i, "")
+    const handleFromUrl = app.twitterUrl
+        ?.replace(/^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i, "")
         .replace(/^@/, "")
         .split(/[/?#]/)[0]
-        .trim() || undefined;
+        .trim();
+
+    if (handleFromUrl) {
+        return handleFromUrl;
+    }
+
+    return app.twitterUser?.username ?? undefined;
 }
 
 function normalizeHackathonProjectName(name?: string | null) {
