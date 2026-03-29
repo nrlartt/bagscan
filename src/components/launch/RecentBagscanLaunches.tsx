@@ -13,6 +13,9 @@ interface NewLaunchesResponse {
     meta: {
         total: number;
         limit: number;
+        trackingHealthy: boolean;
+        reason?: string | null;
+        partnerLaunches?: number | null;
     };
 }
 
@@ -52,6 +55,10 @@ export function RecentBagscanLaunches() {
     });
 
     const tokens = data?.data ?? [];
+
+    if (!isLoading && !isError && data && tokens.length === 0) {
+        return null;
+    }
 
     return (
         <section className="mt-10 space-y-3">
@@ -98,12 +105,6 @@ export function RecentBagscanLaunches() {
                     >
                         RETRY
                     </button>
-                </div>
-            ) : tokens.length === 0 ? (
-                <div className="border border-[#00ff41]/10 bg-black/60 p-4 text-center">
-                    <p className="text-[10px] text-[#00ff41]/35 tracking-wider">
-                        NO VERIFIED BAGSCAN DEPLOYS FOUND YET
-                    </p>
                 </div>
             ) : (
                 <div className="space-y-2">

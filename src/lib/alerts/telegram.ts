@@ -42,6 +42,7 @@ export interface TelegramConnectState {
     botUsername?: string | null;
     botUrl?: string | null;
     connectUrl?: string | null;
+    connectCommand?: string | null;
     expiresAt?: string | null;
     chatId?: string | null;
     chatLabel?: string | null;
@@ -113,6 +114,9 @@ function extractTelegramStartPayload(text?: string) {
     const patterns = [
         /^\/start(?:@\w+)?\s+(\S+)$/i,
         /^\/startgroup(?:@\w+)?\s+(\S+)$/i,
+        /^\/connect(?:@\w+)?\s+(\S+)$/i,
+        /^\/link(?:@\w+)?\s+(\S+)$/i,
+        /^connect\s+(\S+)$/i,
     ];
 
     for (const pattern of patterns) {
@@ -153,6 +157,28 @@ async function findChatByConnectToken(tokens: string[]) {
     return null;
 }
 
+async function findRecentPlainStartChat() {
+    const updates = await telegramApi<TelegramUpdate[]>("getUpdates", {
+        offset: -100,
+        limit: 100,
+        allowed_updates: ["message"],
+    }).catch(() => []);
+
+    for (const update of [...updates].reverse()) {
+        const message = update.message;
+        const text = message?.text?.trim();
+        if (!message?.chat || message.chat.type !== "private") {
+            continue;
+        }
+
+        if (/^\/start(?:@\w+)?$/i.test(text ?? "")) {
+            return message.chat;
+        }
+    }
+
+    return null;
+}
+
 export async function getTelegramConnectState(walletAddress: string): Promise<TelegramConnectState> {
     const config = getTelegramConfig();
     if (!config.configured) {
@@ -183,9 +209,11 @@ export async function getTelegramConnectState(walletAddress: string): Promise<Te
     const connectUrl = botUsername
         ? `https://t.me/${botUsername}?start=${encodeURIComponent(connect.token)}`
         : null;
+    const connectCommand = `/connect ${connect.token}`;
 
     let chatId = preference?.telegramChatId ?? null;
     let chatLabel: string | null = null;
+    let error: string | null = null;
 
     if (!chatId) {
         const chat = await findChatByConnectToken([
@@ -208,6 +236,11 @@ export async function getTelegramConnectState(walletAddress: string): Promise<Te
                     telegramEnabled: true,
                 },
             });
+        } else {
+            const plainStartChat = await findRecentPlainStartChat();
+            if (plainStartChat) {
+                error = "Telegram bot was opened without the BagScan connect token. Use CONNECT TELEGRAM, then tap Start in the bot.";
+            }
         }
     }
 
@@ -217,12 +250,13 @@ export async function getTelegramConnectState(walletAddress: string): Promise<Te
         botUsername,
         botUrl,
         connectUrl,
+        connectCommand,
         expiresAt: new Date(connect.expiresAt).toISOString(),
         chatId,
         chatLabel,
         error:
             !botUsername
                 ? "Telegram bot profile could not be loaded. Check TELEGRAM_BOT_TOKEN."
-                : null,
+                : error,
     };
 }

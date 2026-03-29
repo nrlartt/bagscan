@@ -386,7 +386,7 @@ function NotificationCenterInner({
                         className="fixed inset-0 z-40 bg-black/70 backdrop-blur-[2px] sm:hidden"
                         onClick={() => setOpen(false)}
                     />
-                    <div className="fixed inset-x-3 top-[4.5rem] z-50 max-h-[calc(100vh-6rem)] overflow-y-auto border border-[#00ff41]/18 bg-[#021109]/96 shadow-[0_30px_90px_rgba(0,0,0,0.55),0_0_40px_rgba(0,255,65,0.08)] backdrop-blur-xl sm:absolute sm:right-0 sm:left-auto sm:top-[calc(100%+14px)] sm:w-[520px] sm:max-w-[92vw] sm:max-h-[80vh]">
+                    <div className="fixed inset-x-3 top-[4.5rem] z-50 max-h-[calc(100vh-6rem)] overflow-y-auto border border-[#00ff41]/18 bg-[#021109]/96 shadow-[0_30px_90px_rgba(0,0,0,0.55),0_0_40px_rgba(0,255,65,0.08)] backdrop-blur-xl sm:absolute sm:right-0 sm:left-auto sm:top-[calc(100%+14px)] sm:w-[680px] sm:max-w-[94vw] sm:max-h-[80vh]">
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,255,65,0.1),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(0,170,255,0.1),transparent_40%)]" />
                         <div className="relative">
                             <div className="flex items-start justify-between gap-3 border-b border-[#00ff41]/12 px-4 py-4">
@@ -497,6 +497,7 @@ function NotificationCenterInner({
                                     access={alertsQuery.data?.config.access ?? alertAccess ?? null}
                                     draft={activeDraft}
                                     setDraft={setDraft}
+                                    setFeedback={setFeedback}
                                     pushStatus={pushStatus}
                                     alertsQuery={alertsQuery}
                                     telegramConnectQuery={telegramConnectQuery}
@@ -533,6 +534,7 @@ function AlertCenterBody({
     access,
     draft,
     setDraft,
+    setFeedback,
     pushStatus,
     alertsQuery,
     telegramConnectQuery,
@@ -557,6 +559,7 @@ function AlertCenterBody({
     access: AlertAccessState | null;
     draft: AlertPreferenceState | null;
     setDraft: Dispatch<SetStateAction<AlertPreferenceState | null>>;
+    setFeedback: Dispatch<SetStateAction<{ tone: "success" | "error"; text: string } | null>>;
     pushStatus: PushStatus;
     alertsQuery: UseQueryResult<AlertStateResponse, Error>;
     telegramConnectQuery: UseQueryResult<AlertTelegramConnectState, Error>;
@@ -577,17 +580,63 @@ function AlertCenterBody({
     onSendTest: (channel: "inbox" | "push" | "telegram") => void;
     onRefresh: () => Promise<void>;
 }) {
+    const [sectionOpen, setSectionOpen] = useState({
+        setup: false,
+        rules: false,
+        inbox: false,
+    });
+    const telegramConfigured = Boolean(alertsQuery.data?.config.telegramConfigured);
+    const browserPushConfigured = Boolean(alertsQuery.data?.config.browserPushConfigured);
+    const telegramConnected = Boolean(telegramConnectQuery.data?.connected && draft?.telegramChatId?.trim());
+    const telegramChatLabel = telegramConnectQuery.data?.chatLabel?.trim() || "Telegram connected";
+    const telegramConnectCommand = telegramConnectQuery.data?.connectCommand?.trim() || "";
+    const unreadLabel = unreadCount === 1 ? "1 unread" : `${unreadCount} unread`;
+    const pushSummary =
+        !browserPushConfigured
+            ? "Server off"
+            : pushStatus === "subscribed"
+                ? "Armed"
+                : pushStatus === "permission-denied"
+                    ? "Blocked"
+                    : pushStatus === "unsupported"
+                        ? "Unsupported"
+                        : "Off";
+    const telegramSummary =
+        !telegramConfigured ? "Bot off" : telegramConnected ? "Connected" : "Needs setup";
+    const armedRulesCount = [
+        draft?.alphaHotEnabled,
+        draft?.alphaCriticalEnabled,
+        draft?.portfolioProfitEnabled,
+        draft?.portfolioDrawdownEnabled,
+        draft?.feesEnabled,
+    ].filter(Boolean).length;
+
     return (
         <div className="space-y-5 px-4 py-5">
             {access ? (
                 <div className="border border-[#00aaff]/18 bg-[#00aaff]/10 px-3 py-3 text-sm leading-6 text-[#8dd8ff]">
-                    Holder gate active. {access.balanceUi} $SCAN verified for this wallet and alerts remain unlocked above the {access.requiredUi} $SCAN threshold.
+                    Alerts unlocked. {access.balanceUi} $SCAN verified for this wallet.
                 </div>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-3">
-                <SmallStat label="UNREAD" value={String(unreadCount)} icon={<Bell className="h-4 w-4" />} />
-                <SmallStat label="PUSH" value={pushStatus === "subscribed" ? "ARMED" : "OFF"} icon={<Smartphone className="h-4 w-4" />} />
-                <SmallStat label="TG" value={draft?.telegramEnabled ? "ARMED" : "OFF"} icon={<Send className="h-4 w-4" />} />
+                <StatusSummary
+                    label="INBOX"
+                    value={draft?.inAppEnabled ? "ON" : "OFF"}
+                    note={unreadLabel}
+                    icon={<Bell className="h-4 w-4" />}
+                />
+                <StatusSummary
+                    label="BROWSER PUSH"
+                    value={pushSummary}
+                    note={browserPushConfigured ? "notification delivery" : "server setup missing"}
+                    icon={<Smartphone className="h-4 w-4" />}
+                />
+                <StatusSummary
+                    label="TELEGRAM"
+                    value={telegramSummary}
+                    note={telegramConnected ? telegramChatLabel : "connect once, then test"}
+                    icon={<Send className="h-4 w-4" />}
+                />
             </div>
 
             {feedback ? (
@@ -603,64 +652,91 @@ function AlertCenterBody({
                 </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2">
-                <ActionButton
-                    label={syncPending ? "SYNCING..." : "SYNC NOW"}
-                    icon={<RefreshCw className={cn("h-3.5 w-3.5", syncPending && "animate-spin")} />}
+            <div className="grid gap-2 sm:grid-cols-3">
+                <button
+                    type="button"
+                    onClick={onSave}
+                    disabled={!draft || savePending}
+                    className="inline-flex h-12 w-full items-center justify-center gap-2 border border-[#00ff41]/26 bg-[linear-gradient(180deg,rgba(0,255,65,0.14),rgba(0,255,65,0.06))] px-4 text-[11px] tracking-[0.18em] text-[#c9ffd8] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_18px_rgba(0,255,65,0.08)] transition-all hover:border-[#00ff41]/44 hover:bg-[linear-gradient(180deg,rgba(0,255,65,0.18),rgba(0,255,65,0.08))] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                    <Sparkles className="h-4 w-4" />
+                    {savePending ? "SAVING..." : "SAVE SETTINGS"}
+                </button>
+                <button
+                    type="button"
                     onClick={onSync}
                     disabled={syncPending}
-                />
-                <ActionButton
-                    label="MARK ALL READ"
-                    icon={<CheckCheck className="h-3.5 w-3.5" />}
-                    onClick={onMarkAll}
-                    disabled={markAllPending || unreadCount === 0}
-                />
-                <ActionButton
-                    label="RESET SESSION"
-                    icon={<BellOff className="h-3.5 w-3.5" />}
+                    className="inline-flex h-12 w-full items-center justify-center gap-2 border border-[#00aaff]/22 bg-[linear-gradient(180deg,rgba(0,170,255,0.14),rgba(0,170,255,0.06))] px-4 text-[11px] tracking-[0.18em] text-[#b7ebff] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_18px_rgba(0,170,255,0.08)] transition-all hover:border-[#00aaff]/40 hover:bg-[linear-gradient(180deg,rgba(0,170,255,0.18),rgba(0,170,255,0.08))] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                    <RefreshCw className={cn("h-4 w-4", syncPending && "animate-spin")} />
+                    {syncPending ? "SYNCING..." : "SYNC NOW"}
+                </button>
+                <button
+                    type="button"
                     onClick={onResetSession}
                     disabled={logoutPending}
-                    tone="danger"
-                />
+                    className="inline-flex h-12 w-full items-center justify-center gap-2 border border-[#ff8f70]/24 bg-[linear-gradient(180deg,rgba(255,143,112,0.14),rgba(255,143,112,0.06))] px-4 text-[11px] tracking-[0.18em] text-[#ffbea8] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_18px_rgba(255,143,112,0.08)] transition-all hover:border-[#ff8f70]/40 hover:bg-[linear-gradient(180deg,rgba(255,143,112,0.18),rgba(255,143,112,0.08))] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                    <BellOff className="h-4 w-4" />
+                    RESET SESSION
+                </button>
             </div>
 
-            <section className="border border-[#00ff41]/12 bg-black/35 p-4">
-                <div className="flex items-center justify-between gap-3">
-                    <div>
-                        <p className="text-[10px] uppercase tracking-[0.24em] text-[#00ff41]/52">Delivery Channels</p>
-                        <h4 className="mt-1 text-sm tracking-[0.16em] text-[#d8ffe6]">Where alerts should go</h4>
+            {draft ? (
+                <section className="border border-[#00ff41]/12 bg-black/35 p-4 sm:p-5">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-[10px] uppercase tracking-[0.24em] text-[#00ff41]/52">Setup</p>
+                            <h4 className="mt-1 text-base tracking-[0.08em] text-[#d8ffe6]">Choose channels and keep them tested</h4>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setSectionOpen((current) => ({ ...current, setup: !current.setup }))}
+                            className="inline-flex h-8 items-center justify-center border border-white/10 bg-white/[0.03] px-3 text-[10px] tracking-[0.16em] text-white/68 transition-all hover:bg-white/[0.07]"
+                        >
+                            {sectionOpen.setup ? "HIDE" : "SHOW"}
+                        </button>
                     </div>
-                    {draft?.updatedAt ? (
-                        <span className="text-[10px] tracking-[0.16em] text-white/42">
-                            updated {formatDistanceToNowStrict(new Date(draft.updatedAt), { addSuffix: true })}
-                        </span>
-                    ) : null}
-                </div>
-
-                {draft ? (
-                    <div className="mt-4 space-y-4">
-                        <ToggleRow
-                            label="In-app inbox"
-                            description="Keep alert history directly inside BagScan."
-                            checked={draft.inAppEnabled}
-                            onChange={(checked) => setDraft({ ...draft, inAppEnabled: checked })}
-                        />
-                        <div className="flex flex-col gap-3 border border-white/8 bg-white/[0.02] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                                <p className="text-[11px] uppercase tracking-[0.18em] text-[#d8ffe6]">Browser push</p>
-                                <p className="mt-2 text-sm leading-6 text-white/52">
-                                    {!alertsQuery.data?.config.browserPushConfigured
-                                        ? "Server VAPID keys are not configured yet."
-                                        : pushStatus === "permission-denied"
-                                            ? "Browser notification permission is currently blocked."
-                                            : "Push alerts can fire even when the tab is not focused."}
-                                </p>
+                    {sectionOpen.setup ? (
+                    <div className="mt-4 grid gap-4">
+                        <ChannelCard
+                            title="In-app inbox"
+                            status={draft.inAppEnabled ? "ACTIVE" : "PAUSED"}
+                            description="Keep your alert history inside BagScan."
+                        >
+                            <InlineToggle
+                                label="Store alerts in BagScan"
+                                checked={draft.inAppEnabled}
+                                onChange={(checked) => setDraft({ ...draft, inAppEnabled: checked })}
+                            />
+                            <div className="mt-4 flex items-center justify-between text-[10px] tracking-[0.16em] text-white/42">
+                                <span>{unreadLabel}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => onSendTest("inbox")}
+                                    disabled={testPending}
+                                    className="text-[#8dd8ff] transition-colors hover:text-[#b7ebff] disabled:opacity-45"
+                                >
+                                    {testPending ? "SENDING..." : "TEST INBOX"}
+                                </button>
                             </div>
+                        </ChannelCard>
+
+                        <ChannelCard
+                            title="Browser push"
+                            status={pushSummary.toUpperCase()}
+                            description={
+                                !browserPushConfigured
+                                    ? "Push is not configured on the server yet."
+                                    : pushStatus === "permission-denied"
+                                        ? "Browser permission is blocked. Allow notifications and try again."
+                                        : "Enable push for alerts outside the active tab."
+                            }
+                        >
                             <button
                                 type="button"
                                 onClick={onTogglePush}
-                                disabled={pushPending || !alertsQuery.data?.config.browserPushConfigured}
+                                disabled={pushPending || !browserPushConfigured}
                                 className={cn(
                                     "inline-flex h-9 items-center gap-2 border px-3 text-[10px] tracking-[0.16em] transition-all disabled:cursor-not-allowed disabled:opacity-45",
                                     draft.browserPushEnabled
@@ -671,204 +747,220 @@ function AlertCenterBody({
                                 <Smartphone className="h-3.5 w-3.5" />
                                 {pushPending ? "UPDATING..." : draft.browserPushEnabled ? "DISABLE PUSH" : "ENABLE PUSH"}
                             </button>
-                        </div>
-                        <ToggleRow
-                            label="Telegram alerts"
-                            description={
-                                alertsQuery.data?.config.telegramConfigured
-                                    ? "Send alerts to your Telegram inbox without leaving BagScan."
-                                    : "Set TELEGRAM_BOT_TOKEN first to enable Telegram delivery."
-                            }
-                            checked={draft.telegramEnabled}
-                            disabled={!alertsQuery.data?.config.telegramConfigured}
-                            onChange={(checked) => setDraft({ ...draft, telegramEnabled: checked })}
-                        />
-                        <div className="border border-white/8 bg-white/[0.02] px-3 py-3">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                <div>
-                                    <p className="text-[11px] uppercase tracking-[0.18em] text-[#d8ffe6]">Connect Telegram</p>
-                                    <p className="mt-2 text-sm leading-6 text-white/52">
-                                        {telegramConnectQuery.data?.connected
-                                            ? telegramConnectQuery.data.chatLabel
-                                                ? `Connected to ${telegramConnectQuery.data.chatLabel}. Telegram alerts are armed for this wallet.`
-                                                : "Telegram is connected and ready for delivery."
-                                            : telegramConnectQuery.data?.connectUrl
-                                                ? "Use the connect link, tap Start in the bot, then BagScan will detect the chat automatically."
-                                                : telegramConnectQuery.data?.error || "Telegram bot profile is not available right now."}
-                                    </p>
-                                </div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] tracking-[0.16em] text-white/42">
+                                <span>{draft.browserPushEnabled ? "ready to deliver" : "not armed yet"}</span>
                                 <button
                                     type="button"
-                                    onClick={() => void telegramConnectQuery.refetch()}
-                                    disabled={telegramConnectQuery.isFetching}
-                                    className="inline-flex h-9 items-center gap-2 border border-white/10 bg-white/[0.03] px-3 text-[10px] tracking-[0.16em] text-white/72 transition-all hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-45"
+                                    onClick={() => onSendTest("push")}
+                                    disabled={testPending || pushPending || !browserPushConfigured || !draft.browserPushEnabled}
+                                    className="text-[#8dd8ff] transition-colors hover:text-[#b7ebff] disabled:opacity-45"
                                 >
-                                    <RefreshCw className={cn("h-3.5 w-3.5", telegramConnectQuery.isFetching && "animate-spin")} />
-                                    {telegramConnectQuery.isFetching ? "CHECKING..." : "CHECK STATUS"}
+                                    {testPending ? "SENDING..." : "TEST PUSH"}
                                 </button>
                             </div>
-                            <div className="mt-4 flex flex-wrap gap-2">
-                                {telegramConnectQuery.data?.connectUrl ? (
-                                    <a
-                                        href={telegramConnectQuery.data.connectUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex h-9 items-center gap-2 border border-[#00aaff]/18 bg-[#00aaff]/10 px-3 text-[10px] tracking-[0.16em] text-[#8dd8ff] transition-all hover:bg-[#00aaff]/14"
-                                    >
-                                        <Send className="h-3.5 w-3.5" />
-                                        CONNECT TELEGRAM
-                                    </a>
-                                ) : null}
-                                {telegramConnectQuery.data?.botUrl ? (
-                                    <a
-                                        href={telegramConnectQuery.data.botUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex h-9 items-center gap-2 border border-[#ffaa00]/18 bg-[#ffaa00]/10 px-3 text-[10px] tracking-[0.16em] text-[#ffd37a] transition-all hover:bg-[#ffaa00]/14"
-                                    >
-                                        OPEN BOT
-                                    </a>
-                                ) : null}
-                            </div>
-                            {telegramConnectQuery.data?.expiresAt && !telegramConnectQuery.data.connected ? (
-                                <p className="mt-3 text-[11px] leading-6 text-white/45">
-                                    Current connect link refreshes {formatDistanceToNowStrict(new Date(telegramConnectQuery.data.expiresAt), { addSuffix: true })}.
-                                </p>
-                            ) : null}
+                        </ChannelCard>
+
+                        <ChannelCard
+                            title="Telegram"
+                            status={telegramSummary.toUpperCase()}
+                            description={
+                                telegramConnected
+                                    ? `Connected to ${telegramChatLabel}.`
+                                    : telegramConnectQuery.data?.error
+                                        ? telegramConnectQuery.data.error
+                                        : "Connect once, then BagScan can deliver alerts directly to your Telegram chat."
+                            }
+                        >
+                            {telegramConnected ? (
+                                <>
+                                    <InlineToggle
+                                        label="Send alerts to Telegram"
+                                        checked={draft.telegramEnabled}
+                                        disabled={!telegramConfigured}
+                                        onChange={(checked) => setDraft({ ...draft, telegramEnabled: checked })}
+                                    />
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                        {telegramConnectQuery.data?.botUrl ? (
+                                            <a
+                                                href={telegramConnectQuery.data.botUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex h-9 items-center gap-2 border border-[#00aaff]/18 bg-[#00aaff]/10 px-3 text-[10px] tracking-[0.16em] text-[#8dd8ff] transition-all hover:bg-[#00aaff]/14"
+                                            >
+                                                OPEN BOT
+                                            </a>
+                                        ) : null}
+                                        <button
+                                            type="button"
+                                            onClick={() => onSendTest("telegram")}
+                                            disabled={testPending || !telegramConfigured || !draft.telegramEnabled || !draft.telegramChatId?.trim()}
+                                            className="inline-flex h-9 items-center gap-2 border border-[#ffaa00]/18 bg-[#ffaa00]/10 px-3 text-[10px] tracking-[0.16em] text-[#ffd37a] transition-all hover:bg-[#ffaa00]/14 disabled:cursor-not-allowed disabled:opacity-45"
+                                        >
+                                            <Send className="h-3.5 w-3.5" />
+                                            {testPending ? "SENDING..." : "TEST TG"}
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="space-y-2 border border-[#00ff41]/10 bg-black/30 px-3 py-3 text-[11px] leading-6 text-white/56">
+                                        <p>1. Press <span className="text-[#9dffb8]">CONNECT TELEGRAM</span>.</p>
+                                        <p>2. If the bot opens without linking, use <span className="text-[#ffd37a]">COPY COMMAND</span> and send it once.</p>
+                                        <p>3. Come back and press <span className="text-[#8dd8ff]">CHECK STATUS</span>.</p>
+                                    </div>
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                        {telegramConnectQuery.data?.connectUrl ? (
+                                            <a
+                                                href={telegramConnectQuery.data.connectUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex h-9 items-center gap-2 border border-[#00aaff]/18 bg-[#00aaff]/10 px-3 text-[10px] tracking-[0.16em] text-[#8dd8ff] transition-all hover:bg-[#00aaff]/14"
+                                            >
+                                                <Send className="h-3.5 w-3.5" />
+                                                CONNECT TELEGRAM
+                                            </a>
+                                        ) : null}
+                                        {telegramConnectCommand ? (
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    try {
+                                                        await navigator.clipboard.writeText(telegramConnectCommand);
+                                                        setFeedback({ tone: "success", text: "Telegram connect command copied." });
+                                                    } catch {
+                                                        setFeedback({ tone: "error", text: "Could not copy Telegram connect command." });
+                                                    }
+                                                }}
+                                                className="inline-flex h-9 items-center justify-center border border-[#ffaa00]/18 bg-[#ffaa00]/10 px-3 text-[10px] tracking-[0.16em] text-[#ffd37a] transition-all hover:bg-[#ffaa00]/14"
+                                            >
+                                                COPY COMMAND
+                                            </button>
+                                        ) : null}
+                                        <button
+                                            type="button"
+                                            onClick={() => void telegramConnectQuery.refetch()}
+                                            disabled={telegramConnectQuery.isFetching}
+                                            className="inline-flex h-9 items-center gap-2 border border-white/10 bg-white/[0.03] px-3 text-[10px] tracking-[0.16em] text-white/72 transition-all hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-45"
+                                        >
+                                            <RefreshCw className={cn("h-3.5 w-3.5", telegramConnectQuery.isFetching && "animate-spin")} />
+                                            {telegramConnectQuery.isFetching ? "CHECKING..." : "CHECK STATUS"}
+                                        </button>
+                                    </div>
+                                    {telegramConnectQuery.data?.expiresAt ? (
+                                        <p className="mt-3 text-[11px] leading-6 text-white/42">
+                                            Connect link refreshes {formatDistanceToNowStrict(new Date(telegramConnectQuery.data.expiresAt), { addSuffix: true })}.
+                                        </p>
+                                    ) : null}
+                                    <details className="mt-3 border border-white/8 bg-white/[0.02] px-3 py-3">
+                                        <summary className="cursor-pointer text-[10px] uppercase tracking-[0.18em] text-white/48">
+                                            Advanced manual chat id
+                                        </summary>
+                                        <div className="mt-3">
+                                            <TextField
+                                                label="Telegram Chat ID"
+                                                value={draft.telegramChatId ?? ""}
+                                                placeholder="123456789 or -100..."
+                                                onChange={(value) => setDraft({ ...draft, telegramChatId: value })}
+                                            />
+                                        </div>
+                                    </details>
+                                </>
+                            )}
+                        </ChannelCard>
+                    </div>
+                    ) : (
+                        <p className="mt-4 text-[11px] leading-6 tracking-[0.14em] text-white/42">
+                            Setup hidden. Use SHOW in this header to bring it back.
+                        </p>
+                    )}
+                </section>
+            ) : null}
+
+            {draft ? (
+                <section className="border border-[#00ff41]/12 bg-black/35 p-4 sm:p-5">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-[10px] uppercase tracking-[0.24em] text-[#00ff41]/52">Rules</p>
+                            <h4 className="mt-1 text-base tracking-[0.08em] text-[#d8ffe6]">Choose what should wake you up</h4>
                         </div>
-                        <TextField
-                            label="Telegram Chat ID (Advanced)"
-                            value={draft.telegramChatId ?? ""}
-                            placeholder="123456789 or -100..."
-                            onChange={(value) => setDraft({ ...draft, telegramChatId: value })}
-                        />
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] tracking-[0.16em] text-white/42">{armedRulesCount} active</span>
+                            <button
+                                type="button"
+                                onClick={() => setSectionOpen((current) => ({ ...current, rules: !current.rules }))}
+                                className="inline-flex h-8 items-center justify-center border border-white/10 bg-white/[0.03] px-3 text-[10px] tracking-[0.16em] text-white/68 transition-all hover:bg-white/[0.07]"
+                            >
+                                {sectionOpen.rules ? "HIDE" : "SHOW"}
+                            </button>
+                        </div>
                     </div>
-                ) : null}
-            </section>
-
-            <section className="border border-[#00ff41]/12 bg-black/35 p-4">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-[#00ff41]/52">Alert Rules</p>
-                <h4 className="mt-1 text-sm tracking-[0.16em] text-[#d8ffe6]">What should trigger</h4>
-                {draft ? (
-                    <div className="mt-4 space-y-4">
-                        <ToggleRow
-                            label="Trending alpha"
-                            description="Notify when a Bags token becomes hot right now."
-                            checked={draft.alphaHotEnabled}
-                            onChange={(checked) => setDraft({ ...draft, alphaHotEnabled: checked })}
-                        />
-                        <ToggleRow
-                            label="Critical alpha"
-                            description="Notify when alpha score or signals turn critical."
-                            checked={draft.alphaCriticalEnabled}
-                            onChange={(checked) => setDraft({ ...draft, alphaCriticalEnabled: checked })}
-                        />
-                        <ToggleRow
-                            label="Profit target"
-                            description="Notify when a holding rises above your unrealized PnL target."
-                            checked={draft.portfolioProfitEnabled}
-                            onChange={(checked) => setDraft({ ...draft, portfolioProfitEnabled: checked })}
-                        />
-                        <NumberField
-                            label="Profit threshold %"
-                            value={draft.profitThresholdPercent}
-                            onChange={(value) => setDraft({ ...draft, profitThresholdPercent: value })}
-                        />
-                        <ToggleRow
-                            label="Drawdown protection"
-                            description="Notify when a holding drops below your unrealized PnL floor."
-                            checked={draft.portfolioDrawdownEnabled}
-                            onChange={(checked) => setDraft({ ...draft, portfolioDrawdownEnabled: checked })}
-                        />
-                        <NumberField
-                            label="Drawdown threshold %"
-                            value={draft.drawdownThresholdPercent}
-                            onChange={(value) => setDraft({ ...draft, drawdownThresholdPercent: value })}
-                        />
-                        <ToggleRow
-                            label="Claimable Bags fees"
-                            description="Notify when claimable fee-share crosses your SOL threshold."
-                            checked={draft.feesEnabled}
-                            onChange={(checked) => setDraft({ ...draft, feesEnabled: checked })}
-                        />
-                        <NumberField
-                            label="Claimable SOL threshold"
-                            value={draft.claimableFeesThresholdSol}
-                            step="0.05"
-                            onChange={(value) => setDraft({ ...draft, claimableFeesThresholdSol: value })}
-                        />
+                    {sectionOpen.rules ? (
+                    <div className="mt-4 grid gap-4">
+                        <RuleCard title="Alpha">
+                            <div className="space-y-3">
+                                <InlineToggle
+                                    label="Trending alpha"
+                                    checked={draft.alphaHotEnabled}
+                                    onChange={(checked) => setDraft({ ...draft, alphaHotEnabled: checked })}
+                                />
+                                <InlineToggle
+                                    label="Critical alpha"
+                                    checked={draft.alphaCriticalEnabled}
+                                    onChange={(checked) => setDraft({ ...draft, alphaCriticalEnabled: checked })}
+                                />
+                            </div>
+                        </RuleCard>
+                        <RuleCard title="Profit target">
+                            <InlineToggle
+                                label="Notify above target"
+                                checked={draft.portfolioProfitEnabled}
+                                onChange={(checked) => setDraft({ ...draft, portfolioProfitEnabled: checked })}
+                            />
+                            <div className="mt-4">
+                                <NumberField
+                                    label="Threshold %"
+                                    value={draft.profitThresholdPercent}
+                                    onChange={(value) => setDraft({ ...draft, profitThresholdPercent: value })}
+                                />
+                            </div>
+                        </RuleCard>
+                        <RuleCard title="Drawdown protection">
+                            <InlineToggle
+                                label="Notify below floor"
+                                checked={draft.portfolioDrawdownEnabled}
+                                onChange={(checked) => setDraft({ ...draft, portfolioDrawdownEnabled: checked })}
+                            />
+                            <div className="mt-4">
+                                <NumberField
+                                    label="Threshold %"
+                                    value={draft.drawdownThresholdPercent}
+                                    onChange={(value) => setDraft({ ...draft, drawdownThresholdPercent: value })}
+                                />
+                            </div>
+                        </RuleCard>
+                        <RuleCard title="Claimable fees">
+                            <InlineToggle
+                                label="Notify on claimable SOL"
+                                checked={draft.feesEnabled}
+                                onChange={(checked) => setDraft({ ...draft, feesEnabled: checked })}
+                            />
+                            <div className="mt-4">
+                                <NumberField
+                                    label="Threshold SOL"
+                                    value={draft.claimableFeesThresholdSol}
+                                    step="0.05"
+                                    onChange={(value) => setDraft({ ...draft, claimableFeesThresholdSol: value })}
+                                />
+                            </div>
+                        </RuleCard>
                     </div>
-                ) : null}
-            </section>
-
-            <section className="border border-[#00ff41]/12 bg-black/35 p-4">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-[#00ff41]/52">Channel Checks</p>
-                <h4 className="mt-1 text-sm tracking-[0.16em] text-[#d8ffe6]">Test each delivery path</h4>
-                <p className="mt-2 text-sm leading-6 text-white/52">
-                    Send a real sample alert to confirm inbox delivery, browser push, and Telegram routing before relying on automation.
-                </p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <ActionButton
-                        label={testPending ? "SENDING..." : "TEST INBOX"}
-                        icon={<Bell className="h-3.5 w-3.5" />}
-                        onClick={() => onSendTest("inbox")}
-                        disabled={testPending}
-                    />
-                    <ActionButton
-                        label={testPending ? "SENDING..." : "TEST PUSH"}
-                        icon={<Smartphone className="h-3.5 w-3.5" />}
-                        onClick={() => onSendTest("push")}
-                        disabled={
-                            testPending ||
-                            pushPending ||
-                            !alertsQuery.data?.config.browserPushConfigured ||
-                            !draft?.browserPushEnabled
-                        }
-                    />
-                    <ActionButton
-                        label={testPending ? "SENDING..." : "TEST TG"}
-                        icon={<Send className="h-3.5 w-3.5" />}
-                        onClick={() => onSendTest("telegram")}
-                        disabled={
-                            testPending ||
-                            !alertsQuery.data?.config.telegramConfigured ||
-                            !draft?.telegramEnabled ||
-                            !draft?.telegramChatId?.trim()
-                        }
-                    />
-                </div>
-            </section>
-
-            <div className="flex flex-wrap items-center gap-2">
-                <button
-                    type="button"
-                    onClick={onSave}
-                    disabled={!draft || savePending}
-                    className="inline-flex h-11 items-center gap-2 border border-[#00ff41]/22 bg-[#00ff41]/10 px-4 text-[11px] tracking-[0.18em] text-[#9dffb8] transition-all hover:bg-[#00ff41]/14 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                    <Sparkles className="h-4 w-4" />
-                    {savePending ? "SAVING..." : "SAVE SETTINGS"}
-                </button>
-                <button
-                    type="button"
-                    onClick={() => void onRefresh()}
-                    className="inline-flex h-11 items-center gap-2 border border-white/10 bg-white/[0.03] px-4 text-[11px] tracking-[0.18em] text-white/72 transition-all hover:bg-white/[0.07]"
-                >
-                    REFRESH
-                </button>
-                <Link
-                    href="/alpha"
-                    className="inline-flex h-11 items-center gap-2 border border-[#00aaff]/18 bg-[#00aaff]/10 px-4 text-[11px] tracking-[0.18em] text-[#8dd8ff] transition-all hover:bg-[#00aaff]/14"
-                >
-                    OPEN ALPHA
-                </Link>
-                <Link
-                    href={`/portfolio?wallet=${walletAddress}`}
-                    className="inline-flex h-11 items-center gap-2 border border-[#ffaa00]/18 bg-[#ffaa00]/10 px-4 text-[11px] tracking-[0.18em] text-[#ffd37a] transition-all hover:bg-[#ffaa00]/14"
-                >
-                    OPEN PORTFOLIO
-                </Link>
-            </div>
+                    ) : (
+                        <p className="mt-4 text-[11px] leading-6 tracking-[0.14em] text-white/42">
+                            Rules hidden. Use SHOW in this header whenever you want to edit triggers again.
+                        </p>
+                    )}
+                </section>
+            ) : null}
 
             <section className="border border-[#00ff41]/12 bg-black/35">
                 <div className="flex items-center justify-between gap-3 border-b border-[#00ff41]/10 px-4 py-3">
@@ -876,9 +968,28 @@ function AlertCenterBody({
                         <p className="text-[10px] uppercase tracking-[0.24em] text-[#00ff41]/52">Inbox</p>
                         <h4 className="mt-1 text-sm tracking-[0.16em] text-[#d8ffe6]">Recent notifications</h4>
                     </div>
-                    <span className="text-[10px] tracking-[0.16em] text-white/42">{notifications.length} items</span>
+                    <div className="flex items-center gap-3">
+                        <span className="text-[10px] tracking-[0.16em] text-white/42">{notifications.length} items</span>
+                        <button
+                            type="button"
+                            onClick={onMarkAll}
+                            disabled={markAllPending || unreadCount === 0}
+                            className="inline-flex items-center gap-1 text-[10px] tracking-[0.16em] text-[#8dd8ff] transition-colors hover:text-[#b7ebff] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                            <CheckCheck className="h-3 w-3" />
+                            {markAllPending ? "UPDATING..." : "MARK ALL READ"}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setSectionOpen((current) => ({ ...current, inbox: !current.inbox }))}
+                            className="inline-flex h-8 items-center justify-center border border-white/10 bg-white/[0.03] px-3 text-[10px] tracking-[0.16em] text-white/68 transition-all hover:bg-white/[0.07]"
+                        >
+                            {sectionOpen.inbox ? "HIDE" : "SHOW"}
+                        </button>
+                    </div>
                 </div>
 
+                {sectionOpen.inbox ? (
                 <div className="max-h-[320px] overflow-y-auto">
                     {alertsQuery.isLoading ? (
                         <div className="space-y-3 p-4">
@@ -906,6 +1017,11 @@ function AlertCenterBody({
                         </div>
                     )}
                 </div>
+                ) : (
+                    <div className="px-4 py-4 text-[11px] leading-6 tracking-[0.14em] text-white/42">
+                        Inbox hidden. Use SHOW in this header to review notifications again.
+                    </div>
+                )}
             </section>
         </div>
     );
@@ -968,6 +1084,29 @@ function SmallStat({ label, value, icon }: { label: string; value: string; icon:
     );
 }
 
+function StatusSummary({
+    label,
+    value,
+    note,
+    icon,
+}: {
+    label: string;
+    value: string;
+    note: string;
+    icon: React.ReactNode;
+}) {
+    return (
+        <div className="border border-[#00ff41]/12 bg-black/35 p-3">
+            <div className="flex items-center justify-between gap-3 text-[#9dffb8]">
+                <span className="text-[10px] uppercase tracking-[0.22em] text-white/46">{label}</span>
+                {icon}
+            </div>
+            <p className="mt-3 text-lg tracking-[0.08em] text-[#f3fff6]">{value}</p>
+            <p className="mt-2 text-[10px] leading-5 tracking-[0.12em] text-white/38">{note}</p>
+        </div>
+    );
+}
+
 function ActionButton({
     label,
     icon,
@@ -999,28 +1138,65 @@ function ActionButton({
     );
 }
 
-function ToggleRow({
-    label,
+function ChannelCard({
+    title,
+    status,
     description,
+    children,
+}: {
+    title: string;
+    status: string;
+    description: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <div className="border border-white/8 bg-white/[0.02] p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-[#d8ffe6]">{title}</p>
+                    <p className="mt-2 max-w-[42ch] text-sm leading-6 text-white/58">{description}</p>
+                </div>
+                <span className="shrink-0 border border-[#00ff41]/14 bg-[#00ff41]/8 px-2 py-1 text-[9px] tracking-[0.16em] text-[#9dffb8]">
+                    {status}
+                </span>
+            </div>
+            <div className="mt-5 space-y-4">{children}</div>
+        </div>
+    );
+}
+
+function RuleCard({
+    title,
+    children,
+}: {
+    title: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <div className="border border-white/8 bg-white/[0.02] p-4 sm:p-5">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[#d8ffe6]">{title}</p>
+            <div className="mt-4 space-y-4">{children}</div>
+        </div>
+    );
+}
+
+function InlineToggle({
+    label,
     checked,
     onChange,
     disabled,
 }: {
     label: string;
-    description: string;
     checked: boolean;
     onChange: (checked: boolean) => void;
     disabled?: boolean;
 }) {
     return (
-        <label className="flex items-start justify-between gap-4 border border-white/8 bg-white/[0.02] px-3 py-3">
-            <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#d8ffe6]">{label}</p>
-                <p className="mt-2 text-sm leading-6 text-white/52">{description}</p>
-            </div>
+        <label className="flex items-center justify-between gap-4 border border-white/8 bg-black/30 px-3 py-3.5">
+            <p className="pr-3 text-[12px] leading-5 tracking-[0.04em] text-[#d8ffe6]">{label}</p>
             <input
                 type="checkbox"
-                className="mt-1 h-4 w-4 accent-[#00ff41]"
+                className="h-4 w-4 accent-[#00ff41]"
                 checked={checked}
                 disabled={disabled}
                 onChange={(event) => onChange(event.target.checked)}

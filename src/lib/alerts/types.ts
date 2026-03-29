@@ -70,6 +70,7 @@ export interface AlertTelegramConnectState {
     botUsername?: string | null;
     botUrl?: string | null;
     connectUrl?: string | null;
+    connectCommand?: string | null;
     expiresAt?: string | null;
     chatId?: string | null;
     chatLabel?: string | null;

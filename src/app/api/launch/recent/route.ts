@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getBagsPoolInfo, getBagsPools, getDexScreenerPairs } from "@/lib/bags/client";
+import { getBagsPoolInfo, getBagsPools, getDexScreenerPairs, getPartnerStats } from "@/lib/bags/client";
 import type { NormalizedToken } from "@/lib/bags/types";
 
 interface RecentLaunchesResponse {
@@ -11,6 +11,9 @@ interface RecentLaunchesResponse {
     meta: {
         total: number;
         limit: number;
+        trackingHealthy: boolean;
+        reason?: string | null;
+        partnerLaunches?: number | null;
     };
 }
 
@@ -36,6 +39,7 @@ export async function GET(req: NextRequest) {
         const limit = Number.isFinite(rawLimit)
             ? Math.min(Math.max(Math.floor(rawLimit), 1), 24)
             : 8;
+        const partnerWallet = process.env.BAGSCAN_PARTNER_WALLET;
 
         let drafts = await prisma.launchDraft.findMany({
             where: {
@@ -60,10 +64,18 @@ export async function GET(req: NextRequest) {
         });
 
         if (uniqueDrafts.length === 0) {
+            const partnerStats = partnerWallet ? await getPartnerStats(partnerWallet).catch(() => null) : null;
+            const partnerLaunches = Number(partnerStats?.totalLaunches ?? 0) || 0;
             const empty: RecentLaunchesResponse = {
                 success: true,
                 data: [],
-                meta: { total: 0, limit },
+                meta: {
+                    total: 0,
+                    limit,
+                    trackingHealthy: partnerLaunches === 0,
+                    reason: partnerLaunches > 0 ? "partner-launches-found-but-no-local-history" : "no-local-launch-history",
+                    partnerLaunches,
+                },
             };
             return NextResponse.json(empty, { headers: { "Cache-Control": "no-store" } });
         }
@@ -79,6 +91,22 @@ export async function GET(req: NextRequest) {
         ).filter((d): d is (typeof uniqueDrafts)[number] => d !== null);
 
         const selected = verifiedDrafts.slice(0, limit);
+        if (selected.length === 0) {
+            const partnerStats = partnerWallet ? await getPartnerStats(partnerWallet).catch(() => null) : null;
+            const partnerLaunches = Number(partnerStats?.totalLaunches ?? 0) || 0;
+            const empty: RecentLaunchesResponse = {
+                success: true,
+                data: [],
+                meta: {
+                    total: 0,
+                    limit,
+                    trackingHealthy: false,
+                    reason: partnerLaunches > 0 ? "local-history-found-but-no-live-pools" : "no-live-pools-for-tracked-launches",
+                    partnerLaunches,
+                },
+            };
+            return NextResponse.json(empty, { headers: { "Cache-Control": "no-store" } });
+        }
         const mints = selected
             .map((draft) => draft.tokenMint)
             .filter((mint): mint is string => !!mint);
@@ -142,6 +170,9 @@ export async function GET(req: NextRequest) {
             meta: {
                 total: tokens.length,
                 limit,
+                trackingHealthy: tokens.length > 0,
+                reason: null,
+                partnerLaunches: null,
             },
         };
 
