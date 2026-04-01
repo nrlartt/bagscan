@@ -106,3 +106,34 @@ CREATE INDEX IF NOT EXISTS "AlertNotification_walletAddress_createdAt_idx"
 
 CREATE INDEX IF NOT EXISTS "AlertNotification_walletAddress_readAt_idx"
     ON "AlertNotification" ("walletAddress", "readAt");
+
+CREATE TABLE IF NOT EXISTS "TelegramBroadcastTarget" (
+    "id" TEXT NOT NULL,
+    "chatId" TEXT NOT NULL,
+    "chatType" TEXT NOT NULL,
+    "title" TEXT,
+    "username" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT TRUE,
+    "trendingEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "launchesEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "digestEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "lastTrendingSentAt" TIMESTAMP(3),
+    "lastLaunchesSentAt" TIMESTAMP(3),
+    "lastDigestSentAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "TelegramBroadcastTarget_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "TelegramBroadcastTarget_chatId_key"
+    ON "TelegramBroadcastTarget" ("chatId");
+
+CREATE INDEX IF NOT EXISTS "TelegramBroadcastTarget_isActive_idx"
+    ON "TelegramBroadcastTarget" ("isActive");
+
+CREATE TABLE IF NOT EXISTS "TelegramBotState" (
+    "key" TEXT NOT NULL,
+    "lastUpdateId" INTEGER NOT NULL DEFAULT 0,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "TelegramBotState_pkey" PRIMARY KEY ("key")
+);

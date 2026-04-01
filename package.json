@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && node -e \"const{execSync}=require('child_process');try{execSync('npx prisma db push --accept-data-loss',{stdio:'inherit'})}catch(e){console.log('db push skipped:',e.message)}\" && next build",
+    "build": "prisma generate && node -e \"const{execSync}=require('child_process');try{execSync('npx prisma db push --accept-data-loss',{stdio:'inherit'})}catch(e){console.log('db push skipped:',e.message)}\" && npx tsc --noEmit --pretty false && next build",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "start": "next start",

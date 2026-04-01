@@ -122,6 +122,31 @@ model AlertPreference {
   @@index([lastEvaluatedAt])
 }
 
+model TelegramBroadcastTarget {
+  id                 String   @id @default(cuid())
+  chatId             String   @unique
+  chatType           String
+  title              String?
+  username           String?
+  isActive           Boolean  @default(true)
+  trendingEnabled    Boolean  @default(true)
+  launchesEnabled    Boolean  @default(true)
+  digestEnabled      Boolean  @default(true)
+  lastTrendingSentAt DateTime?
+  lastLaunchesSentAt DateTime?
+  lastDigestSentAt   DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model TelegramBotState {
+  key          String   @id
+  lastUpdateId Int      @default(0)
+  updatedAt    DateTime @updatedAt
+}
+
 model PushSubscription {
   id             String          @id @default(cuid())
   walletAddress  String

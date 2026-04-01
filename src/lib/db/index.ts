@@ -1,6 +1,8 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
+import { createRequire } from "module";
+import type { PrismaClient } from "@prisma/client";
+import type { Pool } from "pg";
+
+const require = createRequire(import.meta.url);
 
 const globalForPrisma = globalThis as { prisma?: PrismaClient; prismaPool?: Pool };
 
@@ -30,6 +32,9 @@ function normalizeConnectionString(connectionString: string) {
 
 function getPrismaClient(): PrismaClient {
     if (!globalForPrisma.prisma) {
+        const { PrismaClient } = require("@prisma/client") as typeof import("@prisma/client");
+        const { PrismaPg } = require("@prisma/adapter-pg") as { PrismaPg: typeof import("@prisma/adapter-pg").PrismaPg };
+        const { Pool } = require("pg") as typeof import("pg");
         const connectionString = process.env.DATABASE_URL;
         if (!connectionString) {
             throw new Error("DATABASE_URL is not configured");

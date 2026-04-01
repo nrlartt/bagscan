@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Rocket, Menu, X, Zap, Scan, Bot } from "lucide-react";
+import { Rocket, Menu, X, Zap, Scan, Bot, MessageSquareText } from "lucide-react";
 import { useState, useEffect } from "react";
 import { BagLogo } from "./BagLogo";
 import { NotificationCenter } from "./NotificationCenter";
@@ -12,6 +12,7 @@ import { WalletPortfolioButton } from "./WalletPortfolioButton";
 const NAV_ITEMS = [
     { href: "/", label: "DISCOVER", icon: Scan },
     { href: "/alpha", label: "ALPHA", icon: Zap, highlight: true },
+    { href: "/talk", label: "TALK TO BAGS", icon: MessageSquareText },
     { href: "/agents", label: "AGENTS", icon: Bot },
     { href: "/launch", label: "LAUNCH", icon: Rocket },
 ];
@@ -20,7 +21,6 @@ export function TopNav() {
     const pathname = usePathname();
     const [mobileOpen, setMobileOpen] = useState(false);
     const [time, setTime] = useState("");
-    const [alertState, setAlertState] = useState(true);
 
     useEffect(() => {
         const tick = () => {
@@ -30,11 +30,6 @@ export function TopNav() {
         tick();
         const timer = setInterval(tick, 1000);
         return () => clearInterval(timer);
-    }, []);
-
-    useEffect(() => {
-        const blink = setInterval(() => setAlertState((s) => !s), 3000);
-        return () => clearInterval(blink);
     }, []);
 
     return (
@@ -94,31 +89,7 @@ export function TopNav() {
                     {/* Right section */}
                     <div className="flex items-center gap-2 sm:gap-3">
                         {/* $SCAN token link */}
-                        <a
-                            href="https://bags.fm/BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 border border-[#00ff41]/20 hover:border-[#00ff41]/50 bg-[#00ff41]/[0.03] hover:bg-[#00ff41]/[0.08] transition-all group"
-                        >
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#00ff41]/50 group-hover:bg-[#00ff41] transition-colors" style={{ boxShadow: '0 0 4px rgba(0,255,65,0.3)' }} />
-                            <span className="text-[9px] text-[#00ff41]/50 group-hover:text-[#00ff41] tracking-[0.12em] transition-colors">$SCAN</span>
-                        </a>
                         {/* Alert status — fixed width to prevent layout shift */}
-                        <div className={cn(
-                            "hidden lg:flex items-center gap-2 px-3 py-1 border text-[9px] tracking-[0.15em] transition-colors duration-500",
-                            alertState
-                                ? "border-[#00ff41]/40 text-[#00ff41]/70"
-                                : "border-[#ffaa00]/40 text-[#ffaa00]/70"
-                        )} style={{ minWidth: '160px' }}>
-                            <span className={cn(
-                                "w-1.5 h-1.5 rounded-full flex-shrink-0 animate-pulse",
-                                alertState ? "bg-[#00ff41]" : "bg-[#ffaa00]"
-                            )} style={{ boxShadow: alertState ? '0 0 4px #00ff41' : '0 0 4px #ffaa00' }} />
-                            <span className="whitespace-nowrap">
-                                {alertState ? "SYSTEMS NOMINAL" : "SCANNING..."}
-                            </span>
-                        </div>
-
                         {/* Ship time */}
                         <div className="hidden sm:block text-right">
                             <div className="text-[10px] text-[#00ff41] tracking-[0.2em] font-medium" style={{ textShadow: '0 0 6px rgba(0,255,65,0.3)' }}>

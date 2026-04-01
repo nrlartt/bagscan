@@ -4,15 +4,11 @@ import type {
     AlertPreference as AlertPreferenceRecord,
     PushSubscription as PushSubscriptionRecord,
 } from "@prisma/client";
-import {
-    AlertKind as PrismaAlertKind,
-    AlertSeverity as PrismaAlertSeverity,
-} from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { generateAlphaFeed } from "@/lib/alpha/engine";
 import { getPortfolioForWallet } from "@/lib/portfolio/service";
 import { getAlertAccess } from "./access";
-import { getTelegramConfig } from "./telegram";
+import { getTelegramConfig, runTelegramBroadcastCron } from "./telegram";
 import type { AlphaToken } from "@/lib/alpha/types";
 import type { PortfolioHolding } from "@/lib/portfolio/types";
 import type {
@@ -25,6 +21,24 @@ import type {
 const ALERT_EVALUATION_INTERVAL_MS = 90_000;
 const DEFAULT_NOTIFICATION_LIMIT = 30;
 const PUSH_ACTION_FALLBACK = "/alpha";
+
+const PrismaAlertKind = {
+    alpha_hot: "alpha_hot",
+    alpha_critical: "alpha_critical",
+    portfolio_profit: "portfolio_profit",
+    portfolio_drawdown: "portfolio_drawdown",
+    fee_claim: "fee_claim",
+    system: "system",
+} as const;
+
+const PrismaAlertSeverity = {
+    info: "info",
+    hot: "hot",
+    critical: "critical",
+} as const;
+
+type PrismaAlertKind = (typeof PrismaAlertKind)[keyof typeof PrismaAlertKind];
+type PrismaAlertSeverity = (typeof PrismaAlertSeverity)[keyof typeof PrismaAlertSeverity];
 
 interface AlertCandidate {
     kind: PrismaAlertKind;
@@ -665,9 +679,19 @@ export async function runAlertsCron(limit = 100) {
         }
     }
 
+    const telegramBroadcasts = await runTelegramBroadcastCron().catch((error) => {
+        console.error("[alerts] telegram broadcast cron failed:", error);
+        return {
+            processedUpdates: 0,
+            activeTargets: 0,
+            broadcastsSent: 0,
+        };
+    });
+
     return {
         walletsProcessed: preferences.length,
         createdCount,
+        telegramBroadcasts,
     };
 }
 
