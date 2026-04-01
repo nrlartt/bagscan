@@ -17,10 +17,12 @@ import type {
     AlertPreferenceUpdateInput,
     AlertStateResponse,
 } from "./types";
+import { withPgAdvisoryLock } from "@/lib/db";
 
 const ALERT_EVALUATION_INTERVAL_MS = 90_000;
 const DEFAULT_NOTIFICATION_LIMIT = 30;
 const PUSH_ACTION_FALLBACK = "/alpha";
+const ALERTS_CRON_LOCK_KEY = 42_091_337;
 
 const PrismaAlertKind = {
     alpha_hot: "alpha_hot",
@@ -535,6 +537,7 @@ export async function getAlertState(walletAddress: string, evaluate = true): Pro
             telegramConfigured: telegramConfig.configured,
             vapidPublicKey: pushConfig.publicKey,
             requiresSecureOrigin: true,
+            backgroundRuntimeEnabled: process.env.ENABLE_INTERNAL_ALERTS_RUNTIME !== "false",
         },
     };
 }
@@ -659,7 +662,7 @@ export async function logoutAlertSessionData(walletAddress: string) {
     });
 }
 
-export async function runAlertsCron(limit = 100) {
+async function runAlertsCronInternal(limit = 100) {
     const preferences = await prisma.alertPreference.findMany({
         orderBy: [
             { lastEvaluatedAt: "asc" },
@@ -692,6 +695,31 @@ export async function runAlertsCron(limit = 100) {
         walletsProcessed: preferences.length,
         createdCount,
         telegramBroadcasts,
+    };
+}
+
+export async function runAlertsCron(limit = 100) {
+    const locked = await withPgAdvisoryLock(ALERTS_CRON_LOCK_KEY, () =>
+        runAlertsCronInternal(limit)
+    );
+
+    if (!locked.acquired) {
+        return {
+            walletsProcessed: 0,
+            createdCount: 0,
+            telegramBroadcasts: {
+                processedUpdates: 0,
+                activeTargets: 0,
+                broadcastsSent: 0,
+            },
+            skipped: true,
+            reason: "locked",
+        };
+    }
+
+    return {
+        ...locked.result,
+        skipped: false,
     };
 }
 

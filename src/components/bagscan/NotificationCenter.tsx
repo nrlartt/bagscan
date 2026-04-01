@@ -603,6 +603,7 @@ function AlertCenterBody({
                         : "Off";
     const telegramSummary =
         !telegramConfigured ? "Bot off" : telegramConnected ? "Connected" : "Needs setup";
+    const backgroundRuntimeEnabled = Boolean(alertsQuery.data?.config.backgroundRuntimeEnabled);
     const armedRulesCount = [
         draft?.alphaHotEnabled,
         draft?.alphaCriticalEnabled,
@@ -765,10 +766,12 @@ function AlertCenterBody({
                             status={telegramSummary.toUpperCase()}
                             description={
                                 telegramConnected
-                                    ? `Connected to ${telegramChatLabel}.`
+                                    ? `Connected to ${telegramChatLabel}.${backgroundRuntimeEnabled ? " Delivery continues from the server even when this tab is closed." : ""}`
                                     : telegramConnectQuery.data?.error
                                         ? telegramConnectQuery.data.error
-                                        : "Connect once, then BagScan can deliver alerts directly to your Telegram chat."
+                                        : backgroundRuntimeEnabled
+                                            ? "Connect once, then BagScan can keep delivering alerts from the server even when this tab is closed."
+                                            : "Connect once, then BagScan can deliver alerts directly to your Telegram chat."
                             }
                         >
                             {telegramConnected ? (

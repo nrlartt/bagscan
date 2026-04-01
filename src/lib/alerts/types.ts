@@ -61,6 +61,7 @@ export interface AlertStateResponse {
         telegramConfigured: boolean;
         vapidPublicKey?: string;
         requiresSecureOrigin: boolean;
+        backgroundRuntimeEnabled: boolean;
     };
 }
 
