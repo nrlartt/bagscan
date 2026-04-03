@@ -211,6 +211,15 @@ export type BagsFeeShareWalletProvider =
     | "email"
     | "solana";
 
+export const BAGS_CONFIG_TYPES = {
+    DEFAULT: "fa29606e-5e48-4c37-827f-4b03d58ee23d",
+    BPS25PRE_BPS100POST_5000_COMPOUNDING: "d16d3585-6488-4a6c-9a6f-e6c39ca0fda3",
+    BPS100PRE_BPS25POST_5000_COMPOUNDING: "a7c8e1f2-3d4b-5a6c-9e0f-1b2c3d4e5f6a",
+    BPS1000PRE_BPS1000POST_5000_COMPOUNDING: "48e26d2f-0a9d-4625-a3cc-c3987d874b9e",
+} as const;
+
+export type BagsConfigType = (typeof BAGS_CONFIG_TYPES)[keyof typeof BAGS_CONFIG_TYPES];
+
 export interface BagsFeeShareWalletLookupRequest {
     provider: BagsFeeShareWalletProvider;
     username: string;
@@ -262,6 +271,8 @@ export interface BagsFeeShareConfigRequest {
     partner?: string;
     partnerConfig?: string;
     additionalLookupTables?: string[];
+    admin?: string;
+    bagsConfigType?: BagsConfigType;
     tipWallet?: string;
     tipLamports?: number;
 }
@@ -313,12 +324,88 @@ export interface BagsPartnerClaimResponse {
     transactions?: Array<{
         transaction?: string;
         serializedTransaction?: string;
+        blockhash?: {
+            blockhash: string;
+            lastValidBlockHeight: number;
+        };
         [key: string]: unknown;
     }>;
     bundles?: Array<Array<Record<string, unknown>>>;
     transaction?: string;
     serializedTransaction?: string;
     [key: string]: unknown;
+}
+
+// Incorporation
+export type BagsIncorporationCategory =
+    | "RWA"
+    | "AI"
+    | "DEFI"
+    | "INFRA"
+    | "DEPIN"
+    | "LEGAL"
+    | "GAMING"
+    | "NFT"
+    | "MEME";
+
+export interface BagsIncorporationFounder {
+    firstName: string;
+    lastName: string;
+    email: string;
+    nationalityCountry: string;
+    taxResidencyCountry: string;
+    residentialAddress: string;
+    shareBasisPoint: number;
+}
+
+export interface BagsIncorporationFounderResponse {
+    founderId?: string;
+    id?: string;
+    firstName: string;
+    lastName: string;
+    kycUrl?: string | null;
+    kycStatus?: string | null;
+    shareBasisPoint: number;
+    formUrl?: string | null;
+    pepCompleted?: boolean;
+    ipAttributionAcknowledged?: boolean;
+}
+
+export interface BagsIncorporationPaymentResponse {
+    orderUUID: string;
+    recipientWallet: string;
+    priceUSDC: string;
+    transaction: string;
+    lastValidBlockHeight: number;
+}
+
+export interface BagsIncorporateCompanyRequest {
+    orderUUID: string;
+    paymentSignature: string;
+    projectName: string;
+    tokenAddress: string;
+    founders: BagsIncorporationFounder[];
+    category?: BagsIncorporationCategory;
+    twitterHandle?: string;
+    incorporationShareBasisPoint: number;
+    preferredCompanyNames: string[];
+}
+
+export interface BagsIncorporationProject {
+    tokenAddress: string;
+    incorporationStatus: string;
+    founders?: BagsIncorporationFounderResponse[];
+    incorporationShareBasisPoint: number;
+    category: string | null;
+    twitterHandle: string | null;
+    createdAt?: string;
+    preferredCompanyNames: string[];
+    isReadyForIncorporation?: boolean;
+}
+
+export interface BagsStartIncorporationResponse {
+    tokenAddress: string;
+    incorporationStarted: boolean;
 }
 
 // ── Helius DAS (token metadata) ──────────────

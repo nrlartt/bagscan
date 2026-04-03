@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
             basisPointsArray: data.basisPointsArray,
             partner: includePartner ? (data.partner || partnerWallet || undefined) : undefined,
             partnerConfig: includePartner ? (data.partnerConfig || partnerConfig || undefined) : undefined,
+            admin: data.admin || undefined,
+            bagsConfigType: data.bagsConfigType,
             tipWallet: data.tipWallet || undefined,
             tipLamports: data.tipLamports,
         });

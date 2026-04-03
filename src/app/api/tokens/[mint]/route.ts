@@ -1,16 +1,27 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { syncTokenDetail, getTokenSnapshots } from "@/lib/sync";
-import { getClaimEvents, getDexScreenerPairs } from "@/lib/bags/client";
+import { getClaimEvents, getCompanyTokenDetails, getDexScreenerPairs } from "@/lib/bags/client";
 
-function buildSyntheticSnapshots(pair: Record<string, any>): Array<{ capturedAt: string; fdvUsd: number | null; priceUsd: number | null; liquidityUsd: number | null; lifetimeFees: number | null; volume24hUsd: number | null }> {
+type DexPair = Awaited<ReturnType<typeof getDexScreenerPairs>>[number];
+
+function toNumber(value: string | number | null | undefined) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    return undefined;
+}
+
+function buildSyntheticSnapshots(pair: DexPair): Array<{ capturedAt: string; fdvUsd: number | null; priceUsd: number | null; liquidityUsd: number | null; lifetimeFees: number | null; volume24hUsd: number | null }> {
     const now = Date.now();
-    const currentPrice = parseFloat(pair.priceUsd) || 0;
-    const currentFdv = parseFloat(pair.fdv) || 0;
+    const currentPrice = toNumber(pair.priceUsd) ?? 0;
+    const currentFdv = toNumber(pair.fdv) ?? 0;
     if (!currentPrice || !currentFdv) return [];
 
-    const changes = pair.priceChange ?? {};
-    const intervals: Array<{ key: string; ms: number }> = [
+    const changes = (pair.priceChange ?? {}) as Record<string, string | number | null | undefined>;
+    const intervals: Array<{ key: "h24" | "h6" | "h1" | "m5"; ms: number }> = [
         { key: "h24", ms: 24 * 60 * 60 * 1000 },
         { key: "h6", ms: 6 * 60 * 60 * 1000 },
         { key: "h1", ms: 60 * 60 * 1000 },
@@ -20,8 +31,8 @@ function buildSyntheticSnapshots(pair: Record<string, any>): Array<{ capturedAt:
     const points: Array<{ capturedAt: string; fdvUsd: number | null; priceUsd: number | null; liquidityUsd: number | null; lifetimeFees: number | null; volume24hUsd: number | null }> = [];
 
     for (const { key, ms } of intervals) {
-        const pctChange = parseFloat(changes[key]);
-        if (isNaN(pctChange)) continue;
+        const pctChange = toNumber(changes[key]);
+        if (pctChange === undefined) continue;
         const pastPrice = currentPrice / (1 + pctChange / 100);
         const pastFdv = currentFdv / (1 + pctChange / 100);
         points.push({
@@ -38,9 +49,9 @@ function buildSyntheticSnapshots(pair: Record<string, any>): Array<{ capturedAt:
         capturedAt: new Date(now).toISOString(),
         fdvUsd: currentFdv,
         priceUsd: currentPrice,
-        liquidityUsd: pair.liquidity?.usd ?? null,
+        liquidityUsd: toNumber(pair.liquidity?.usd) ?? null,
         lifetimeFees: null,
-        volume24hUsd: pair.volume?.h24 ?? null,
+        volume24hUsd: toNumber(pair.volume?.h24) ?? null,
     });
 
     points.sort((a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime());
@@ -68,10 +79,11 @@ export async function GET(
             );
         }
 
-        const [claimEventsData, dbSnapshots, dexPairs] = await Promise.all([
+        const [claimEventsData, dbSnapshots, dexPairs, incorporation] = await Promise.all([
             getClaimEvents(mint, { mode: "offset", limit: 50 }),
             getTokenSnapshots(mint),
             getDexScreenerPairs([mint]),
+            getCompanyTokenDetails(mint),
         ]);
 
         const claimEvents = claimEventsData?.events ?? claimEventsData?.claims ?? [];
@@ -86,7 +98,7 @@ export async function GET(
         }));
 
         if (snapshots.length < 2 && dexPairs.length > 0) {
-            const pair = dexPairs.find((p: any) => p.baseToken?.address === mint) || dexPairs[0];
+            const pair = dexPairs.find((p) => p.baseToken?.address === mint) || dexPairs[0];
             if (pair) {
                 snapshots = buildSyntheticSnapshots(pair);
             }
@@ -94,7 +106,7 @@ export async function GET(
 
         return NextResponse.json({
             success: true,
-            data: { token, claimEvents, snapshots },
+            data: { token, claimEvents, snapshots, incorporation },
         });
     } catch (e) {
         console.error("[api/tokens/[mint]] error:", e);

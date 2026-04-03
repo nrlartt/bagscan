@@ -4,6 +4,11 @@ import { createLaunchSchema } from "@/lib/validators";
 import { createLaunchTransaction } from "@/lib/bags/client";
 import { prisma } from "@/lib/db";
 
+function getErrorMessage(error: unknown) {
+    if (error instanceof Error) return error.message;
+    return String(error);
+}
+
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
@@ -44,8 +49,8 @@ export async function POST(req: NextRequest) {
     } catch (e) {
         console.error("[api/launch/create] error:", e);
         return NextResponse.json(
-            { success: false, error: String(e) },
-            { status: 500 }
+            { success: false, error: getErrorMessage(e) },
+            { status: 400 }
         );
     }
 }

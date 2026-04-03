@@ -19,6 +19,13 @@ export const feeShareWalletProviderSchema = z.enum([
     "solana",
 ]);
 
+export const bagsConfigTypeSchema = z.enum([
+    "fa29606e-5e48-4c37-827f-4b03d58ee23d",
+    "d16d3585-6488-4a6c-9a6f-e6c39ca0fda3",
+    "a7c8e1f2-3d4b-5a6c-9e0f-1b2c3d4e5f6a",
+    "48e26d2f-0a9d-4625-a3cc-c3987d874b9e",
+]);
+
 export const tokensQuerySchema = z.object({
     search: z.string().optional().default(""),
     tab: z
@@ -107,6 +114,8 @@ export const feeShareConfigSchema = z
         basisPointsArray: z.array(z.number().int().min(0).max(10000)).min(1).max(100),
         partner: z.string().optional(),
         partnerConfig: z.string().optional(),
+        admin: z.string().optional(),
+        bagsConfigType: bagsConfigTypeSchema.optional(),
         includePartner: z.boolean().optional(),
         tipWallet: z.string().optional(),
         tipLamports: z.number().int().min(0).optional(),
@@ -150,3 +159,54 @@ export const adminSecretSchema = z.object({
 export const partnerClaimSchema = z.object({
     secret: z.string().min(1),
 });
+
+export const incorporationCategorySchema = z.enum([
+    "RWA",
+    "AI",
+    "DEFI",
+    "INFRA",
+    "DEPIN",
+    "LEGAL",
+    "GAMING",
+    "NFT",
+    "MEME",
+]);
+
+export const incorporationFounderSchema = z.object({
+    firstName: z.string().trim().min(1),
+    lastName: z.string().trim().min(1),
+    email: z.string().trim().email(),
+    nationalityCountry: z.string().trim().length(3),
+    taxResidencyCountry: z.string().trim().length(3),
+    residentialAddress: z.string().trim().min(5),
+    shareBasisPoint: z.number().int().min(1).max(10000),
+});
+
+export const startIncorporationPaymentSchema = z.object({
+    payerWallet: z.string().trim().min(32),
+    payWithSol: z.boolean().optional(),
+});
+
+export const startIncorporationSchema = z.object({
+    tokenAddress: z.string().trim().min(32),
+});
+
+export const incorporateCompanySchema = z.object({
+    orderUUID: z.string().trim().min(1),
+    paymentSignature: z.string().trim().min(1),
+    projectName: z.string().trim().min(1),
+    tokenAddress: z.string().trim().min(32),
+    founders: z.array(incorporationFounderSchema).min(1).max(10),
+    category: incorporationCategorySchema.optional(),
+    twitterHandle: z.string().trim().optional(),
+    incorporationShareBasisPoint: z.number().int().min(2000).max(3000),
+    preferredCompanyNames: z.array(z.string().trim().min(1)).length(3),
+}).refine(
+    (data) =>
+        data.founders.reduce((sum, founder) => sum + founder.shareBasisPoint, 0) +
+        data.incorporationShareBasisPoint === 10000,
+    {
+        message: "Founder shareBasisPoint values plus incorporation share must total exactly 10,000 BPS",
+        path: ["founders"],
+    }
+);

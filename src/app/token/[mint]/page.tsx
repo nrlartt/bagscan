@@ -20,11 +20,17 @@ import {
     getValuationMetric,
 } from "@/lib/utils";
 import { getExplorerTokenUrl } from "@/lib/solana";
-import type { NormalizedToken, BagsClaimEvent, BagsCreatorV3, BagsClaimStatEntry } from "@/lib/bags/types";
+import type {
+    NormalizedToken,
+    BagsClaimEvent,
+    BagsCreatorV3,
+    BagsClaimStatEntry,
+    BagsIncorporationProject,
+} from "@/lib/bags/types";
 import {
     TrendingUp, Coins, Zap, Users, Globe, ExternalLink,
     DollarSign, BarChart3, Activity, ArrowUpDown, Percent,
-    Layers, UserCheck, Twitter, ArrowLeft, Calendar,
+    Layers, UserCheck, Twitter, ArrowLeft, Calendar, Building2,
 } from "lucide-react";
 
 interface TokenDetailResponse {
@@ -32,6 +38,7 @@ interface TokenDetailResponse {
     data: {
         token: NormalizedToken;
         claimEvents: BagsClaimEvent[];
+        incorporation?: BagsIncorporationProject | null;
         snapshots: {
             capturedAt: string;
             fdvUsd?: number | null;
@@ -78,7 +85,7 @@ export default function TokenDetailPage() {
         );
     }
 
-    const { token, claimEvents, snapshots } = data.data;
+    const { token, claimEvents, snapshots, incorporation } = data.data;
     const priceChangePositive = (token.priceChange24h ?? 0) >= 0;
     const valuation = getValuationMetric(token);
 
@@ -265,6 +272,51 @@ export default function TokenDetailPage() {
                     <div className="animate-slide-in-right" style={{ animationDelay: "100ms" }}>
                         <BuyWidget tokenMint={token.tokenMint} tokenSymbol={token.symbol} />
                     </div>
+
+                    {incorporation && (
+                        <div className="crt-panel p-5 animate-slide-in-right" style={{ animationDelay: "150ms" }}>
+                            <div className="panel-header flex items-center gap-2">
+                                <Building2 className="w-4 h-4 text-[#8dd8ff]/60" />
+                                INCORPORATION
+                            </div>
+                            <div className="space-y-3">
+                                <InfoRow label="STATUS" value={incorporation.incorporationStatus} />
+                                <InfoRow label="CATEGORY" value={incorporation.category ?? "Uncategorized"} />
+                                <InfoRow
+                                    label="READY"
+                                    value={incorporation.isReadyForIncorporation ? "YES" : "IN PROGRESS"}
+                                />
+                                <InfoRow
+                                    label="BAGS SHARE"
+                                    value={`${(incorporation.incorporationShareBasisPoint / 100).toFixed(2)}%`}
+                                />
+                                {incorporation.twitterHandle ? (
+                                    <InfoRow label="HANDLE" value={`@${incorporation.twitterHandle}`} />
+                                ) : null}
+                                {incorporation.preferredCompanyNames.length > 0 ? (
+                                    <div className="border border-[#8dd8ff]/12 bg-[#8dd8ff]/[0.03] p-3">
+                                        <p className="text-[10px] text-[#8dd8ff]/45 tracking-[0.18em]">
+                                            PREFERRED COMPANY NAMES
+                                        </p>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {incorporation.preferredCompanyNames.map((name) => (
+                                                <span
+                                                    key={name}
+                                                    className="border border-[#8dd8ff]/15 px-2 py-1 text-[10px] tracking-[0.16em] text-[#d8ffe6]/72"
+                                                >
+                                                    {name}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : null}
+                                <InfoRow
+                                    label="FOUNDERS"
+                                    value={String(incorporation.founders?.length ?? 0)}
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     {(token.dbcPoolKey || token.dammV2PoolKey) && (
                         <div className="crt-panel p-5 animate-slide-in-right" style={{ animationDelay: "200ms" }}>

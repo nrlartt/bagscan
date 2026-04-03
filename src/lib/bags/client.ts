@@ -1,9 +1,10 @@
-/* ──────────────────────────────────────────────
-   Bags API v2 – Client wrapper
-   All network calls go through this module.
-   Aligned with https://docs.bags.fm/
-   ────────────────────────────────────────────── */
-
+import bs58 from "bs58";
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
+import type {
+    TradeQuoteResponse,
+    TokenLaunchCreator,
+    TokenLaunchCreatorV3WithClaimStats,
+} from "@bagsfm/bags-sdk/dist/types";
 import type {
     BagsApiResponse,
     BagsPoolsResponse,
@@ -29,11 +30,15 @@ import type {
     BagsLaunchResponse,
     BagsPartnerStatsResponse,
     BagsPartnerClaimResponse,
+    BagsIncorporateCompanyRequest,
+    BagsIncorporationPaymentResponse,
+    BagsIncorporationProject,
+    BagsStartIncorporationResponse,
     HeliusAsset,
+    BagsConfigType,
 } from "./types";
-import { SOL_MINT } from "@/lib/solana";
-
-// ── helpers ──────────────────────────────────
+import { getBagsSdk } from "./sdk";
+import { getRpcUrl, SOL_MINT } from "@/lib/solana";
 
 const BASE = () => {
     const url = process.env.BAGS_API_BASE_URL || "https://public-api-v2.bags.fm/api/v1";
@@ -83,10 +88,9 @@ async function unwrap<T>(res: Response): Promise<T> {
                 : typeof json.response === "string"
                     ? json.response
                     : JSON.stringify(json.error) ?? "unknown";
-        throw new Error(
-            `Bags API error: ${detail}`
-        );
+        throw new Error(`Bags API error: ${detail}`);
     }
+
     return json.response as T;
 }
 
@@ -97,16 +101,21 @@ async function fetchWithRetry(
     delayMs = 500
 ): Promise<Response> {
     let lastError: Error | null = null;
-    for (let i = 0; i <= retries; i++) {
+
+    for (let i = 0; i <= retries; i += 1) {
         try {
             const res = await fetch(url, init);
             if (res.ok || res.status < 500) return res;
             lastError = new Error(`HTTP ${res.status}`);
-        } catch (e) {
-            lastError = e instanceof Error ? e : new Error(String(e));
+        } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
         }
-        if (i < retries) await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+
+        if (i < retries) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs * (i + 1)));
+        }
     }
+
     throw lastError ?? new Error("fetchWithRetry failed");
 }
 
@@ -136,18 +145,176 @@ async function bagsGet<T>(
 
 async function bagsPost<T>(path: string, body: unknown): Promise<T> {
     const url = `${BASE()}${path}`;
-    const res = await fetchWithRetry(url, {
-        method: "POST",
-        headers: headers(),
-        body: JSON.stringify(body),
-        cache: "no-store",
-    }, 2, 400);
+    const res = await fetchWithRetry(
+        url,
+        {
+            method: "POST",
+            headers: headers(),
+            body: JSON.stringify(body),
+            cache: "no-store",
+        },
+        2,
+        400
+    );
     return unwrap<T>(res);
 }
 
-// ================================================================
-// A) State – Pool discovery
-// ================================================================
+function toPublicKey(value: string, label = "public key") {
+    try {
+        return new PublicKey(value);
+    } catch {
+        throw new Error(`Invalid ${label}: ${value}`);
+    }
+}
+
+function encodeTransaction(tx: VersionedTransaction) {
+    return bs58.encode(tx.serialize());
+}
+
+function encodeTransactionBase64(tx: VersionedTransaction) {
+    return Buffer.from(tx.serialize()).toString("base64");
+}
+
+function wait(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getApiErrorDetail(error: unknown) {
+    if (!error || typeof error !== "object") return error instanceof Error ? error.message : String(error);
+
+    const maybeError = error as {
+        message?: string;
+        status?: number;
+        data?: unknown;
+    };
+
+    if (maybeError.data && typeof maybeError.data === "object") {
+        const payload = maybeError.data as Record<string, unknown>;
+        if (typeof payload.error === "string") return payload.error;
+        if (typeof payload.message === "string") return payload.message;
+        if (payload.error && typeof payload.error === "object") {
+            const nested = payload.error as Record<string, unknown>;
+            if (typeof nested.message === "string") return nested.message;
+        }
+    }
+
+    return maybeError.message ?? String(error);
+}
+
+function buildTxBlockhash(tx: VersionedTransaction) {
+    return {
+        blockhash: tx.message.recentBlockhash,
+        lastValidBlockHeight: 0,
+    };
+}
+
+function normalizeCreator(creator: TokenLaunchCreator): BagsCreatorV3 {
+    return {
+        username: creator.username,
+        pfp: creator.pfp,
+        royaltyBps: creator.royaltyBps,
+        isCreator: creator.isCreator,
+        wallet: creator.wallet,
+        provider: creator.provider,
+        providerUsername: creator.providerUsername,
+        twitterUsername: creator.twitterUsername,
+        bagsUsername: creator.bagsUsername,
+        isAdmin: creator.isAdmin,
+    };
+}
+
+function normalizeClaimStatEntry(entry: TokenLaunchCreatorV3WithClaimStats): BagsClaimStatEntry {
+    return {
+        username: entry.username,
+        pfp: entry.pfp,
+        royaltyBps: entry.royaltyBps,
+        isCreator: entry.isCreator,
+        wallet: entry.wallet,
+        provider: entry.provider,
+        providerUsername: entry.providerUsername,
+        twitterUsername: entry.twitterUsername,
+        bagsUsername: entry.bagsUsername,
+        isAdmin: entry.isAdmin,
+        totalClaimed: entry.totalClaimed,
+    };
+}
+
+function normalizeClaimablePosition(position: Record<string, unknown>): BagsClaimablePosition {
+    const customFeeVaultBps =
+        typeof position.customFeeVaultBps === "number" ? position.customFeeVaultBps : null;
+
+    return {
+        programId: typeof position.programId === "string" ? position.programId : undefined,
+        isCustomFeeVault: Boolean(position.isCustomFeeVault),
+        baseMint: String(position.baseMint ?? ""),
+        quoteMint: typeof position.quoteMint === "string" ? position.quoteMint : null,
+        virtualPool:
+            typeof position.virtualPool === "string"
+                ? position.virtualPool
+                : typeof position.virtualPoolAddress === "string"
+                    ? position.virtualPoolAddress
+                    : undefined,
+        isMigrated: Boolean(position.isMigrated),
+        totalClaimableLamportsUserShare: Number(position.totalClaimableLamportsUserShare ?? 0),
+        claimableDisplayAmount:
+            typeof position.claimableDisplayAmount === "number"
+                ? position.claimableDisplayAmount
+                : null,
+        user: typeof position.user === "string" ? position.user : null,
+        claimerIndex:
+            typeof position.claimerIndex === "number" ? position.claimerIndex : null,
+        userBps:
+            typeof position.userBps === "number"
+                ? position.userBps
+                : customFeeVaultBps,
+    };
+}
+
+function isSdkFeeShareWalletProvider(provider: string) {
+    return ["twitter", "x", "github", "kick", "tiktok"].includes(provider.toLowerCase());
+}
+
+function toSdkFeeShareWalletProvider(provider: string) {
+    const lowered = provider.toLowerCase();
+    if (lowered === "x") return "twitter";
+    if (lowered === "tg") return "telegram";
+    return lowered;
+}
+
+async function createTokenInfoViaApi(
+    req: BagsCreateTokenInfoRequest
+): Promise<BagsCreateTokenInfoResponse> {
+    const url = `${BASE()}/token-launch/create-token-info`;
+    const form = new FormData();
+    form.append("name", req.name);
+    form.append("symbol", req.symbol);
+    form.append("description", req.description);
+    if (req.image) form.append("image", req.image);
+    if (req.imageUrl) form.append("imageUrl", req.imageUrl);
+    if (req.metadataUrl) form.append("metadataUrl", req.metadataUrl);
+    if (req.website) form.append("website", req.website);
+    if (req.twitter) form.append("twitter", req.twitter);
+    if (req.telegram) form.append("telegram", req.telegram);
+
+    const uploadHeaders: Record<string, string> = { Accept: "application/json" };
+    const key = process.env.BAGS_API_KEY;
+    if (key) uploadHeaders["x-api-key"] = key;
+
+    const res = await fetchWithRetry(
+        url,
+        { method: "POST", headers: uploadHeaders, body: form, cache: "no-store" },
+        2,
+        400
+    );
+
+    return unwrap<BagsCreateTokenInfoResponse>(res);
+}
+
+async function createFeeShareConfigViaApi(
+    req: BagsFeeShareConfigRequest
+): Promise<BagsFeeShareConfigResponse> {
+    return bagsPost<BagsFeeShareConfigResponse>("/fee-share/config", req);
+}
 
 export async function getBagsPools(): Promise<BagsPool[]> {
     const data = await bagsGet<BagsPool[] | BagsPoolsResponse>("/solana/bags/pools", {
@@ -169,7 +336,6 @@ export async function getBagsPoolInfo(tokenMint: string): Promise<BagsPoolInfo |
     }
 }
 
-/** @deprecated Use getBagsPoolInfo for v2 pool structure */
 export async function getBagsPool(tokenMint: string): Promise<BagsPool | null> {
     try {
         const data = await bagsGet<BagsPool>(
@@ -182,72 +348,68 @@ export async function getBagsPool(tokenMint: string): Promise<BagsPool | null> {
     }
 }
 
-// ================================================================
-// B) Analytics
-// ================================================================
-
 export async function getCreatorsV3(tokenMint: string): Promise<BagsCreatorV3[]> {
     try {
-        const data = await bagsGet<BagsCreatorV3[]>(
-            `/token-launch/creator/v3?tokenMint=${tokenMint}`,
-            { revalidate: 60 }
-        );
-        return Array.isArray(data) ? data : [];
+        const creators = await getBagsSdk().state.getTokenCreators(toPublicKey(tokenMint, "token mint"));
+        return creators.map(normalizeCreator);
     } catch {
         return [];
     }
 }
 
-/** @deprecated Use getCreatorsV3 for array response */
-export async function getCreatorInfo(
-    tokenMint: string
-): Promise<BagsCreatorResponse | null> {
+export async function getCreatorInfo(tokenMint: string): Promise<BagsCreatorResponse | null> {
+    const creators = await getCreatorsV3(tokenMint);
+    const primaryCreator = creators.find((creator) => creator.isCreator) ?? creators[0];
+
+    if (!primaryCreator) return null;
+
+    return {
+        creatorWallet: primaryCreator.wallet,
+        creatorDisplayName:
+            primaryCreator.providerUsername ??
+            primaryCreator.twitterUsername ??
+            primaryCreator.bagsUsername ??
+            primaryCreator.username,
+        creatorUsername: primaryCreator.username,
+        creatorPfp: primaryCreator.pfp,
+        provider: primaryCreator.provider ?? undefined,
+        providerUsername: primaryCreator.providerUsername ?? undefined,
+        royaltyBps: primaryCreator.royaltyBps,
+        isCreator: primaryCreator.isCreator,
+        isAdmin: primaryCreator.isAdmin,
+    };
+}
+
+export async function getLifetimeFees(tokenMint: string): Promise<string | null> {
     try {
-        return await bagsGet<BagsCreatorResponse>(
-            `/token-launch/creator/v3?tokenMint=${tokenMint}`,
-            { revalidate: 60 }
-        );
+        const lamports = await getBagsSdk().state.getTokenLifetimeFees(toPublicKey(tokenMint, "token mint"));
+        return String(lamports);
     } catch {
         return null;
     }
 }
 
-export async function getLifetimeFees(
-    tokenMint: string
-): Promise<string | null> {
+export async function getClaimStatsDetailed(tokenMint: string): Promise<BagsClaimStatEntry[]> {
     try {
-        const data = await bagsGet<string>(
-            `/token-launch/lifetime-fees?tokenMint=${tokenMint}`,
-            { revalidate: 60 }
-        );
-        return data;
-    } catch {
-        return null;
-    }
-}
-
-export async function getClaimStatsDetailed(
-    tokenMint: string
-): Promise<BagsClaimStatEntry[]> {
-    try {
-        const data = await bagsGet<BagsClaimStatEntry[]>(
-            `/token-launch/claim-stats?tokenMint=${tokenMint}`,
-            { revalidate: 60 }
-        );
-        return Array.isArray(data) ? data : [];
+        const stats = await getBagsSdk().state.getTokenClaimStats(toPublicKey(tokenMint, "token mint"));
+        return stats.map(normalizeClaimStatEntry);
     } catch {
         return [];
     }
 }
 
-export async function getClaimStats(
-    tokenMint: string
-): Promise<BagsClaimStatsResponse | null> {
+export async function getClaimStats(tokenMint: string): Promise<BagsClaimStatsResponse | null> {
     try {
-        return await bagsGet<BagsClaimStatsResponse>(
-            `/token-launch/claim-stats?tokenMint=${tokenMint}`,
-            { revalidate: 60 }
-        );
+        const stats = await getClaimStatsDetailed(tokenMint);
+        const claimVolume = stats.reduce((sum, entry) => {
+            const parsed = Number(entry.totalClaimed);
+            return sum + (Number.isFinite(parsed) ? parsed : 0);
+        }, 0);
+
+        return {
+            claimCount: stats.length,
+            claimVolume,
+        };
     } catch {
         return null;
     }
@@ -264,24 +426,21 @@ export async function getClaimEvents(
         if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
         if (opts?.from !== undefined) params.set("from", String(opts.from));
         if (opts?.to !== undefined) params.set("to", String(opts.to));
-        return await bagsGet<BagsClaimEventsResponse>(
-            `/fee-share/token/claim-events?${params}`,
-            { revalidate: 30 }
-        );
+
+        return await bagsGet<BagsClaimEventsResponse>(`/fee-share/token/claim-events?${params}`, {
+            revalidate: 30,
+        });
     } catch {
         return null;
     }
 }
 
-export async function getClaimablePositions(
-    wallet: string
-): Promise<BagsClaimablePosition[]> {
+export async function getClaimablePositions(wallet: string): Promise<BagsClaimablePosition[]> {
     try {
-        const data = await bagsGet<BagsClaimablePosition[]>(
-            `/token-launch/claimable-positions?wallet=${wallet}`,
-            { revalidate: 30 }
+        const positions = await getBagsSdk().fee.getAllClaimablePositions(toPublicKey(wallet, "wallet"));
+        return positions.map((position) =>
+            normalizeClaimablePosition(position as unknown as Record<string, unknown>)
         );
-        return Array.isArray(data) ? data : [];
     } catch {
         return [];
     }
@@ -290,15 +449,34 @@ export async function getClaimablePositions(
 export async function getFeeShareWallet(
     req: BagsFeeShareWalletLookupRequest
 ): Promise<BagsFeeShareWalletLookupResponse | null> {
+    if (!isSdkFeeShareWalletProvider(req.provider)) {
+        try {
+            const params = new URLSearchParams({
+                provider: req.provider,
+                username: req.username,
+            });
+            return await bagsGet<BagsFeeShareWalletLookupResponse>(
+                `/fee-share/wallet/v2?${params}`,
+                { revalidate: 0, cache: "no-store" }
+            );
+        } catch {
+            return null;
+        }
+    }
+
     try {
-        const params = new URLSearchParams({
+        const result = await getBagsSdk().state.getLaunchWalletV2(
+            req.username,
+            toSdkFeeShareWalletProvider(req.provider) as "twitter" | "github" | "kick" | "tiktok"
+        );
+
+        const wallet = result.wallet.toBase58();
+        return {
             provider: req.provider,
             username: req.username,
-        });
-        return await bagsGet<BagsFeeShareWalletLookupResponse>(
-            `/fee-share/wallet/v2?${params}`,
-            { revalidate: 0, cache: "no-store" }
-        );
+            wallet,
+            address: wallet,
+        };
     } catch {
         return null;
     }
@@ -309,88 +487,127 @@ export async function getFeeShareWalletsBulk(
 ): Promise<BagsFeeShareWalletLookupResponse[]> {
     if (items.length === 0) return [];
 
-    const attempts: unknown[] = [
-        items,
-        { items },
-        { wallets: items },
-    ];
+    const supported = items.filter((item) => isSdkFeeShareWalletProvider(item.provider));
+    const unsupported = items.filter((item) => !isSdkFeeShareWalletProvider(item.provider));
 
-    for (const body of attempts) {
+    const sdkPromise = (async () => {
+        if (supported.length === 0) return [] as BagsFeeShareWalletLookupResponse[];
         try {
-            const data = await bagsPost<
-                BagsFeeShareWalletLookupResponse[] | { wallets?: BagsFeeShareWalletLookupResponse[]; items?: BagsFeeShareWalletLookupResponse[] }
-            >("/fee-share/wallet/v2/bulk", body);
+            const resolved = await getBagsSdk().state.getLaunchWalletV2Bulk(
+                supported.map((item) => ({
+                    provider: toSdkFeeShareWalletProvider(item.provider) as "twitter" | "github" | "kick" | "tiktok",
+                    username: item.username,
+                }))
+            );
 
-            if (Array.isArray(data)) return data;
-            return data.wallets ?? data.items ?? [];
+            return resolved.map((entry) => ({
+                provider: entry.provider,
+                username: entry.username,
+                wallet: entry.wallet?.toBase58() ?? null,
+                address: entry.wallet?.toBase58() ?? null,
+            }));
         } catch {
-            continue;
+            return [] as BagsFeeShareWalletLookupResponse[];
         }
-    }
+    })();
 
-    return [];
+    const apiPromise = (async () => {
+        if (unsupported.length === 0) return [] as BagsFeeShareWalletLookupResponse[];
+        const attempts: unknown[] = [unsupported, { items: unsupported }, { wallets: unsupported }];
+
+        for (const body of attempts) {
+            try {
+                const data = await bagsPost<
+                    BagsFeeShareWalletLookupResponse[] | {
+                        wallets?: BagsFeeShareWalletLookupResponse[];
+                        items?: BagsFeeShareWalletLookupResponse[];
+                    }
+                >("/fee-share/wallet/v2/bulk", body);
+
+                if (Array.isArray(data)) return data;
+                return data.wallets ?? data.items ?? [];
+            } catch {
+                continue;
+            }
+        }
+
+        return [] as BagsFeeShareWalletLookupResponse[];
+    })();
+
+    const [sdkResolved, apiResolved] = await Promise.all([sdkPromise, apiPromise]);
+    return [...sdkResolved, ...apiResolved];
 }
 
-// ================================================================
-// C) Trade
-// ================================================================
-
-export async function getQuote(
-    req: BagsQuoteRequest
-): Promise<BagsQuoteResponse> {
+export async function getQuote(req: BagsQuoteRequest): Promise<BagsQuoteResponse> {
     const outputMint = req.outputMint ?? req.tokenMint;
     if (!outputMint) {
         throw new Error("Missing outputMint (or legacy tokenMint) for quote request");
     }
+
     const inputMint = req.inputMint ?? SOL_MINT;
     const amount = normalizeTradeAmount(req.amount, inputMint);
-
-    const params = new URLSearchParams({
-        inputMint,
-        outputMint,
-        amount: String(amount),
-    });
-    if (req.slippageBps !== undefined) {
-        params.set("slippageBps", String(req.slippageBps));
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+        throw new Error("Trade amount must be a positive number");
     }
 
-    return bagsGet<BagsQuoteResponse>(`/trade/quote?${params}`, {
-        revalidate: 0,
+    const quote = await getBagsSdk().trade.getQuote({
+        inputMint: toPublicKey(inputMint, "input mint"),
+        outputMint: toPublicKey(outputMint, "output mint"),
+        amount,
+        slippageMode: req.slippageBps !== undefined ? "manual" : "auto",
+        slippageBps: req.slippageBps,
     });
+
+    return quote as unknown as BagsQuoteResponse;
 }
 
 export async function createSwapTransaction(
     req: BagsSwapRequest
 ): Promise<BagsSwapResponse> {
-    if (req.quoteResponse && typeof req.quoteResponse === "object") {
-        return bagsPost<BagsSwapResponse>("/trade/swap", {
-            quoteResponse: req.quoteResponse,
-            userPublicKey: req.userPublicKey,
-        });
+    const userPublicKey = toPublicKey(req.userPublicKey, "user public key");
+    let quoteResponse = req.quoteResponse as TradeQuoteResponse | undefined;
+
+    if (!quoteResponse) {
+        const outputMint = req.outputMint ?? req.tokenMint;
+        if (!outputMint) {
+            throw new Error("Missing outputMint (or legacy tokenMint) for swap request");
+        }
+
+        if (req.quoteRequestId) {
+            return bagsPost<BagsSwapResponse>("/trade/swap", {
+                quoteRequestId: req.quoteRequestId,
+                userPublicKey: req.userPublicKey,
+            });
+        }
+
+        const inputMint = req.inputMint ?? SOL_MINT;
+        const amount = normalizeTradeAmount(req.amount, inputMint);
+        if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+            throw new Error("Missing amount for swap request");
+        }
+
+        quoteResponse = (await getQuote({
+            inputMint,
+            outputMint,
+            amount,
+            slippageBps: req.slippageBps,
+        })) as unknown as TradeQuoteResponse;
     }
 
-    if (req.quoteRequestId) {
-        return bagsPost<BagsSwapResponse>("/trade/swap", {
-            quoteRequestId: req.quoteRequestId,
-            userPublicKey: req.userPublicKey,
-        });
-    }
-
-    const outputMint = req.outputMint ?? req.tokenMint;
-    if (!outputMint) {
-        throw new Error("Missing outputMint (or legacy tokenMint) for swap request");
-    }
-    const inputMint = req.inputMint ?? SOL_MINT;
-    const amount = normalizeTradeAmount(req.amount, inputMint);
-
-    return bagsPost<BagsSwapResponse>("/trade/swap", {
-        inputMint,
-        outputMint,
-        amount,
-        slippageBps: req.slippageBps,
-        userPublicKey: req.userPublicKey,
-        tokenMint: undefined,
+    const swap = await getBagsSdk().trade.createSwapTransaction({
+        quoteResponse,
+        userPublicKey,
     });
+
+    const encoded = encodeTransaction(swap.transaction);
+    return {
+        transaction: encoded,
+        serializedTransaction: encodeTransactionBase64(swap.transaction),
+        swapTransaction: encoded,
+        computeUnitLimit: swap.computeUnitLimit,
+        lastValidBlockHeight: swap.lastValidBlockHeight,
+        prioritizationFeeLamports: swap.prioritizationFeeLamports,
+    };
 }
 
 function normalizeTradeAmount(amount: number | undefined, inputMint: string): number | undefined {
@@ -405,70 +622,156 @@ function normalizeTradeAmount(amount: number | undefined, inputMint: string): nu
     return amount;
 }
 
-// ================================================================
-// D) Launch
-// ================================================================
-
 export async function createTokenInfo(
     req: BagsCreateTokenInfoRequest
 ): Promise<BagsCreateTokenInfoResponse> {
-    const url = `${BASE()}/token-launch/create-token-info`;
-    const form = new FormData();
-    form.append("name", req.name);
-    form.append("symbol", req.symbol);
-    form.append("description", req.description);
-    if (req.image) form.append("image", req.image);
-    if (req.imageUrl) form.append("imageUrl", req.imageUrl);
-    if (req.metadataUrl) form.append("metadataUrl", req.metadataUrl);
-    if (req.website) form.append("website", req.website);
-    if (req.twitter) form.append("twitter", req.twitter);
-    if (req.telegram) form.append("telegram", req.telegram);
+    if (req.metadataUrl) {
+        return createTokenInfoViaApi(req);
+    }
 
-    const h: Record<string, string> = { Accept: "application/json" };
-    const key = process.env.BAGS_API_KEY;
-    if (key) h["x-api-key"] = key;
+    if (!req.image && !req.imageUrl) {
+        throw new Error("Official Bags SDK token metadata flow requires an image or image URL");
+    }
 
-    const res = await fetchWithRetry(
-        url,
-        { method: "POST", headers: h, body: form, cache: "no-store" },
-        2,
-        400
-    );
+    const result = req.image
+        ? await getBagsSdk().tokenLaunch.createTokenInfoAndMetadata({
+            image: req.image,
+            name: req.name,
+            symbol: req.symbol,
+            description: req.description,
+            metadataUrl: req.metadataUrl,
+            telegram: req.telegram,
+            twitter: req.twitter,
+            website: req.website,
+        })
+        : await getBagsSdk().tokenLaunch.createTokenInfoAndMetadata({
+            imageUrl: req.imageUrl!,
+            name: req.name,
+            symbol: req.symbol,
+            description: req.description,
+            metadataUrl: req.metadataUrl,
+            telegram: req.telegram,
+            twitter: req.twitter,
+            website: req.website,
+        });
 
-    return unwrap<BagsCreateTokenInfoResponse>(res);
+    return result as unknown as BagsCreateTokenInfoResponse;
 }
 
 export async function createFeeShareConfig(
     req: BagsFeeShareConfigRequest
 ): Promise<BagsFeeShareConfigResponse> {
-    return bagsPost<BagsFeeShareConfigResponse>(
-        "/fee-share/config",
-        req
-    );
+    try {
+        const result = await getBagsSdk().config.createBagsFeeShareConfig(
+            {
+                payer: toPublicKey(req.payer, "payer"),
+                baseMint: toPublicKey(req.baseMint, "base mint"),
+                feeClaimers: req.claimersArray.map((wallet, index) => ({
+                    user: toPublicKey(wallet, `claimer ${index + 1}`),
+                    userBps: req.basisPointsArray[index] ?? 0,
+                })),
+                partner: req.partner ? toPublicKey(req.partner, "partner") : undefined,
+                partnerConfig: req.partnerConfig ? toPublicKey(req.partnerConfig, "partner config") : undefined,
+                additionalLookupTables: req.additionalLookupTables?.map((lookupTable) =>
+                    toPublicKey(lookupTable, "lookup table")
+                ),
+                admin: req.admin ? toPublicKey(req.admin, "admin") : undefined,
+                bagsConfigType: req.bagsConfigType as BagsConfigType | undefined,
+            },
+            req.tipWallet && req.tipLamports
+                ? {
+                    tipWallet: toPublicKey(req.tipWallet, "tip wallet"),
+                    tipLamports: req.tipLamports,
+                }
+                : undefined
+        );
+
+        return {
+            needsCreation: true,
+            feeShareAuthority: result.meteoraConfigKey.toBase58(),
+            meteoraConfigKey: result.meteoraConfigKey.toBase58(),
+            transactions: (result.transactions ?? []).map((transaction) => ({
+                transaction: encodeTransaction(transaction),
+                blockhash: buildTxBlockhash(transaction),
+            })),
+            bundles: (result.bundles ?? []).map((bundle) =>
+                bundle.map((transaction) => ({
+                    transaction: encodeTransaction(transaction),
+                    blockhash: buildTxBlockhash(transaction),
+                }))
+            ),
+        };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/config already exists/i.test(message)) {
+            return createFeeShareConfigViaApi(req);
+        }
+        throw error;
+    }
 }
 
 export async function createLaunchTransaction(
     req: BagsLaunchRequest
 ): Promise<BagsLaunchResponse> {
-    return bagsPost<BagsLaunchResponse>(
-        "/token-launch/create-launch-transaction",
-        req
-    );
-}
+    const launchArgs = {
+        metadataUrl: req.ipfs,
+        tokenMint: toPublicKey(req.tokenMint, "token mint"),
+        launchWallet: toPublicKey(req.wallet, "launch wallet"),
+        initialBuyLamports: req.initialBuyLamports,
+        configKey: toPublicKey(req.configKey, "config key"),
+        tipConfig:
+            req.tipWallet && req.tipLamports
+                ? {
+                    tipWallet: toPublicKey(req.tipWallet, "tip wallet"),
+                    tipLamports: req.tipLamports,
+                }
+                : undefined,
+    };
 
-// ================================================================
-// E) Partner monetization
-// ================================================================
+    let lastError: unknown;
+    const retryDelays = [0, 1800, 3200, 5000];
+
+    for (const delay of retryDelays) {
+        if (delay > 0) {
+            await wait(delay);
+        }
+
+        try {
+            const transaction = await getBagsSdk().tokenLaunch.createLaunchTransaction(launchArgs);
+            return encodeTransaction(transaction);
+        } catch (error) {
+            lastError = error;
+            const detail = getApiErrorDetail(error);
+            const status =
+                error && typeof error === "object" && "status" in error
+                    ? Number((error as { status?: number }).status)
+                    : undefined;
+            const shouldRetry = status === 400 || status === 429;
+
+            if (!shouldRetry || delay === retryDelays[retryDelays.length - 1]) {
+                throw new Error(detail);
+            }
+        }
+    }
+
+    throw new Error(getApiErrorDetail(lastError));
+}
 
 export async function getPartnerStats(
     partnerWallet: string
 ): Promise<BagsPartnerStatsResponse | null> {
     try {
-        const params = new URLSearchParams({ partner: partnerWallet });
-        return await bagsGet<BagsPartnerStatsResponse>(
-            `/fee-share/partner-config/stats?${params}`,
-            { revalidate: 30 }
+        const stats = await getBagsSdk().partner.getPartnerConfigClaimStats(
+            toPublicKey(partnerWallet, "partner wallet")
         );
+
+        return {
+            partnerWallet,
+            partner: partnerWallet,
+            claimedFees: stats.claimedFees,
+            unclaimedFees: stats.unclaimedFees,
+            claimableFees: stats.unclaimedFees,
+        };
     } catch {
         return null;
     }
@@ -477,14 +780,18 @@ export async function getPartnerStats(
 export async function createPartnerClaimTx(
     partnerWallet: string
 ): Promise<BagsPartnerClaimResponse> {
-    return bagsPost<BagsPartnerClaimResponse>("/fee-share/partner-config/claim-tx", {
-        partnerWallet,
-    });
-}
+    const transactions = await getBagsSdk().partner.getPartnerConfigClaimTransactions(
+        toPublicKey(partnerWallet, "partner wallet")
+    );
 
-// ================================================================
-// F) Hackathon / App Store
-// ================================================================
+    return {
+        transactions: transactions.map((entry) => ({
+            transaction: encodeTransaction(entry.transaction),
+            serializedTransaction: encodeTransactionBase64(entry.transaction),
+            blockhash: entry.blockhash,
+        })),
+    };
+}
 
 export interface HackathonApp {
     _id: string;
@@ -519,7 +826,7 @@ export interface HackathonListResponse {
 
 const HACKATHON_BASE = "https://api.bags.fm/api/v1";
 
-export async function getHackathonApps(page: number = 1): Promise<HackathonListResponse> {
+export async function getHackathonApps(page = 1): Promise<HackathonListResponse> {
     try {
         const res = await fetch(`${HACKATHON_BASE}/hackathon/list?page=${page}`, {
             cache: "no-store",
@@ -529,15 +836,11 @@ export async function getHackathonApps(page: number = 1): Promise<HackathonListR
         const json = await res.json();
         if (!json.success) throw new Error("Hackathon API error");
         return json.response as HackathonListResponse;
-    } catch (e) {
-        console.error("[hackathon] list error:", e);
+    } catch (error) {
+        console.error("[hackathon] list error:", error);
         return { applications: [], currentPage: page, totalItems: 0, totalPages: 0 };
     }
 }
-
-// ================================================================
-// G) DexScreener enrichment
-// ================================================================
 
 interface DexScreenerPair {
     chainId?: string;
@@ -552,6 +855,7 @@ interface DexScreenerPair {
         imageUrl?: string;
     };
     priceUsd?: string | number | null;
+    fdv?: string | number | null;
     marketCap?: string | number | null;
     liquidity?: {
         usd?: string | number | null;
@@ -582,28 +886,32 @@ export async function getDexScreenerPairs(mints: string[]): Promise<DexScreenerP
         if (!res.ok) return [];
         const json = await res.json();
         return json.pairs || [];
-    } catch (e) {
-        console.error("[dexscreener] error:", e);
+    } catch (error) {
+        console.error("[dexscreener] error:", error);
         return [];
     }
 }
 
-/** @deprecated Use getDexScreenerPairs */
 export const getDexScreenerMetadata = getDexScreenerPairs;
 
 export async function getDexScreenerSearch(query: string): Promise<DexScreenerPair[]> {
     try {
         const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
-        const res = await fetchWithRetry(url, {
-            cache: "no-store",
-            signal: AbortSignal.timeout(10_000),
-        }, 2, 300);
+        const res = await fetchWithRetry(
+            url,
+            {
+                cache: "no-store",
+                signal: AbortSignal.timeout(10_000),
+            },
+            2,
+            300
+        );
         if (!res.ok) return [];
         const json = await res.json();
         const pairs = Array.isArray(json.pairs) ? (json.pairs as DexScreenerPair[]) : [];
         return pairs.filter((pair) => pair.chainId === "solana");
-    } catch (e) {
-        console.error("[dexscreener] search error:", e);
+    } catch (error) {
+        console.error("[dexscreener] search error:", error);
         return [];
     }
 }
@@ -614,20 +922,16 @@ export async function getDexScreenerNewBagsPairs(): Promise<DexScreenerPair[]> {
         return pairs
             .filter((pair) => pair.dexId === "bags" && pair.baseToken?.address && pair.pairCreatedAt)
             .sort((a, b) => (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0));
-    } catch (e) {
-        console.error("[dexscreener] new bags pairs error:", e);
+    } catch (error) {
+        console.error("[dexscreener] new bags pairs error:", error);
         return [];
     }
 }
 
-// ================================================================
-// G) Helius DAS API – token metadata & holders
-// ================================================================
-
 function heliusRpcUrl(): string {
     const key = process.env.HELIUS_API_KEY;
     if (key) return `https://mainnet.helius-rpc.com/?api-key=${key}`;
-    return process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+    return getRpcUrl();
 }
 
 const HOLDER_COUNT_TTL_MS = 2 * 60_000;
@@ -675,9 +979,11 @@ function parseRawTokenAmount(value: unknown): bigint | null {
             return null;
         }
     }
+
     if (typeof value === "number" && Number.isFinite(value)) {
         return BigInt(Math.max(0, Math.floor(value)));
     }
+
     return null;
 }
 
@@ -725,12 +1031,10 @@ export async function getHeliusAssetBatch(
             const json = await res.json();
             const assets: HeliusAsset[] = json.result ?? [];
             for (const asset of assets) {
-                if (asset.id) {
-                    result.set(asset.id, asset);
-                }
+                if (asset.id) result.set(asset.id, asset);
             }
-        } catch (e) {
-            console.error("[helius] getAssetBatch error:", e);
+        } catch (error) {
+            console.error("[helius] getAssetBatch error:", error);
         }
     }
 
@@ -747,15 +1051,13 @@ export async function getHeliusHolderCount(mint: string): Promise<number | null>
         const holders = new Set<string>();
         let cursor: string | undefined;
 
-        for (let page = 0; page < HOLDER_MAX_PAGES; page++) {
+        for (let page = 0; page < HOLDER_MAX_PAGES; page += 1) {
             const params: Record<string, unknown> = {
                 mint,
                 limit: HOLDER_PAGE_LIMIT,
                 options: { showZeroBalance: false },
             };
-            if (cursor) {
-                params.cursor = cursor;
-            }
+            if (cursor) params.cursor = cursor;
 
             const result = await heliusRpc("getTokenAccounts", params);
             const accounts = Array.isArray(result?.token_accounts) ? result.token_accounts : [];
@@ -780,16 +1082,12 @@ export async function getHeliusHolderCount(mint: string): Promise<number | null>
             holderCountCache.set(mint, { count: holders.size, ts: Date.now() });
             return holders.size;
         }
-    } catch (e) {
-        console.warn("[helius] holder count fetch failed:", e);
+    } catch (error) {
+        console.warn("[helius] holder count fetch failed:", error);
     }
 
     return null;
 }
-
-// ================================================================
-// H) SOL price helper
-// ================================================================
 
 let cachedSolPrice: { price: number; ts: number } | null = null;
 
@@ -797,6 +1095,7 @@ export async function getSolPriceUsd(): Promise<number> {
     if (cachedSolPrice && Date.now() - cachedSolPrice.ts < 60_000) {
         return cachedSolPrice.price;
     }
+
     try {
         const res = await fetch(
             "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
@@ -808,5 +1107,65 @@ export async function getSolPriceUsd(): Promise<number> {
         return price;
     } catch {
         return cachedSolPrice?.price ?? 150;
+    }
+}
+
+export async function startIncorporationPayment(params: {
+    payerWallet: string;
+    payWithSol?: boolean;
+}): Promise<BagsIncorporationPaymentResponse> {
+    const result = await getBagsSdk().incorporation.startPayment({
+        payerWallet: toPublicKey(params.payerWallet, "payer wallet"),
+        payWithSol: params.payWithSol,
+    });
+
+    return {
+        orderUUID: result.orderUUID,
+        recipientWallet: result.recipientWallet,
+        priceUSDC: result.priceUSDC,
+        transaction: encodeTransaction(result.transaction),
+        lastValidBlockHeight: result.lastValidBlockHeight,
+    };
+}
+
+export async function incorporateCompany(
+    params: BagsIncorporateCompanyRequest
+): Promise<BagsIncorporationProject> {
+    const result = await getBagsSdk().incorporation.incorporate({
+        orderUUID: params.orderUUID,
+        paymentSignature: params.paymentSignature,
+        projectName: params.projectName,
+        tokenAddress: toPublicKey(params.tokenAddress, "token address"),
+        founders: params.founders,
+        category: params.category,
+        twitterHandle: params.twitterHandle,
+        incorporationShareBasisPoint: params.incorporationShareBasisPoint,
+        preferredCompanyNames: params.preferredCompanyNames,
+    });
+
+    return result;
+}
+
+export async function startTokenIncorporation(
+    tokenAddress: string
+): Promise<BagsStartIncorporationResponse> {
+    return getBagsSdk().incorporation.startIncorporation({
+        tokenAddress: toPublicKey(tokenAddress, "token address"),
+    });
+}
+
+export async function listIncorporatedCompanies(): Promise<BagsIncorporationProject[]> {
+    return getBagsSdk().incorporation.list();
+}
+
+export async function getCompanyTokenDetails(
+    tokenAddress: string
+): Promise<BagsIncorporationProject | null> {
+    try {
+        return await getBagsSdk().incorporation.getDetails({
+            tokenAddress: toPublicKey(tokenAddress, "token address"),
+        });
+    } catch {
+        return null;
     }
 }

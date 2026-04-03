@@ -1,6 +1,9 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 
+const CONFIRMATION_ATTEMPTS = 18;
+const CONFIRMATION_DELAY_MS = 1200;
+
 const RPC_ENDPOINTS = [
     process.env.HELIUS_API_KEY
         ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
@@ -10,6 +13,51 @@ const RPC_ENDPOINTS = [
     "https://api.mainnet-beta.solana.com",
     "https://solana-mainnet.g.alchemy.com/v2/demo",
 ].filter(Boolean) as string[];
+
+function wait(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function rpcRequest<T>(rpc: string, method: string, params: unknown[]) {
+    const res = await fetch(rpc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method,
+            params,
+        }),
+    });
+
+    return (await res.json()) as {
+        result?: T;
+        error?: { code?: number; message?: string; data?: unknown };
+    };
+}
+
+async function waitForConfirmation(rpc: string, signature: string) {
+    for (let attempt = 0; attempt < CONFIRMATION_ATTEMPTS; attempt += 1) {
+        const statusResponse = await rpcRequest<Array<{
+            err: unknown;
+            confirmationStatus?: "processed" | "confirmed" | "finalized";
+        } | null>>(rpc, "getSignatureStatuses", [[signature], { searchTransactionHistory: true }]);
+
+        const status = statusResponse.result?.[0];
+
+        if (status?.err) {
+            throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);
+        }
+
+        if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
+            return;
+        }
+
+        await wait(CONFIRMATION_DELAY_MS);
+    }
+
+    throw new Error("Timed out while waiting for transaction confirmation");
+}
 
 export async function POST(req: NextRequest) {
     try {
@@ -25,23 +73,13 @@ export async function POST(req: NextRequest) {
 
         for (const rpc of RPC_ENDPOINTS) {
             try {
-                const res = await fetch(rpc, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        jsonrpc: "2.0",
-                        id: 1,
-                        method: "sendTransaction",
-                        params: [
-                            signedTransaction,
-                            { skipPreflight: true, encoding: "base64" },
-                        ],
-                    }),
-                });
-
-                const data = await res.json();
+                const data = await rpcRequest<string>(rpc, "sendTransaction", [
+                    signedTransaction,
+                    { skipPreflight: false, encoding: "base64", preflightCommitment: "confirmed" },
+                ]);
 
                 if (data.result) {
+                    await waitForConfirmation(rpc, data.result);
                     return NextResponse.json({
                         success: true,
                         data: { signature: data.result },
