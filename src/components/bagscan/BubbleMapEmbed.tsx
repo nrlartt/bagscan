@@ -69,7 +69,7 @@ function BubbleMapUnavailable({
                     </a>
                     {!hasProductionPartnerId ? (
                         <span className="inline-flex items-center border border-[#00ff41]/14 bg-[#00ff41]/[0.045] px-3 py-2 text-[10px] tracking-[0.16em] text-[#00ff41]/58">
-                            PROD PARTNER ID REQUIRED
+                            COMING SOON
                         </span>
                     ) : null}
                 </div>
