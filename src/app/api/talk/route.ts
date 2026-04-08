@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { generateTalkReply } from "@/lib/talk/service";
 import type { TalkResponse, TalkReply, TalkStreamEvent } from "@/lib/talk/types";
+import { TalkAccessError, ensureTalkAccess } from "@/lib/talk/access";
 
 const talkIntentSchema = z.enum(["overview", "market", "spotlight", "new-launches", "hackathon", "leaderboard", "token", "portfolio", "launch", "alerts", "trade"]);
 
@@ -123,6 +124,20 @@ export async function POST(req: NextRequest) {
     try {
         const json = await req.json();
         const body = talkBodySchema.parse(json);
+        const wallet = body.wallet?.trim();
+
+        if (!wallet) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "Talk To Bags is reserved for wallets holding at least 2,500,000 $SCAN. Connect an eligible wallet to continue.",
+                },
+                { status: 403 }
+            );
+        }
+
+        await ensureTalkAccess(wallet);
+
         if (body.stream) {
             const encoder = new TextEncoder();
             const stream = new ReadableStream<Uint8Array>({
@@ -139,7 +154,7 @@ export async function POST(req: NextRequest) {
                             await wait(220);
                             send({ type: "status", phase: "grounding", message: "Checking token, creator, and hackathon matches" });
 
-                            const reply = await generateTalkReply(body.message, body.wallet || undefined, body.context, body.history);
+                            const reply = await generateTalkReply(body.message, wallet, body.context, body.history);
                             const generatedAt = new Date().toISOString();
                             const replyStream = streamReply(reply, generatedAt);
                             const reader = replyStream.getReader();
@@ -173,7 +188,7 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        const reply = await generateTalkReply(body.message, body.wallet || undefined, body.context, body.history);
+        const reply = await generateTalkReply(body.message, wallet, body.context, body.history);
 
         const response: TalkResponse = {
             reply,
@@ -186,6 +201,12 @@ export async function POST(req: NextRequest) {
             },
         });
     } catch (error) {
+        if (error instanceof TalkAccessError) {
+            return NextResponse.json(
+                { success: false, error: error.message, data: error.access },
+                { status: error.status }
+            );
+        }
         console.error("[api/talk] error:", error);
         return NextResponse.json(
             {

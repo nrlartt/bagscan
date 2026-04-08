@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && node -e \"const{execSync}=require('child_process');try{execSync('npx prisma db push --accept-data-loss',{stdio:'inherit'})}catch(e){console.log('db push skipped:',e.message)}\" && npx tsc --noEmit --pretty false && next build",
+    "build": "prisma generate && npx tsc --noEmit --pretty false && next build",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
+    "db:push:accept-data-loss": "prisma db push --accept-data-loss",
+    "db:secure:public": "prisma db execute --file scripts/supabase-public-hardening.sql",
     "start": "next start",
     "lint": "eslint"
   },

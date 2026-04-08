@@ -1,14 +1,21 @@
 import {
     getBagsPoolInfo,
+    getBagsPoolInfoWithStatus,
     getBagsPools,
     getClaimablePositions,
     getClaimStatsDetailed,
+    getClaimStatsDetailedWithStatus,
     getCreatorsV3,
+    getCreatorsV3WithStatus,
+    getDexScreenerSearch,
     getHackathonApps,
     getLifetimeFees,
+    getLifetimeFeesWithStatus,
+    getOfficialTopTokensByLifetimeFees,
     type HackathonApp,
+    type BagsFetchResult,
 } from "@/lib/bags/client";
-import type { BagsClaimStatEntry, BagsCreatorV3, BagsPool } from "@/lib/bags/types";
+import type { BagsClaimStatEntry, BagsCreatorV3, BagsOfficialTopToken, BagsPool } from "@/lib/bags/types";
 import type { TalkAction, TalkCard, TalkContext, TalkMetric, TalkReply, TalkIntent } from "@/lib/talk/types";
 import { formatCurrency, formatNumber, getValuationMetric, shortenAddress } from "@/lib/utils";
 
@@ -17,6 +24,7 @@ const TOKEN_SYMBOL_REGEX = /\$([A-Za-z0-9._-]{2,20})/;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const POOLS_TTL_MS = 60_000;
 const HACKATHON_TTL_MS = 5 * 60_000;
+const CONTEXTUAL_TOKEN_REFERENCE_REGEX = /^(this|that|it|this one|that one|this token|that token|this project|that project)$/i;
 
 const QUERY_STOP_WORDS = new Set([
     "a",
@@ -116,8 +124,9 @@ interface ParsedPrompt {
     lowered: string;
     intent: TalkIntent;
     tokenQuery?: string;
+    tokenFocus?: "creator" | "fees" | "claims" | "socials" | "overview";
     referencesActiveToken?: boolean;
-    leaderboardScope?: "market-cap" | "volume";
+    leaderboardScope?: "market-cap" | "volume" | "txns" | "oldest" | "newest" | "best";
     hackathonScope?: "all" | "accepted" | "ai-agents";
 }
 
@@ -129,6 +138,52 @@ interface OfficialHackathonFeed {
 
 let officialPoolsCache: { pools: OfficialPoolView[]; ts: number } | null = null;
 let officialHackathonCache: { feed: OfficialHackathonFeed; ts: number } | null = null;
+let officialLeaderboardCache: { tokens: OfficialLeaderboardView[]; ts: number } | null = null;
+let dexBagsBoardCache: { pairs: DexBagsBoardEntry[]; ts: number } | null = null;
+const TOKEN_DETAIL_TTL_MS = 90_000;
+const INVESTMENT_NOTICE = "NOT FINANCIAL ADVICE // OPENCLAW MARKET SCREEN";
+
+interface OfficialLeaderboardView extends OfficialPoolView {
+    lifetimeFeesSol?: number;
+    holderCount?: number;
+}
+
+type DexPair = Awaited<ReturnType<typeof getDexScreenerSearch>>[number];
+
+interface DexBagsBoardEntry {
+    tokenMint: string;
+    name?: string;
+    symbol?: string;
+    image?: string;
+    website?: string;
+    twitter?: string;
+    telegram?: string;
+    priceUsd?: number;
+    marketCap?: number;
+    fdvUsd?: number;
+    liquidityUsd?: number;
+    volume24hUsd?: number;
+    txCount24h?: number;
+    priceChangeM5?: number;
+    priceChangeH24?: number;
+    pairCreatedAt?: number;
+    pairAddress?: string;
+}
+
+interface CachedTokenDetail<T> {
+    ts: number;
+    result: BagsFetchResult<T>;
+}
+
+const tokenPoolInfoCache = new Map<string, CachedTokenDetail<Awaited<ReturnType<typeof getBagsPoolInfo>>>>();
+const tokenCreatorsCache = new Map<string, CachedTokenDetail<Awaited<ReturnType<typeof getCreatorsV3>>>>();
+const tokenFeesCache = new Map<string, CachedTokenDetail<Awaited<ReturnType<typeof getLifetimeFees>>>>();
+const tokenClaimsCache = new Map<string, CachedTokenDetail<Awaited<ReturnType<typeof getClaimStatsDetailed>>>>();
+
+const tokenPoolInfoInflight = new Map<string, Promise<BagsFetchResult<Awaited<ReturnType<typeof getBagsPoolInfo>>>>>();
+const tokenCreatorsInflight = new Map<string, Promise<BagsFetchResult<Awaited<ReturnType<typeof getCreatorsV3>>>>>();
+const tokenFeesInflight = new Map<string, Promise<BagsFetchResult<Awaited<ReturnType<typeof getLifetimeFees>>>>>();
+const tokenClaimsInflight = new Map<string, Promise<BagsFetchResult<Awaited<ReturnType<typeof getClaimStatsDetailed>>>>>();
 
 function safeNumber(value: unknown) {
     const parsed = Number(value);
@@ -204,6 +259,17 @@ function formatAgeLabel(value?: string) {
     return `${Math.round(hours / 24)}d`;
 }
 
+function formatUtcDateTime(value?: string | number) {
+    if (value === undefined) return "â€”";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "â€”";
+    return new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "UTC",
+    }).format(date);
+}
+
 function dedupeNonEmpty(values: Array<string | undefined>) {
     const seen = new Set<string>();
     const output: string[] = [];
@@ -267,7 +333,7 @@ function extractStructuredTokenQuery(message: string) {
     return undefined;
 }
 
-function parseTokenQuery(message: string) {
+function parseExplicitTokenQuery(message: string) {
     const mintMatch = message.match(BASE58_MINT_REGEX)?.[0];
     if (mintMatch) return mintMatch;
 
@@ -275,7 +341,16 @@ function parseTokenQuery(message: string) {
     if (symbolMatch) return symbolMatch;
 
     const structured = extractStructuredTokenQuery(message);
-    if (structured) return structured;
+    if (structured && !CONTEXTUAL_TOKEN_REFERENCE_REGEX.test(structured.trim())) {
+        return structured;
+    }
+
+    return undefined;
+}
+
+function parseTokenQuery(message: string) {
+    const explicit = parseExplicitTokenQuery(message);
+    if (explicit) return explicit;
 
     const stripped = cleanupTokenPhrase(
         message
@@ -293,25 +368,116 @@ function parseTokenQuery(message: string) {
 }
 
 function referencesActiveToken(lowered: string) {
-    return /\b(this token|that token|this coin|that coin|this project|that project|this one|that one|it)\b/i.test(lowered);
+    if (/\b(this token|that token|this coin|that coin|this project|that project|this one|that one)\b/i.test(lowered)) {
+        return true;
+    }
+
+    if (!/\b(it|its)\b/i.test(lowered)) {
+        return false;
+    }
+
+    if (/\b(best|strongest|highest|largest|biggest|most|oldest|earliest|first|newest|latest|freshest)\b/i.test(lowered) && /\b(token|coin|project)\b/i.test(lowered)) {
+        return false;
+    }
+
+    const wordCount = lowered.split(/\s+/).filter(Boolean).length;
+    if (wordCount > 8) {
+        return false;
+    }
+
+    return /\b(who created it|what fees has it earned|what fees did it earn|tell me about it|show me its|when was it created|what are its|show its)\b/i.test(lowered);
 }
 
 function isTokenSpecificQuestion(lowered: string) {
-    return /\b(who created|creator|created by|fees|fee split|fee-share|claim stats|claimers|claimed|website|telegram|twitter|x account|x handle|tell me about|analyze|analyse|about this|about that)\b/i.test(lowered);
+    return /\b(who created|creator|created by|when was|created at|launch date|fees|fee split|fee-share|claim stats|claimers|claimed|website|telegram|twitter|x account|x handle|links?|social|socials|tell me about|analyze|analyse|about this|about that)\b/i.test(lowered);
+}
+
+function getTokenFocus(lowered: string): ParsedPrompt["tokenFocus"] {
+    if (/\b(who created|creator|created by|who is behind|who built)\b/i.test(lowered)) {
+        return "creator";
+    }
+    if (/\b(what fees|how much.*earned|fees?.*earned|lifetime fees|royalty)\b/i.test(lowered)) {
+        return "fees";
+    }
+    if (/\b(claim stats|claimers|claimed|who claimed|claims)\b/i.test(lowered)) {
+        return "claims";
+    }
+    if (/\b(website|telegram|twitter|x account|x handle|social|socials|links?)\b/i.test(lowered)) {
+        return "socials";
+    }
+    return "overview";
+}
+
+function asksForMarketCapBoard(lowered: string) {
+    return /\b(highest market cap|largest market cap|biggest market cap|top market cap|market cap board)\b/i.test(lowered);
+}
+
+function asksForVolumeBoard(lowered: string) {
+    return /\b(highest|largest|biggest|top|most)\s+(trading\s+)?volume\b|\bmost traded\b|\btop by volume\b|\bvolume leader\b|\bhighest 24h volume\b|\bvolume board\b|\b24h volume board\b/i.test(lowered);
+}
+
+function asksForTxnBoard(lowered: string) {
+    return /\b(highest|largest|biggest|top|most)\s+(tx|txns|transactions|trades)\b|\bmost transactions\b|\btx board\b|\btransactions board\b/i.test(lowered);
+}
+
+function asksForOldestBoard(lowered: string) {
+    return /\b(oldest|earliest|first)\s+(token|coin|project)\b|\bwhich\s+is\s+the\s+oldest\b|\boldest\s+token\s+on\s+bags\b/i.test(lowered);
+}
+
+function asksForNewestBoard(lowered: string) {
+    return /\b(newest|latest|freshest)\s+(token|coin|project)\b|\bwhich\s+is\s+the\s+newest\b|\bnewest\s+token\s+on\s+bags\b/i.test(lowered);
+}
+
+function asksForBestTokenBoard(lowered: string) {
+    return /\b(best|strongest)\s+(token|coin|project)\b|\bbest\s+token\s+currently\b|\bbest\s+token\s+.*bags\b|\bavailable\s+for\s+purchase\b|\bworth\s+buying\b/i.test(lowered);
+}
+
+function asksForMarketWideQuestion(lowered: string) {
+    return (
+        asksForVolumeBoard(lowered) ||
+        asksForTxnBoard(lowered) ||
+        asksForBestTokenBoard(lowered) ||
+        /\b(most popular|popular token|top token|top project|what.?s hot|what is hot|right now|most active|highest volume|market flow|market board)\b/i.test(lowered)
+    );
+}
+
+function detectLeaderboardScope(lowered: string): ParsedPrompt["leaderboardScope"] | undefined {
+    if (asksForBestTokenBoard(lowered)) return "best";
+    if (asksForOldestBoard(lowered)) return "oldest";
+    if (asksForNewestBoard(lowered)) return "newest";
+    if (asksForMarketCapBoard(lowered)) return "market-cap";
+    if (asksForVolumeBoard(lowered)) return "volume";
+    if (asksForTxnBoard(lowered)) return "txns";
+    return undefined;
+}
+
+function shouldInferLooseTokenQuery(cleaned: string, lowered: string) {
+    const words = cleaned.split(/\s+/).filter(Boolean);
+    if (words.length === 0 || words.length > 4) return false;
+
+    return !/\b(what|which|who|when|where|why|how|best|strongest|highest|largest|biggest|most|least|oldest|earliest|first|newest|latest|freshest|popular|trending|hot|market|volume|transactions?|txns?|leaderboard|board|bags|hackathon|accepted|wallet|claimable|portfolio|alerts?|telegram|notification|buy|sell|swap|trade|purchase|worth|launch|deploy|company)\b/i.test(lowered);
 }
 
 function parsePrompt(message: string): ParsedPrompt {
     const cleaned = message.trim();
     const lowered = cleaned.toLowerCase();
-    const tokenQuery = parseTokenQuery(cleaned);
     const refersToActiveToken = referencesActiveToken(lowered);
     const tokenSpecificQuestion = isTokenSpecificQuestion(lowered);
+    const explicitTokenQuery = parseExplicitTokenQuery(cleaned);
+    const leaderboardScope = !explicitTokenQuery && !refersToActiveToken ? detectLeaderboardScope(lowered) : undefined;
+    const marketWideQuestion = !explicitTokenQuery && !refersToActiveToken && asksForMarketWideQuestion(lowered);
+    const broadRankingPrompt = Boolean(leaderboardScope || marketWideQuestion);
+    const inferredLooseTokenQuery = shouldInferLooseTokenQuery(cleaned, lowered) ? parseTokenQuery(cleaned) : undefined;
+    const tokenQuery =
+        explicitTokenQuery ??
+        ((tokenSpecificQuestion && refersToActiveToken) || marketWideQuestion || leaderboardScope
+            ? undefined
+            : inferredLooseTokenQuery);
+    const tokenFocus = getTokenFocus(lowered);
     const looksLikeDirectTokenLookup =
         Boolean(tokenQuery) &&
         cleaned.split(/\s+/).filter(Boolean).length <= 3 &&
-        !/\b(hackathon|launch|leaderboard|market|volume|accepted|ai agents|wallet|claimable)\b/i.test(lowered);
-    const asksForPopularToken = /\b(most popular|popular token|top token|top project|what.?s hot|what is hot|right now|most active|highest volume)\b/i.test(lowered);
-    const asksForMarketCapBoard = /\b(highest market cap|largest market cap|biggest market cap|top market cap|market cap board)\b/i.test(lowered);
+        !/\b(hackathon|launch|leaderboard|market|volume|accepted|ai agents|wallet|claimable|best|oldest|newest|transactions?|txns?)\b/i.test(lowered);
 
     if (/\b(launch|deploy|create token|token launch)\b/i.test(lowered)) {
         return { cleaned, lowered, intent: "launch", tokenQuery };
@@ -325,7 +491,7 @@ function parsePrompt(message: string): ParsedPrompt {
         return { cleaned, lowered, intent: "portfolio", tokenQuery };
     }
 
-    if (/\b(trade|buy|sell|swap)\b/i.test(lowered)) {
+    if (/\b(trade|buy|sell|swap)\b/i.test(lowered) && !broadRankingPrompt) {
         return { cleaned, lowered, intent: "trade", tokenQuery };
     }
 
@@ -334,18 +500,30 @@ function parsePrompt(message: string): ParsedPrompt {
             cleaned,
             lowered,
             intent: "leaderboard",
-            tokenQuery,
-            leaderboardScope: /\bvolume\b/i.test(lowered) ? "volume" : "market-cap",
+            tokenQuery: undefined,
+            leaderboardScope:
+                leaderboardScope ??
+                (/\bvolume\b/i.test(lowered)
+                    ? "volume"
+                    : /\b(tx|txns|transactions)\b/i.test(lowered)
+                        ? "txns"
+                        : /\b(oldest|earliest|first)\b/i.test(lowered)
+                            ? "oldest"
+                            : /\b(newest|latest|freshest)\b/i.test(lowered)
+                                ? "newest"
+                                : /\b(best|strongest)\b/i.test(lowered)
+                                    ? "best"
+                                    : "market-cap"),
         };
     }
 
-    if (asksForMarketCapBoard) {
+    if (leaderboardScope) {
         return {
             cleaned,
             lowered,
             intent: "leaderboard",
-            tokenQuery,
-            leaderboardScope: "market-cap",
+            tokenQuery: undefined,
+            leaderboardScope,
         };
     }
 
@@ -371,8 +549,8 @@ function parsePrompt(message: string): ParsedPrompt {
         return { cleaned, lowered, intent: "spotlight", tokenQuery };
     }
 
-    if (asksForPopularToken || /\b(alpha|trending|featured|hot|market flow|market board)\b/i.test(lowered)) {
-        return { cleaned, lowered, intent: "market", tokenQuery };
+    if (marketWideQuestion || /\b(alpha|trending|featured|hot|market flow|market board)\b/i.test(lowered)) {
+        return { cleaned, lowered, intent: "market", tokenQuery: undefined };
     }
 
     if (tokenSpecificQuestion && (tokenQuery || refersToActiveToken)) {
@@ -381,6 +559,7 @@ function parsePrompt(message: string): ParsedPrompt {
             lowered,
             intent: "token",
             tokenQuery,
+            tokenFocus,
             referencesActiveToken: refersToActiveToken,
         };
     }
@@ -391,11 +570,20 @@ function parsePrompt(message: string): ParsedPrompt {
             lowered,
             intent: "token",
             tokenQuery,
+            tokenFocus: "overview",
         };
     }
 
-    if (tokenQuery && (/\b(about|analyze|analyse|check|token|project|who created|creator)\b/i.test(lowered) || TOKEN_SYMBOL_REGEX.test(cleaned) || BASE58_MINT_REGEX.test(cleaned))) {
-        return { cleaned, lowered, intent: "token", tokenQuery };
+    if (
+        tokenQuery &&
+        (
+            /\b(about|analyze|analyse|check|who created|creator|fees|claim stats|links?|socials?|website|telegram|twitter)\b/i.test(lowered) ||
+            TOKEN_SYMBOL_REGEX.test(cleaned) ||
+            BASE58_MINT_REGEX.test(cleaned) ||
+            shouldInferLooseTokenQuery(cleaned, lowered)
+        )
+    ) {
+        return { cleaned, lowered, intent: "token", tokenQuery, tokenFocus };
     }
 
     return { cleaned, lowered, intent: "overview", tokenQuery };
@@ -447,6 +635,99 @@ async function loadOfficialPools() {
     return pools;
 }
 
+function mapOfficialLeaderboardItem(raw: BagsOfficialTopToken): OfficialLeaderboardView | null {
+    if (!raw.tokenMint) return null;
+
+    return {
+        tokenMint: raw.tokenMint,
+        name: raw.name,
+        symbol: raw.symbol,
+        image: raw.image,
+        website: raw.website,
+        twitter: raw.twitter,
+        telegram: raw.telegram,
+        creatorWallet: raw.creatorWallet,
+        creatorDisplay: raw.creatorUsername,
+        creatorUsername: raw.creatorUsername,
+        creatorPfp: raw.creatorPfp,
+        provider: raw.creatorProvider ?? undefined,
+        providerUsername: raw.creatorProviderUsername ?? undefined,
+        priceUsd: raw.priceUsd,
+        marketCap: raw.marketCap,
+        fdvUsd: raw.fdvUsd,
+        liquidityUsd: raw.liquidityUsd,
+        volume24hUsd: raw.volume24hUsd,
+        createdAt: raw.createdAt,
+        lifetimeFeesSol: lamportsToSol(raw.lifetimeFeesLamports),
+        holderCount: raw.holderCount,
+    };
+}
+
+async function loadOfficialLeaderboard() {
+    if (officialLeaderboardCache && Date.now() - officialLeaderboardCache.ts < POOLS_TTL_MS) {
+        return officialLeaderboardCache.tokens;
+    }
+
+    const rawTokens = await getOfficialTopTokensByLifetimeFees();
+    const tokens = rawTokens
+        .map(mapOfficialLeaderboardItem)
+        .filter((token): token is OfficialLeaderboardView => token !== null);
+
+    officialLeaderboardCache = { tokens, ts: Date.now() };
+    return tokens;
+}
+
+function mapDexBagsPair(pair: DexPair): DexBagsBoardEntry | null {
+    const tokenMint = pair?.baseToken?.address;
+    if (!tokenMint || pair.dexId !== "bags") return null;
+
+    const socials = Array.isArray((pair.info as { socials?: Array<{ type?: string; url?: string }> } | undefined)?.socials)
+        ? ((pair.info as { socials?: Array<{ type?: string; url?: string }> }).socials ?? [])
+        : [];
+    const websites = Array.isArray((pair.info as { websites?: Array<{ label?: string; url?: string }> } | undefined)?.websites)
+        ? ((pair.info as { websites?: Array<{ label?: string; url?: string }> }).websites ?? [])
+        : [];
+    const twitter = socials.find((item) => item.type === "twitter")?.url;
+    const telegram = socials.find((item) => item.type === "telegram")?.url;
+    const website = websites.find((item) => item.url)?.url;
+
+    return {
+        tokenMint,
+        name: pair.baseToken?.name,
+        symbol: pair.baseToken?.symbol,
+        image: pair.info?.imageUrl,
+        website,
+        twitter,
+        telegram,
+        priceUsd: safeNumber(pair.priceUsd),
+        marketCap: safeNumber(pair.marketCap),
+        fdvUsd: safeNumber(pair.fdv),
+        liquidityUsd: safeNumber(pair.liquidity?.usd),
+        volume24hUsd: safeNumber(pair.volume?.h24),
+        txCount24h: safeNumber(pair.txns?.h24?.buys) !== undefined || safeNumber(pair.txns?.h24?.sells) !== undefined
+            ? (safeNumber(pair.txns?.h24?.buys) ?? 0) + (safeNumber(pair.txns?.h24?.sells) ?? 0)
+            : undefined,
+        priceChangeM5: safeNumber((pair.priceChange as { m5?: unknown } | undefined)?.m5),
+        priceChangeH24: safeNumber(pair.priceChange?.h24),
+        pairCreatedAt: safeNumber(pair.pairCreatedAt),
+        pairAddress: typeof pair.pairAddress === "string" ? pair.pairAddress : undefined,
+    };
+}
+
+async function loadDexBagsBoard() {
+    if (dexBagsBoardCache && Date.now() - dexBagsBoardCache.ts < POOLS_TTL_MS) {
+        return dexBagsBoardCache.pairs;
+    }
+
+    const pairs = await getDexScreenerSearch("bags");
+    const board = pairs
+        .map(mapDexBagsPair)
+        .filter((pair): pair is DexBagsBoardEntry => pair !== null);
+
+    dexBagsBoardCache = { pairs: board, ts: Date.now() };
+    return board;
+}
+
 async function loadOfficialHackathonFeed(): Promise<OfficialHackathonFeed> {
     if (officialHackathonCache && Date.now() - officialHackathonCache.ts < HACKATHON_TTL_MS) {
         return officialHackathonCache.feed;
@@ -464,6 +745,61 @@ async function loadOfficialHackathonFeed(): Promise<OfficialHackathonFeed> {
     };
     officialHackathonCache = { feed, ts: Date.now() };
     return feed;
+}
+
+async function readCachedTokenDetail<T>(
+    tokenMint: string,
+    cache: Map<string, CachedTokenDetail<T>>,
+    inflight: Map<string, Promise<BagsFetchResult<T>>>,
+    loader: () => Promise<BagsFetchResult<T>>
+) {
+    const cached = cache.get(tokenMint);
+    if (cached && Date.now() - cached.ts < TOKEN_DETAIL_TTL_MS) {
+        return cached.result;
+    }
+
+    const pending = inflight.get(tokenMint);
+    if (pending) {
+        return pending;
+    }
+
+    const next = loader()
+        .then((result) => {
+            cache.set(tokenMint, { ts: Date.now(), result });
+            inflight.delete(tokenMint);
+            return result;
+        })
+        .catch((error) => {
+            inflight.delete(tokenMint);
+            throw error;
+        });
+
+    inflight.set(tokenMint, next);
+    return next;
+}
+
+async function loadTokenPoolInfo(tokenMint: string) {
+    return readCachedTokenDetail(tokenMint, tokenPoolInfoCache, tokenPoolInfoInflight, () =>
+        getBagsPoolInfoWithStatus(tokenMint)
+    );
+}
+
+async function loadTokenCreators(tokenMint: string) {
+    return readCachedTokenDetail(tokenMint, tokenCreatorsCache, tokenCreatorsInflight, () =>
+        getCreatorsV3WithStatus(tokenMint)
+    );
+}
+
+async function loadTokenLifetimeFees(tokenMint: string) {
+    return readCachedTokenDetail(tokenMint, tokenFeesCache, tokenFeesInflight, () =>
+        getLifetimeFeesWithStatus(tokenMint)
+    );
+}
+
+async function loadTokenClaimStats(tokenMint: string) {
+    return readCachedTokenDetail(tokenMint, tokenClaimsCache, tokenClaimsInflight, () =>
+        getClaimStatsDetailedWithStatus(tokenMint)
+    );
 }
 
 function getBagsTokenHref(tokenMint: string) {
@@ -504,6 +840,70 @@ function buildOfficialPoolCard(pool: OfficialPoolView, eyebrow?: string): TalkCa
         description: truncate(pool.description) ?? "Official BAGS pool data",
         href: getBagsTokenHref(pool.tokenMint),
         metrics: metrics.slice(0, 4),
+    };
+}
+
+function buildDexBoardCard(pair: DexBagsBoardEntry, eyebrow?: string): TalkCard {
+    const valuation = getValuationMetric({ marketCap: pair.marketCap, fdvUsd: pair.fdvUsd });
+    const metrics: TalkMetric[] = [];
+
+    if (pair.volume24hUsd !== undefined) {
+        metrics.push(metric("24H VOL", formatCurrency(pair.volume24hUsd), "info"));
+    }
+    if (valuation.value !== undefined) {
+        metrics.push(metric(valuation.shortLabel, formatCurrency(valuation.value), "info"));
+    }
+    if (pair.txCount24h !== undefined) {
+        metrics.push(metric("24H TX", formatNumber(pair.txCount24h, false), "default"));
+    }
+    if (pair.priceChangeH24 !== undefined) {
+        metrics.push(metric("24H", `${pair.priceChangeH24 >= 0 ? "+" : ""}${pair.priceChangeH24.toFixed(2)}%`, pair.priceChangeH24 >= 0 ? "positive" : "negative"));
+    }
+
+    return {
+        id: pair.tokenMint,
+        title: pair.name ?? pair.symbol ?? shortenAddress(pair.tokenMint, 6),
+        subtitle: [
+            pair.symbol ? `$${pair.symbol}` : shortenAddress(pair.tokenMint, 5),
+            normalizeHandle(pair.twitter) ? `@${normalizeHandle(pair.twitter)}` : undefined,
+        ].filter(Boolean).join(" • "),
+        eyebrow,
+        description: "Live Bags market board used by OpenClaw for current BAGS ranking questions.",
+        href: getBagsTokenHref(pair.tokenMint),
+        metrics: metrics.slice(0, 4),
+    };
+}
+
+function normalizeWeightedScore(value: number | undefined, max: number) {
+    if (value === undefined || value <= 0 || max <= 0) return 0;
+    return Math.log10(value + 1) / Math.log10(max + 1);
+}
+
+function buildCompositeBestCard(
+    pair: DexBagsBoardEntry,
+    holderCount: number | undefined,
+    score: number,
+    eyebrow?: string
+): TalkCard {
+    const valuation = getValuationMetric({ marketCap: pair.marketCap, fdvUsd: pair.fdvUsd });
+
+    return {
+        id: `${pair.tokenMint}-best`,
+        title: pair.name ?? pair.symbol ?? shortenAddress(pair.tokenMint, 6),
+        subtitle: [
+            pair.symbol ? `$${pair.symbol}` : shortenAddress(pair.tokenMint, 5),
+            normalizeHandle(pair.twitter) ? `@${normalizeHandle(pair.twitter)}` : undefined,
+        ].filter(Boolean).join(" • "),
+        eyebrow,
+        description: "Composite live Bags screen using market cap, holders, 24h volume, and 24h transaction count.",
+        href: getBagsTokenHref(pair.tokenMint),
+        metrics: [
+            metric("SCORE", score.toFixed(1), "positive"),
+            metric(valuation.shortLabel, valuation.value !== undefined ? formatCurrency(valuation.value) : "â€”", "info"),
+            metric("24H VOL", pair.volume24hUsd !== undefined ? formatCurrency(pair.volume24hUsd) : "â€”", "info"),
+            metric("HOLDERS", holderCount !== undefined ? formatNumber(holderCount, false) : "â€”", "default"),
+            metric("24H TX", pair.txCount24h !== undefined ? formatNumber(pair.txCount24h, false) : "â€”", "default"),
+        ].slice(0, 4),
     };
 }
 
@@ -653,6 +1053,14 @@ function mergeOfficialPoolWithHackathonApp(
         description: pool?.description ?? app.description,
         website: pool?.website,
         twitter: pool?.twitter ?? app.twitterUrl,
+        projectTwitterHandle:
+            pool?.projectTwitterHandle ??
+            normalizeHandle(app.twitterUrl) ??
+            app.twitterUser?.username ??
+            undefined,
+        projectTwitterFollowers:
+            pool?.projectTwitterFollowers ??
+            app.twitterUser?.public_metrics?.followers_count,
         telegram: pool?.telegram,
         creatorWallet: pool?.creatorWallet,
         creatorDisplay: pool?.creatorDisplay,
@@ -778,6 +1186,59 @@ function getPrimaryCreator(creators: BagsCreatorV3[]) {
     return creators.find((creator) => creator.isCreator) ?? creators[0] ?? null;
 }
 
+function getOfficialIdentityLabel(pool: OfficialPoolView) {
+    return (
+        pool.name ??
+        (pool.symbol ? `$${pool.symbol}` : undefined) ??
+        shortenAddress(pool.tokenMint, 6)
+    );
+}
+
+function getCreatorDisplayLabel(creator: BagsCreatorV3 | null) {
+    if (!creator) return undefined;
+    if (creator.provider === "twitter" && creator.providerUsername) {
+        return `@${creator.providerUsername}`;
+    }
+    if (creator.providerUsername) return creator.providerUsername;
+    if (creator.username) return creator.username;
+    return shortenAddress(creator.wallet, 6);
+}
+
+function getOfficialProjectSocials(pool: OfficialPoolView) {
+    const officialXHandle =
+        normalizeHandle(pool.twitter) ??
+        pool.projectTwitterHandle ??
+        (pool.provider === "twitter" ? pool.providerUsername : undefined);
+
+    return {
+        website: normalizeExternalUrl(pool.website),
+        telegram: normalizeExternalUrl(pool.telegram),
+        xHandle: officialXHandle,
+        xUrl: officialXHandle ? `https://x.com/${officialXHandle}` : undefined,
+    };
+}
+
+function getRateLimitMessage(subject: string) {
+    return `The official BAGS ${subject} endpoint is being rate-limited right now, so I can't verify that field on this pass.`;
+}
+
+function getMissingMessage(subject: string) {
+    return `The official BAGS ${subject} endpoint did not return a value for this token.`;
+}
+
+function buildDataAvailabilityLine(subject: string, result: BagsFetchResult<unknown>) {
+    if (result.status === "rate_limited") {
+        return getRateLimitMessage(subject);
+    }
+    if (result.status === "missing") {
+        return getMissingMessage(subject);
+    }
+    if (result.status === "error") {
+        return `The official BAGS ${subject} endpoint failed on this pass, so I could not verify it cleanly.`;
+    }
+    return undefined;
+}
+
 function buildTalkContext(
     intent: TalkIntent,
     pool?: OfficialPoolView | null
@@ -877,9 +1338,13 @@ function buildUnsupportedBagScanLayerReply(layer: "alpha" | "spotlight"): TalkRe
 }
 
 async function buildOverviewReply(wallet?: string): Promise<TalkReply> {
-    const [pools, hackathon] = await Promise.all([loadOfficialPools(), loadOfficialHackathonFeed()]);
-    const withMarketCap = pools.filter((pool) => pool.marketCap !== undefined).length;
-    const withVolume = pools.filter((pool) => pool.volume24hUsd !== undefined).length;
+    const [pools, leaderboard, hackathon] = await Promise.all([
+        loadOfficialPools(),
+        loadOfficialLeaderboard(),
+        loadOfficialHackathonFeed(),
+    ]);
+    const withMarketCap = leaderboard.filter((pool) => pool.marketCap !== undefined).length;
+    const withVolume = leaderboard.filter((pool) => pool.volume24hUsd !== undefined).length;
 
     return withContext({
         intent: "overview",
@@ -887,7 +1352,7 @@ async function buildOverviewReply(wallet?: string): Promise<TalkReply> {
         summary: "First-party BAGS copilot. This mode answers only from official BAGS pool, creator, fee, claim, launch, and hackathon data.",
         bullets: [
             `${formatNumber(pools.length, false)} official BAGS pools are currently indexed in this session.`,
-            `${formatNumber(withMarketCap, false)} pools expose official market cap, while ${formatNumber(withVolume, false)} expose 24h volume.`,
+            `${formatNumber(withMarketCap, false)} official top tokens expose market cap, while ${formatNumber(withVolume, false)} expose 24h volume on the official leaderboard surface.`,
             `${formatNumber(hackathon.totalItems, false)} official hackathon apps are available, with ${formatNumber(hackathon.acceptedOverall, false)} accepted teams.`,
             wallet
                 ? `Wallet context is limited to official BAGS claimable positions for ${shortenAddress(wallet, 6)}.`
@@ -940,35 +1405,63 @@ async function buildOverviewReply(wallet?: string): Promise<TalkReply> {
 }
 
 async function buildOfficialMarketFlowReply(): Promise<TalkReply> {
-    const pools = await loadOfficialPools();
-    const top = [...pools]
-        .filter((pool) => pool.volume24hUsd !== undefined || pool.marketCap !== undefined)
-        .sort((a, b) => (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0) || (b.marketCap ?? 0) - (a.marketCap ?? 0))
+    const top = [...await loadDexBagsBoard()]
+        .filter((pair) => pair.volume24hUsd !== undefined || pair.txCount24h !== undefined || pair.marketCap !== undefined)
+        .sort((a, b) =>
+            ((b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0)) ||
+            ((b.txCount24h ?? 0) - (a.txCount24h ?? 0)) ||
+            ((b.marketCap ?? b.fdvUsd ?? 0) - (a.marketCap ?? a.fdvUsd ?? 0))
+        )
         .slice(0, 4);
     const leader = top[0];
 
+    if (!leader) {
+        return withContext({
+            intent: "market",
+            title: "BAGS MARKET FLOW",
+            priorityNotice: INVESTMENT_NOTICE,
+            summary: "I could not build a live Bags market-flow board on this pass because the current BAGS market surface is not exposing enough ranking data right now.",
+            bullets: [
+                "This market lane uses the live BAGS market board for volume, transactions, age, and valuation-style ranking.",
+                "If that board is sparse or unavailable, I avoid guessing a market leader.",
+                "Token-specific creator, fee, and claim questions still stay on official BAGS data.",
+            ],
+            cards: [],
+            actions: [
+                action("Open Live Bags Board", "https://dexscreener.com/solana/bags", "info"),
+                action("Open BAGS", "https://bags.fm"),
+            ],
+            suggestions: [
+                "Show me the volume board",
+                "Show me the market cap board",
+                "Show me recent launches on BAGS",
+            ],
+        });
+    }
+
     return withContext({
         intent: "market",
-        title: "OFFICIAL BAGS MARKET FLOW",
-        summary: "This is a raw official BAGS market view ordered only by first-party volume and market cap data.",
+        title: "BAGS MARKET FLOW",
+        priorityNotice: INVESTMENT_NOTICE,
+        summary: "This live Bags market view is ordered by current BAGS trading activity, with 24h volume leading and transactions plus market cap used as supporting context.",
         bullets: [
-            `${formatNumber(top.length, false)} official pools are shown in this market-flow slice.`,
+            `${formatNumber(top.length, false)} live Bags tokens are shown in this market-flow slice.`,
             leader
-                ? `${leader.name ?? leader.symbol ?? shortenAddress(leader.tokenMint, 6)} is currently the most active visible token based on official 24h flow.`
-                : "No official market-flow pools were returned.",
+                ? `${leader.name ?? leader.symbol ?? shortenAddress(leader.tokenMint, 6)} is currently the most active visible token on the live BAGS market board.`
+                : "No live Bags market-flow pairs were returned.",
             leader?.volume24hUsd !== undefined
-                ? `Its official 24h volume currently reads ${formatCurrency(leader.volume24hUsd)}.`
-                : "The current leader did not expose an official 24h volume field on this pass.",
-            "No derived ranking, conviction scoring, or external enrichment is used in this mode.",
+                ? `Its live 24h volume currently reads ${formatCurrency(leader.volume24hUsd)}.`
+                : "The current leader did not expose a 24h volume field on this pass.",
+            "This lane is for live market ranking; creator, fee, and claim answers still come from official BAGS data.",
         ],
-        cards: top.map((pool, index) => buildOfficialPoolCard(pool, index === 0 ? "Lead official flow" : undefined)),
+        cards: top.map((pair, index) => buildDexBoardCard(pair, index === 0 ? "Lead live flow" : undefined)),
         actions: [
-            action("Open BAGS", "https://bags.fm", "info"),
-            ...(leader ? [action(`Open ${leader.symbol ?? "Lead Pool"}`, getBagsTokenHref(leader.tokenMint))] : []),
+            action("Open Live Bags Board", "https://dexscreener.com/solana/bags", "info"),
+            ...(leader ? [action(`Open ${leader.symbol ?? "Lead Token"}`, getBagsTokenHref(leader.tokenMint))] : []),
         ],
         suggestions: [
             "Show me recent launches on BAGS",
-            "Show me the official market board",
+            "Show me the volume board",
             "Tell me about this token",
             "Who created this token?",
         ],
@@ -1007,37 +1500,252 @@ async function buildRecentLaunchesReply(): Promise<TalkReply> {
     }, buildTalkContext("new-launches", launches[0]));
 }
 
-async function buildLeaderboardReply(scope: ParsedPrompt["leaderboardScope"]): Promise<TalkReply> {
-    const pools = await loadOfficialPools();
-    const sorted = [...pools]
-        .filter((pool) => scope === "volume" ? pool.volume24hUsd !== undefined : (pool.marketCap !== undefined || pool.fdvUsd !== undefined))
-        .sort((a, b) => scope === "volume"
-            ? (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0) || (b.marketCap ?? 0) - (a.marketCap ?? 0)
-            : (b.marketCap ?? b.fdvUsd ?? 0) - (a.marketCap ?? a.fdvUsd ?? 0) || (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0)
+async function buildCompositeBestReply(): Promise<TalkReply> {
+    const [pairs, officialLeaderboard] = await Promise.all([loadDexBagsBoard(), loadOfficialLeaderboard()]);
+    const officialMap = new Map(officialLeaderboard.map((token) => [token.tokenMint, token]));
+
+    const baseCandidates = pairs
+        .map((pair) => {
+            const official = officialMap.get(pair.tokenMint);
+            return {
+                pair,
+                holderCount: official?.holderCount,
+                marketCapValue: pair.marketCap ?? pair.fdvUsd ?? official?.marketCap ?? official?.fdvUsd,
+                volume24hUsd: pair.volume24hUsd ?? official?.volume24hUsd,
+                txCount24h: pair.txCount24h,
+            };
+        })
+        .filter((candidate) =>
+            candidate.marketCapValue !== undefined ||
+            candidate.holderCount !== undefined ||
+            candidate.volume24hUsd !== undefined ||
+            candidate.txCount24h !== undefined
+        );
+
+    if (baseCandidates.length === 0) {
+        return withContext({
+            intent: "leaderboard",
+            title: "BAGS BEST-TOKEN SCREEN",
+            priorityNotice: INVESTMENT_NOTICE,
+            summary: "I could not build a blended Bags screen on this pass because the live market board is too sparse.",
+            bullets: [
+                "This ranking needs live market cap, holder count, 24h volume, and 24h transaction activity.",
+                "If those fields are missing, I avoid pretending there is a clear best token.",
+                "Ask for the volume board or market cap board if you want a single-metric answer.",
+            ],
+            cards: [],
+            actions: [action("Open Live Bags Board", "https://dexscreener.com/solana/bags", "info")],
+            suggestions: [
+                "Show me the volume board",
+                "Show me the market cap board",
+                "Which token has the most transactions on BAGS?",
+            ],
+        });
+    }
+
+    const maxMarketCap = Math.max(...baseCandidates.map((candidate) => candidate.marketCapValue ?? 0), 0);
+    const maxHolders = Math.max(...baseCandidates.map((candidate) => candidate.holderCount ?? 0), 0);
+    const maxVolume = Math.max(...baseCandidates.map((candidate) => candidate.volume24hUsd ?? 0), 0);
+    const maxTx = Math.max(...baseCandidates.map((candidate) => candidate.txCount24h ?? 0), 0);
+
+    const ranked = baseCandidates
+        .map((candidate) => {
+            const score =
+                normalizeWeightedScore(candidate.marketCapValue, maxMarketCap) * 0.34 +
+                normalizeWeightedScore(candidate.holderCount, maxHolders) * 0.18 +
+                normalizeWeightedScore(candidate.volume24hUsd, maxVolume) * 0.28 +
+                normalizeWeightedScore(candidate.txCount24h, maxTx) * 0.20;
+
+            return {
+                ...candidate,
+                score: score * 100,
+            };
+        })
+        .sort((a, b) =>
+            b.score - a.score ||
+            ((b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0)) ||
+            ((b.txCount24h ?? 0) - (a.txCount24h ?? 0)) ||
+            ((b.marketCapValue ?? 0) - (a.marketCapValue ?? 0))
         )
         .slice(0, 4);
 
+    const leader = ranked[0];
+
     return withContext({
         intent: "leaderboard",
-        title: scope === "volume" ? "OFFICIAL BAGS VOLUME BOARD" : "OFFICIAL BAGS MARKET CAP BOARD",
-        summary:
-            scope === "volume"
-                ? "This board is ranked directly by official BAGS 24h volume, with market cap used only as a tie-breaker."
-                : "This board is ranked directly by official BAGS market cap, with FDV used only when official market cap is missing.",
+        title: "BAGS BEST-TOKEN SCREEN",
+        priorityNotice: INVESTMENT_NOTICE,
+        summary: "For a 'best on BAGS right now' question, I rank live Bags tokens with a blended screen across market cap, holder count, 24h volume, and 24h transaction count. This is a market heuristic, not investment advice.",
         bullets: [
-            `${formatNumber(sorted.length, false)} official pools are shown in this slice.`,
-            sorted[0]
-                ? `${sorted[0].name ?? sorted[0].symbol ?? shortenAddress(sorted[0].tokenMint, 6)} currently leads this official board.`
-                : "No official pools matched this board.",
-            "No extra scoring, creator heuristics, or external market enrichment is used here.",
+            `${leader.pair.name ?? leader.pair.symbol ?? shortenAddress(leader.pair.tokenMint, 6)} currently leads this blended screen.`,
+            "Market cap and live activity come from the current BAGS market board, while holder count is added when the official BAGS top-token surface exposes it.",
+            "This is a transparent OpenClaw ranking model for comparing visible BAGS tokens right now.",
         ],
-        cards: sorted.map((pool, index) => buildOfficialPoolCard(pool, `Rank #${index + 1}`)),
+        cards: ranked.map((candidate, index) =>
+            buildCompositeBestCard(candidate.pair, candidate.holderCount, candidate.score, `Rank #${index + 1}`)
+        ),
         actions: [
-            action("Open BAGS", "https://bags.fm", "info"),
-            ...(sorted[0] ? [action(`Open ${sorted[0].symbol ?? "Lead Pool"}`, getBagsTokenHref(sorted[0].tokenMint))] : []),
+            action("Open Live Bags Board", "https://dexscreener.com/solana/bags", "info"),
+            action(`Open ${leader.pair.symbol ?? "Lead Token"}`, getBagsTokenHref(leader.pair.tokenMint)),
         ],
         suggestions: [
-            scope === "volume" ? "Show me the market cap board" : "Show me the volume board",
+            "Show me the volume board",
+            "Show me the market cap board",
+            "Which token has the most transactions on BAGS?",
+            "Which is the oldest token on BAGS?",
+        ],
+    }, buildTalkContext("leaderboard", leader.pair));
+}
+
+async function buildChronologyReply(scope: "oldest" | "newest"): Promise<TalkReply> {
+    const livePairs = [...await loadDexBagsBoard()]
+        .filter((pair) => pair.pairCreatedAt !== undefined)
+        .sort((a, b) =>
+            scope === "oldest"
+                ? (a.pairCreatedAt ?? 0) - (b.pairCreatedAt ?? 0)
+                : (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0)
+        )
+        .slice(0, 4);
+
+    if (livePairs.length === 0) {
+        return withContext({
+            intent: "leaderboard",
+            title: scope === "oldest" ? "OLDEST LIVE BAGS TOKENS" : "NEWEST LIVE BAGS TOKENS",
+            summary: "I could not build a reliable Bags chronology board on this pass because the live Bags pair feed is not exposing enough creation timestamps.",
+            bullets: [
+                "This board uses live BAGS pair ages when they are available.",
+                "If the live Bags board is too sparse, I avoid guessing which token came first.",
+            ],
+            cards: [],
+            actions: [action("Open Live Bags Board", "https://dexscreener.com/solana/bags", "info")],
+            suggestions: [
+                "Show me recent launches on BAGS",
+                "Show me the volume board",
+                "Who created $HIVE?",
+            ],
+        });
+    }
+
+    const leader = livePairs[0];
+
+    return withContext({
+        intent: "leaderboard",
+        title: scope === "oldest" ? "OLDEST LIVE BAGS TOKENS" : "NEWEST LIVE BAGS TOKENS",
+        summary:
+            scope === "oldest"
+                ? "This board is ordered by the earliest live BAGS pair timestamps currently exposed."
+                : "This board is ordered by the latest live BAGS pair timestamps currently exposed.",
+        bullets: [
+            `${leader.name ?? leader.symbol ?? shortenAddress(leader.tokenMint, 6)} is currently the ${scope === "oldest" ? "oldest" : "newest"} visible live Bags pair in this session.`,
+            `Visible pair timestamp: ${formatUtcDateTime(leader.pairCreatedAt)} UTC.`,
+            "This chronology answer uses live Bags pair age, so it reflects visible trading pairs rather than a guessed historical narrative.",
+        ],
+        cards: livePairs.map((pair, index) =>
+            buildDexBoardCard(
+                pair,
+                index === 0
+                    ? scope === "oldest"
+                        ? "Oldest visible pair"
+                        : "Newest visible pair"
+                    : formatUtcDateTime(pair.pairCreatedAt)
+            )
+        ),
+        actions: [
+            action("Open Live Bags Board", "https://dexscreener.com/solana/bags", "info"),
+            action(`Open ${leader.symbol ?? "Lead Token"}`, getBagsTokenHref(leader.tokenMint)),
+        ],
+        suggestions: [
+            scope === "oldest" ? "Show me recent launches on BAGS" : "Which is the oldest token on BAGS?",
+            "Show me the volume board",
+            "Who created this token?",
+        ],
+    }, buildTalkContext("leaderboard", leader));
+}
+
+async function buildLeaderboardReply(scope: ParsedPrompt["leaderboardScope"]): Promise<TalkReply> {
+    if (scope === "best") {
+        return buildCompositeBestReply();
+    }
+
+    if (scope === "oldest" || scope === "newest") {
+        return buildChronologyReply(scope);
+    }
+
+    const sorted = [...await loadDexBagsBoard()]
+        .filter((pair) =>
+            scope === "volume"
+                ? pair.volume24hUsd !== undefined
+                : scope === "txns"
+                    ? pair.txCount24h !== undefined
+                    : (pair.marketCap !== undefined || pair.fdvUsd !== undefined)
+        )
+        .sort((a, b) =>
+            scope === "volume"
+                ? ((b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0)) || ((b.txCount24h ?? 0) - (a.txCount24h ?? 0)) || ((b.marketCap ?? b.fdvUsd ?? 0) - (a.marketCap ?? a.fdvUsd ?? 0))
+                : scope === "txns"
+                    ? ((b.txCount24h ?? 0) - (a.txCount24h ?? 0)) || ((b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0)) || ((b.marketCap ?? b.fdvUsd ?? 0) - (a.marketCap ?? a.fdvUsd ?? 0))
+                    : ((b.marketCap ?? b.fdvUsd ?? 0) - (a.marketCap ?? a.fdvUsd ?? 0)) || ((b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0))
+        )
+        .slice(0, 4);
+
+    if (sorted.length === 0) {
+        return withContext({
+            intent: "leaderboard",
+            title: scope === "volume" ? "BAGS VOLUME BOARD" : scope === "txns" ? "BAGS TRANSACTION BOARD" : "BAGS MARKET CAP BOARD",
+            priorityNotice: INVESTMENT_NOTICE,
+            summary:
+                scope === "volume"
+                    ? "I could not build a live Bags volume board on this pass because the BAGS market surface is not exposing enough current volume fields."
+                    : scope === "txns"
+                        ? "I could not build a live Bags transaction board on this pass because the BAGS market surface is not exposing enough transaction fields."
+                        : "I could not build a live Bags market-cap board on this pass because the BAGS market surface is not exposing enough valuation fields.",
+            bullets: [
+                "This board uses the live BAGS market board for market ranking.",
+                "If the live board is sparse, I avoid inventing a leaderboard.",
+                "You can still ask about specific tokens, recent launches, or official creator and fee data.",
+            ],
+            cards: [],
+            actions: [action("Open Live Bags Board", "https://dexscreener.com/solana/bags", "info")],
+            suggestions: [
+                scope === "volume"
+                    ? "Show me recent launches on BAGS"
+                    : scope === "txns"
+                        ? "Show me the volume board"
+                        : "Show me the live market flow",
+                "Who created $HIVE?",
+                "What fees has $SCAN earned?",
+            ],
+        });
+    }
+
+    return withContext({
+        intent: "leaderboard",
+        title: scope === "volume" ? "BAGS VOLUME BOARD" : scope === "txns" ? "BAGS TRANSACTION BOARD" : "BAGS MARKET CAP BOARD",
+        priorityNotice: INVESTMENT_NOTICE,
+        summary:
+            scope === "volume"
+                ? "This board is ranked directly by live BAGS 24h volume, with transaction count and market cap used as tie-break support."
+                : scope === "txns"
+                    ? "This board is ranked directly by live BAGS 24h transaction count, with volume and market cap used as tie-break support."
+                    : "This board is ranked directly by live BAGS market cap, with FDV used when market cap is missing.",
+        bullets: [
+            `${formatNumber(sorted.length, false)} live Bags tokens are shown in this slice.`,
+            sorted[0]
+                ? `${sorted[0].name ?? sorted[0].symbol ?? shortenAddress(sorted[0].tokenMint, 6)} currently leads this official board.`
+                : "No live Bags tokens matched this board.",
+            "This is the live market-ranking lane. Token identity, fees, and claims still stay on official BAGS data.",
+        ],
+        cards: sorted.map((pair, index) => buildDexBoardCard(pair, `Rank #${index + 1}`)),
+        actions: [
+            action("Open Live Bags Board", "https://dexscreener.com/solana/bags", "info"),
+            ...(sorted[0] ? [action(`Open ${sorted[0].symbol ?? "Lead Token"}`, getBagsTokenHref(sorted[0].tokenMint))] : []),
+        ],
+        suggestions: [
+            scope === "volume"
+                ? "Show me the market cap board"
+                : scope === "txns"
+                    ? "Show me the volume board"
+                    : "Show me the volume board",
             "Show me recent launches on BAGS",
             "Tell me about this token",
             "Who created this token?",
@@ -1045,7 +1753,10 @@ async function buildLeaderboardReply(scope: ParsedPrompt["leaderboardScope"]): P
     }, buildTalkContext("leaderboard", sorted[0]));
 }
 
-async function buildTokenReply(query: string): Promise<TalkReply> {
+async function buildTokenReply(
+    query: string,
+    focus: NonNullable<ParsedPrompt["tokenFocus"]> = "overview"
+): Promise<TalkReply> {
     const resolution = await resolveOfficialPool(query);
     const pool = resolution.pool;
     if (!pool) {
@@ -1071,17 +1782,32 @@ async function buildTokenReply(query: string): Promise<TalkReply> {
         });
     }
 
-    const [poolInfo, creators, feesLamports, claimStats] = await Promise.all([
-        getBagsPoolInfo(pool.tokenMint),
-        getCreatorsV3(pool.tokenMint),
-        getLifetimeFees(pool.tokenMint),
-        getClaimStatsDetailed(pool.tokenMint),
+    const shouldLoadCreators = focus === "creator" || focus === "overview";
+    const shouldLoadFees = focus === "fees" || focus === "overview";
+    const shouldLoadClaims = focus === "claims" || focus === "fees" || focus === "overview";
+    const shouldLoadPoolInfo = focus === "overview";
+
+    const [poolInfoResult, creatorsResult, feesResult, claimStatsResult] = await Promise.all([
+        shouldLoadPoolInfo
+            ? loadTokenPoolInfo(pool.tokenMint)
+            : Promise.resolve({ status: "missing", data: null } satisfies BagsFetchResult<Awaited<ReturnType<typeof getBagsPoolInfo>>>),
+        shouldLoadCreators
+            ? loadTokenCreators(pool.tokenMint)
+            : Promise.resolve({ status: "missing", data: [] } satisfies BagsFetchResult<Awaited<ReturnType<typeof getCreatorsV3>>>),
+        shouldLoadFees
+            ? loadTokenLifetimeFees(pool.tokenMint)
+            : Promise.resolve({ status: "missing", data: null } satisfies BagsFetchResult<Awaited<ReturnType<typeof getLifetimeFees>>>),
+        shouldLoadClaims
+            ? loadTokenClaimStats(pool.tokenMint)
+            : Promise.resolve({ status: "missing", data: [] } satisfies BagsFetchResult<Awaited<ReturnType<typeof getClaimStatsDetailed>>>),
     ]);
 
-    const primaryCreator = getPrimaryCreator(creators);
-    const lifetimeFeesSol = lamportsToSol(feesLamports);
+    const primaryCreator = getPrimaryCreator(creatorsResult.data);
+    const lifetimeFeesSol = lamportsToSol(feesResult.data);
+    const claimStats = claimStatsResult.data;
     const totalClaimedSol = sumClaimedSol(claimStats);
     const valuation = getValuationMetric({ marketCap: pool.marketCap, fdvUsd: pool.fdvUsd });
+    const socials = getOfficialProjectSocials(pool);
     const normalizedQuery = normalizeSearchKey(query);
     const normalizedName = normalizeSearchKey(pool.name);
     const normalizedSymbol = normalizeSearchKey(pool.symbol);
@@ -1090,61 +1816,290 @@ async function buildTokenReply(query: string): Promise<TalkReply> {
         normalizedName.includes(normalizedQuery) &&
         normalizedQuery !== normalizedSymbol &&
         normalizedName !== normalizedQuery;
+    const identity = getOfficialIdentityLabel(pool);
+    const creatorLabel = getCreatorDisplayLabel(primaryCreator);
+    const aliasResolutionLine =
+        matchedViaProjectAlias && pool.symbol
+            ? `Your query matched the official project name ${pool.name}; the official BAGS token symbol for this pool is $${pool.symbol}.`
+            : undefined;
+    const baseCards: TalkCard[] = [buildOfficialPoolCard(pool, "Official pool")];
+    const baseActions: TalkAction[] = [action("Open BAGS Token", getBagsTokenHref(pool.tokenMint), "info")];
+
+    if (socials.website) baseActions.push(action("Open Website", socials.website));
+    if (socials.xUrl) baseActions.push(action("Open X", socials.xUrl));
+    if (socials.telegram) baseActions.push(action("Open Telegram", socials.telegram));
+
+    if (focus === "creator") {
+        return withContext({
+            intent: "token",
+            title: creatorLabel ? `${identity} // CREATOR` : `${identity} // CREATOR CHECK`,
+            summary: primaryCreator
+                ? `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} was created by ${creatorLabel} on BAGS.`
+                : creatorsResult.status === "rate_limited"
+                    ? `I resolved ${identity}, but the official creator endpoint is rate-limited right now.`
+                    : `I resolved ${identity}, but the official creator endpoint does not currently expose a creator profile for it.`,
+            bullets: [
+                ...(aliasResolutionLine ? [aliasResolutionLine] : []),
+                ...(primaryCreator
+                    ? [
+                        `Creator wallet: ${shortenAddress(primaryCreator.wallet, 6)}.`,
+                        `Royalty is set to ${formatNumber(primaryCreator.royaltyBps ?? 0, false)} BPS (${((primaryCreator.royaltyBps ?? 0) / 100).toFixed(2)}%).`,
+                        primaryCreator.isAdmin
+                            ? "This creator profile is also marked as an admin in the official BAGS creator feed."
+                            : "This creator profile is marked as the primary creator in the official BAGS feed.",
+                    ]
+                    : [
+                        buildDataAvailabilityLine("creator", creatorsResult) ?? getMissingMessage("creator"),
+                        socials.xHandle
+                            ? `The official pool surface currently points to @${socials.xHandle} as the visible public project identity.`
+                            : `The official pool still resolves cleanly to ${identity}.`,
+                    ]),
+            ],
+            cards: [
+                ...baseCards,
+                {
+                    id: `${pool.tokenMint}-creator`,
+                    title: primaryCreator ? "Official Creator" : "Creator Verification",
+                    subtitle: primaryCreator
+                        ? [creatorLabel, primaryCreator.username].filter(Boolean).join(" • ")
+                        : creatorsResult.status === "rate_limited"
+                            ? "Creator endpoint throttled"
+                            : "No creator profile returned",
+                    eyebrow: "CREATOR",
+                    description: primaryCreator
+                        ? `Verified from the official BAGS creator surface for ${identity}.`
+                        : creatorsResult.status === "rate_limited"
+                            ? "The official creator endpoint is throttled right now, so only the pool identity can be shown."
+                            : "The official creator endpoint did not return a profile for this token on this pass.",
+                    metrics: [
+                        metric("ROYALTY", primaryCreator?.royaltyBps !== undefined ? `${((primaryCreator.royaltyBps ?? 0) / 100).toFixed(2)}%` : "—", "default"),
+                        metric("PRIMARY", primaryCreator?.isCreator ? "YES" : "—", "info"),
+                        metric("ADMIN", primaryCreator?.isAdmin ? "YES" : "—", "default"),
+                    ],
+                },
+            ],
+            actions: baseActions.slice(0, 3),
+            suggestions: [
+                "What fees has this token earned?",
+                "Show claim stats for this token",
+                "Show me this token's official links",
+            ],
+        }, buildTalkContext("token", pool));
+    }
+
+    if (focus === "fees") {
+        return withContext({
+            intent: "token",
+            title: `${identity} // FEES`,
+            summary:
+                feesResult.status === "ok" && lifetimeFeesSol !== undefined
+                    ? `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} has earned ${formatSolAmount(lifetimeFeesSol)} in official lifetime fees on BAGS.`
+                    : feesResult.status === "rate_limited"
+                        ? `I resolved ${identity}, but the official lifetime-fees endpoint is rate-limited right now.`
+                        : feesResult.status === "missing"
+                            ? `I resolved ${identity}, but the official lifetime-fees endpoint is not exposing a value for it right now.`
+                            : `I resolved ${identity}, but I could not verify official lifetime-fee data on this pass.`,
+            bullets: [
+                ...(aliasResolutionLine ? [aliasResolutionLine] : []),
+                ...(feesResult.status === "ok" && lifetimeFeesSol !== undefined
+                    ? [`Official lifetime fees currently read ${formatSolAmount(lifetimeFeesSol)}.`]
+                    : [buildDataAvailabilityLine("lifetime fees", feesResult) ?? getMissingMessage("lifetime fees")]),
+                ...(claimStatsResult.status === "ok"
+                    ? [`Official claim stats show ${formatNumber(claimStats.length, false)} visible claimers with ${formatSolAmount(totalClaimedSol)} claimed in total.`]
+                    : [buildDataAvailabilityLine("claim stats", claimStatsResult) ?? getMissingMessage("claim stats")]),
+                claimStatsResult.status === "ok" && feesResult.status === "ok" && lifetimeFeesSol !== undefined
+                    ? `Net unclaimed remainder across the visible official surfaces is approximately ${formatSolAmount(Math.max(0, lifetimeFeesSol - totalClaimedSol))}.`
+                    : "This fee answer stays inside official BAGS fee and claim endpoints only.",
+            ],
+            cards: [
+                ...baseCards,
+                {
+                    id: `${pool.tokenMint}-fees`,
+                    title: "Official Fee Surface",
+                    subtitle: pool.symbol ? `$${pool.symbol}` : shortenAddress(pool.tokenMint, 5),
+                    eyebrow: "FEES",
+                    description: "Lifetime fees and claim stats from official BAGS fee-share endpoints.",
+                    metrics: [
+                        metric("FEES", lifetimeFeesSol !== undefined ? formatSolAmount(lifetimeFeesSol) : feesResult.status === "rate_limited" ? "THROTTLED" : "—", feesResult.status === "rate_limited" ? "warning" : "info"),
+                        metric("CLAIMERS", claimStatsResult.status === "ok" ? formatNumber(claimStats.length, false) : claimStatsResult.status === "rate_limited" ? "THROTTLED" : "—", "default"),
+                        metric("CLAIMED", claimStatsResult.status === "ok" ? formatSolAmount(totalClaimedSol) : claimStatsResult.status === "rate_limited" ? "THROTTLED" : "—", "default"),
+                    ],
+                },
+            ],
+            actions: baseActions.slice(0, 3),
+            suggestions: [
+                "Who created this token?",
+                "Show claim stats for this token",
+                "Tell me about this token",
+            ],
+        }, buildTalkContext("token", pool));
+    }
+
+    if (focus === "claims") {
+        return withContext({
+            intent: "token",
+            title: `${identity} // CLAIMS`,
+            summary:
+                claimStatsResult.status === "ok"
+                    ? `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} shows ${formatNumber(claimStats.length, false)} visible claimers in official BAGS claim stats.`
+                    : claimStatsResult.status === "rate_limited"
+                        ? `I resolved ${identity}, but the official claim-stats endpoint is rate-limited right now.`
+                        : claimStatsResult.status === "missing"
+                            ? `I resolved ${identity}, but no official claim stats are currently exposed for it.`
+                            : `I resolved ${identity}, but I could not verify official claim stats on this pass.`,
+            bullets: [
+                ...(aliasResolutionLine ? [aliasResolutionLine] : []),
+                ...(claimStatsResult.status === "ok"
+                    ? [
+                        `Official claim stats currently show ${formatNumber(claimStats.length, false)} visible claimers.`,
+                        `Total claimed currently reads ${formatSolAmount(totalClaimedSol)} across those claimers.`,
+                    ]
+                    : [buildDataAvailabilityLine("claim stats", claimStatsResult) ?? getMissingMessage("claim stats")]),
+                feesResult.status === "ok" && lifetimeFeesSol !== undefined
+                    ? `Official lifetime fees for the same token currently read ${formatSolAmount(lifetimeFeesSol)}.`
+                    : "This claims answer stays inside official BAGS claim and fee-share data only.",
+            ],
+            cards: [
+                ...baseCards,
+                {
+                    id: `${pool.tokenMint}-claims`,
+                    title: "Official Claim Stats",
+                    subtitle: pool.symbol ? `$${pool.symbol}` : shortenAddress(pool.tokenMint, 5),
+                    eyebrow: "CLAIMS",
+                    description: claimStatsResult.status === "ok"
+                        ? "Visible claimers and claimed totals from the official BAGS claim-stats endpoint."
+                        : claimStatsResult.status === "rate_limited"
+                            ? "The official claim-stats endpoint is throttled on this pass."
+                            : "No official claim-stats entries were returned for this token.",
+                    metrics: [
+                        metric("CLAIMERS", claimStatsResult.status === "ok" ? formatNumber(claimStats.length, false) : claimStatsResult.status === "rate_limited" ? "THROTTLED" : "0", claimStatsResult.status === "ok" ? "info" : "warning"),
+                        metric("CLAIMED", claimStatsResult.status === "ok" ? formatSolAmount(totalClaimedSol) : claimStatsResult.status === "rate_limited" ? "THROTTLED" : "—", "default"),
+                    ],
+                },
+            ],
+            actions: baseActions.slice(0, 3),
+            suggestions: [
+                "What fees has this token earned?",
+                "Who created this token?",
+                "Tell me about this token",
+            ],
+        }, buildTalkContext("token", pool));
+    }
+
+    if (focus === "socials") {
+        const hasAnySocial = Boolean(socials.xHandle || socials.website || socials.telegram);
+        return withContext({
+            intent: "token",
+            title: `${identity} // OFFICIAL LINKS`,
+            summary: hasAnySocial
+                ? `These are the public links currently exposed for ${identity} across official BAGS surfaces.`
+                : `I resolved ${identity}, but official BAGS surfaces are not currently exposing public links for it.`,
+            bullets: [
+                ...(aliasResolutionLine ? [aliasResolutionLine] : []),
+                socials.xHandle
+                    ? `Official X handle: @${socials.xHandle}.`
+                    : "No official X handle is currently exposed for this token.",
+                socials.website
+                    ? `Official website: ${normalizeWebsiteHost(socials.website) ?? socials.website}.`
+                    : "No official website is currently exposed for this token.",
+                socials.telegram
+                    ? `Official Telegram: ${socials.telegram.replace(/^https?:\/\//i, "")}.`
+                    : "No official Telegram link is currently exposed for this token.",
+                pool.projectTwitterFollowers !== undefined
+                    ? `Official follower count currently visible on BAGS-linked surfaces: ${formatNumber(pool.projectTwitterFollowers)}.`
+                    : "No official follower count is currently exposed for the project account on this pass.",
+            ],
+            cards: [
+                ...baseCards,
+                {
+                    id: `${pool.tokenMint}-socials`,
+                    title: "Official Public Identity",
+                    subtitle: socials.xHandle ? `@${socials.xHandle}` : "No handle exposed",
+                    eyebrow: "LINKS",
+                    description: hasAnySocial
+                        ? "Only links exposed through official BAGS token or hackathon surfaces are shown here."
+                        : "The resolved official token currently has no public links exposed on the available BAGS surfaces.",
+                    metrics: [
+                        metric("X", socials.xHandle ? `@${socials.xHandle}` : "—", "info"),
+                        metric("FOLLOWERS", pool.projectTwitterFollowers !== undefined ? formatNumber(pool.projectTwitterFollowers) : "—", "default"),
+                        metric("WEB", normalizeWebsiteHost(socials.website) ?? "—", "default"),
+                        metric("TG", socials.telegram ? "YES" : "—", "default"),
+                    ],
+                },
+            ],
+            actions: baseActions.slice(0, 3),
+            suggestions: [
+                "Who created this token?",
+                "Tell me about this token",
+                "What fees has this token earned?",
+            ],
+        }, buildTalkContext("token", pool));
+    }
+
+    const overviewBullets: string[] = [];
+    const rateLimitedOrErroredDetails = [creatorsResult, feesResult, claimStatsResult, poolInfoResult].filter(
+        (result) => result.status === "rate_limited" || result.status === "error"
+    ).length;
+
+    if (aliasResolutionLine) {
+        overviewBullets.push(aliasResolutionLine);
+    }
+
+    if (creatorLabel) {
+        overviewBullets.push(`Official creator: ${creatorLabel}.`);
+    } else if (socials.xHandle) {
+        overviewBullets.push(`Official public identity currently points to @${socials.xHandle}.`);
+    }
+
+    if (lifetimeFeesSol !== undefined) {
+        overviewBullets.push(`Official lifetime fees: ${formatSolAmount(lifetimeFeesSol)}.`);
+    } else if (valuation.value !== undefined) {
+        overviewBullets.push(`${valuation.longLabel} currently reads ${formatCurrency(valuation.value)}.`);
+    }
+
+    if (claimStatsResult.status === "ok" && claimStats.length > 0) {
+        overviewBullets.push(`${formatNumber(claimStats.length, false)} visible claimers have claimed ${formatSolAmount(totalClaimedSol)} in total.`);
+    }
+
+    if (poolInfoResult.status === "ok" && poolInfoResult.data?.dammV2PoolKey) {
+        overviewBullets.push("This pool shows a migrated DAMM v2 key.");
+    }
+
+    if (rateLimitedOrErroredDetails > 0) {
+        overviewBullets.push("Some official detail endpoints are temporarily limited, so this snapshot is intentionally lighter right now.");
+    }
+
+    if (overviewBullets.length === 0) {
+        overviewBullets.push("This token is resolved cleanly from official BAGS surfaces.");
+    }
 
     return withContext({
         intent: "token",
         title: pool.name ?? pool.symbol ?? shortenAddress(pool.tokenMint, 6),
-        summary: "This answer is built only from official BAGS token, creator, and fee data.",
-        bullets: [
-            ...(matchedViaProjectAlias && pool.symbol
-                ? [`Your query matched the official project name ${pool.name}; the official BAGS token symbol for this pool is $${pool.symbol}.`]
-                : []),
-            valuation.value !== undefined
-                ? `${valuation.longLabel} currently reads ${formatCurrency(valuation.value)} from the official BAGS pool feed.`
-                : "No official valuation field is currently exposed for this pool.",
-            lifetimeFeesSol !== undefined
-                ? `Official lifetime fees currently read ${formatSolAmount(lifetimeFeesSol)}.`
-                : "Official lifetime fees are not currently exposed for this token.",
-            primaryCreator
-                ? `The primary creator is ${primaryCreator.provider === "twitter" && primaryCreator.providerUsername ? `@${primaryCreator.providerUsername}` : primaryCreator.providerUsername ?? primaryCreator.username ?? shortenAddress(primaryCreator.wallet, 6)}.`
-                : "No creator profile is currently exposed in the official creator feed.",
-            claimStats.length > 0
-                ? `${formatNumber(claimStats.length, false)} claimers are visible, with ${formatSolAmount(totalClaimedSol)} claimed in total.`
-                : "No official claim stats are currently visible for this token.",
-            poolInfo?.dammV2PoolKey ? "This pool shows a migrated DAMM v2 key in the official BAGS pool state." : "This token is using the current official BAGS pool state surface.",
-        ],
+        summary: `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} is resolved from official BAGS surfaces.`,
+        bullets: overviewBullets.slice(0, 3),
         cards: [
-            buildOfficialPoolCard(pool, "Official pool"),
+            ...baseCards,
             {
-                id: `${pool.tokenMint}-creator`,
-                title: "Creator Profile",
-                subtitle: primaryCreator
-                    ? [
-                        primaryCreator.provider === "twitter" && primaryCreator.providerUsername ? `@${primaryCreator.providerUsername}` : undefined,
-                        primaryCreator.username,
-                    ].filter(Boolean).join(" • ")
-                    : "No official creator profile",
-                eyebrow: "CREATOR",
-                description: primaryCreator
-                    ? `Wallet ${shortenAddress(primaryCreator.wallet, 6)} with ${formatNumber(primaryCreator.royaltyBps ?? 0, false)} BPS royalty.`
-                    : "The official creator endpoint did not return a profile for this pool.",
+                id: `${pool.tokenMint}-snapshot`,
+                title: "Official Snapshot",
+                subtitle: pool.symbol ? `$${pool.symbol}` : shortenAddress(pool.tokenMint, 5),
+                eyebrow: "TOKEN",
+                description: "Overview generated only from official BAGS pool, creator, fee, and claim surfaces.",
                 metrics: [
-                    metric("ROYALTY", primaryCreator?.royaltyBps !== undefined ? `${(primaryCreator.royaltyBps / 100).toFixed(2)}%` : "—", "default"),
-                    metric("CLAIMERS", formatNumber(claimStats.length, false), "info"),
-                    metric("FEES", lifetimeFeesSol !== undefined ? formatSolAmount(lifetimeFeesSol) : "—", "warning"),
-                    metric("CLAIMED", claimStats.length > 0 ? formatSolAmount(totalClaimedSol) : "—", "default"),
+                    metric(valuation.shortLabel, valuation.value !== undefined ? formatCurrency(valuation.value) : "—", "info"),
+                    metric("FEES", lifetimeFeesSol !== undefined ? formatSolAmount(lifetimeFeesSol) : feesResult.status === "rate_limited" ? "THROTTLED" : "—", "default"),
+                    metric("CLAIMERS", claimStatsResult.status === "ok" ? formatNumber(claimStats.length, false) : claimStatsResult.status === "rate_limited" ? "THROTTLED" : "—", "default"),
+                    metric("CREATOR", creatorLabel ?? (creatorsResult.status === "rate_limited" ? "THROTTLED" : "—"), creatorLabel ? "positive" : "default"),
                 ],
             },
         ],
-        actions: [
-            action("Open BAGS Token", getBagsTokenHref(pool.tokenMint), "info"),
-            ...(normalizeExternalUrl(pool.website) ? [action("Open Website", normalizeExternalUrl(pool.website)!)] : []),
-        ],
+        actions: baseActions.slice(0, 3),
         suggestions: [
             "Who created this token?",
             "What fees has this token earned?",
-            "Show me recent launches on BAGS",
-            "How do I launch a token on BAGS?",
+            "Show me this token's official links",
+            "Show claim stats for this token",
         ],
     }, buildTalkContext("token", pool));
 }
@@ -1429,7 +2384,7 @@ export async function generateTalkReplyLocal(message: string, wallet?: string, c
         case "hackathon":
             return await buildHackathonReply(parsed.hackathonScope ?? "all");
         case "token":
-            return resolvedTokenQuery ? await buildTokenReply(resolvedTokenQuery) : buildNeedTokenReply(context);
+            return resolvedTokenQuery ? await buildTokenReply(resolvedTokenQuery, parsed.tokenFocus ?? "overview") : buildNeedTokenReply(context);
         case "portfolio":
             return await buildWalletReply(wallet);
         case "launch":

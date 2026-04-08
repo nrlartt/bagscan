@@ -3,18 +3,22 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import {
     ArrowUpRight,
     Bot,
     Cpu,
     Loader2,
+    LockKeyhole,
     RotateCcw,
     SendHorizontal,
     ShieldCheck,
+    Sparkles,
     Wallet,
 } from "lucide-react";
-import type { TalkContext, TalkHistoryTurn, TalkReply, TalkResponse, TalkStreamEvent, TalkStreamPhase } from "@/lib/talk/types";
+import type { TalkAccessState, TalkContext, TalkHistoryTurn, TalkReply, TalkResponse, TalkStreamEvent, TalkStreamPhase } from "@/lib/talk/types";
 import { cn, shortenAddress } from "@/lib/utils";
+import { TALK_SCAN_MINT } from "@/lib/talk/access";
 
 type ChatMessage =
     | { id: string; role: "user"; content: string; timestamp: string }
@@ -42,6 +46,7 @@ const WELCOME_REPLY: TalkReply = {
     title: "TALK TO BAGS",
     summary:
         "OpenClaw-powered chat grounded only in official BAGS pools, creators, fees, claims, launch, and hackathon data.",
+    priorityNotice: undefined,
     bullets: [],
     cards: [],
     actions: [],
@@ -104,6 +109,7 @@ function createFallbackReply(message: string): TalkReply {
         intent: "overview",
         title: "TALK TO BAGS OFFLINE",
         summary: "OpenClaw was unavailable for this request, so the chat could not complete cleanly.",
+        priorityNotice: undefined,
         bullets: [
             message,
             "Try again in a moment or use an official BAGS surface while the route recovers.",
@@ -141,6 +147,7 @@ function createStreamingReply(context?: TalkContext): TalkReply {
         intent: "overview",
         title: "",
         summary: "",
+        priorityNotice: undefined,
         bullets: [],
         cards: [],
         actions: [],
@@ -151,12 +158,15 @@ function createStreamingReply(context?: TalkContext): TalkReply {
 
 export function TalkToBagsTerminal() {
     const { connected, publicKey } = useWallet();
+    const { setVisible } = useWalletModal();
     const walletAddress = publicKey?.toBase58() ?? "";
     const [input, setInput] = useState("");
-    const [includeWallet, setIncludeWallet] = useState(true);
     const [isSending, setIsSending] = useState(false);
     const [talkContext, setTalkContext] = useState<TalkContext | undefined>(WELCOME_REPLY.context);
     const [streamingMessage, setStreamingMessage] = useState<StreamingAssistantState | null>(null);
+    const [accessState, setAccessState] = useState<"idle" | "checking" | "ready" | "blocked" | "error">("idle");
+    const [talkAccess, setTalkAccess] = useState<TalkAccessState | null>(null);
+    const [accessError, setAccessError] = useState<string | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([
         {
             id: "welcome",
@@ -167,7 +177,54 @@ export function TalkToBagsTerminal() {
     ]);
     const scrollerRef = useRef<HTMLDivElement | null>(null);
 
-    const activeWallet = connected && includeWallet ? walletAddress : undefined;
+    const activeWallet = connected && talkAccess?.eligible ? walletAddress : undefined;
+    const scanBagsUrl = `https://bags.fm/${TALK_SCAN_MINT}`;
+
+    useEffect(() => {
+        let cancelled = false;
+
+        if (!connected || !walletAddress) {
+            setTalkAccess(null);
+            setAccessError(null);
+            setAccessState("idle");
+            return;
+        }
+
+        setAccessState("checking");
+        setAccessError(null);
+
+        void (async () => {
+            try {
+                const response = await fetch(`/api/talk/access?wallet=${encodeURIComponent(walletAddress)}`, {
+                    method: "GET",
+                    cache: "no-store",
+                });
+                const payload = (await response.json().catch(() => ({}))) as {
+                    success?: boolean;
+                    error?: string;
+                    data?: TalkAccessState;
+                };
+
+                if (!response.ok || !payload.data) {
+                    throw new Error(payload.error || "Unable to verify Talk To Bags access.");
+                }
+
+                if (cancelled) return;
+
+                setTalkAccess(payload.data);
+                setAccessState(payload.data.eligible ? "ready" : "blocked");
+            } catch (error) {
+                if (cancelled) return;
+                setTalkAccess(null);
+                setAccessError(error instanceof Error ? error.message : "Unable to verify Talk To Bags access.");
+                setAccessState("error");
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [connected, walletAddress]);
 
     useEffect(() => {
         if (!scrollerRef.current) return;
@@ -180,6 +237,7 @@ export function TalkToBagsTerminal() {
     async function runPrompt(prompt: string) {
         const cleaned = prompt.trim();
         if (!cleaned || isSending) return;
+        if (!activeWallet) return;
 
         const now = new Date().toISOString();
         const userMessage: ChatMessage = {
@@ -389,6 +447,77 @@ export function TalkToBagsTerminal() {
         void runPrompt(input);
     }
 
+    if (!connected || accessState === "idle") {
+        return (
+            <TalkAccessGate
+                title="TALK TO BAGS"
+                eyebrow="Holder Access"
+                summary="OpenClaw is now live inside BagScan, but this surface is reserved for committed $SCAN holders."
+                ctaLabel="CONNECT WALLET"
+                onPrimaryAction={() => setVisible(true)}
+                secondaryHref={scanBagsUrl}
+                secondaryLabel="GET $SCAN ON BAGS"
+                stats={[
+                    { label: "ACCESS", value: "2.5M $SCAN" },
+                    { label: "SOURCE", value: "OPENCLAW + BAGS" },
+                ]}
+            />
+        );
+    }
+
+    if (accessState === "checking") {
+        return (
+            <TalkAccessGate
+                title="VERIFYING $SCAN HOLDER ACCESS"
+                eyebrow="Holder Access"
+                summary="Checking this wallet against the live $SCAN holder threshold before opening the terminal."
+                ctaLabel="VERIFYING"
+                onPrimaryAction={() => undefined}
+                loading
+                stats={[
+                    { label: "WALLET", value: shortenAddress(walletAddress, 6) },
+                    { label: "REQUIREMENT", value: "2.5M $SCAN" },
+                ]}
+            />
+        );
+    }
+
+    if (accessState === "error") {
+        return (
+            <TalkAccessGate
+                title="UNABLE TO VERIFY ACCESS"
+                eyebrow="Talk To Bags"
+                summary={accessError || "The access check could not complete right now. Try again in a moment."}
+                ctaLabel="RETRY"
+                onPrimaryAction={() => window.location.reload()}
+                secondaryHref={scanBagsUrl}
+                secondaryLabel="VIEW $SCAN"
+                stats={[
+                    { label: "MODE", value: "HOLDER GATED" },
+                    { label: "SOURCE", value: "BAGS + RPC" },
+                ]}
+            />
+        );
+    }
+
+    if (accessState === "blocked" && talkAccess) {
+        return (
+            <TalkAccessGate
+                title="TALK TO BAGS IS RESERVED FOR $SCAN HOLDERS"
+                eyebrow="Holder Access"
+                summary={`This wallet currently holds ${talkAccess.balanceUi} $SCAN. You need ${talkAccess.requiredUi} $SCAN to unlock Talk To Bags.`}
+                ctaLabel="GET $SCAN ON BAGS"
+                onPrimaryAction={() => window.open(scanBagsUrl, "_blank", "noopener,noreferrer")}
+                secondaryHref={scanBagsUrl}
+                secondaryLabel="VIEW TOKEN PAGE"
+                stats={[
+                    { label: "BALANCE", value: `${talkAccess.balanceUi} $SCAN` },
+                    { label: "SHORTFALL", value: `${talkAccess.shortfallUi} $SCAN` },
+                ]}
+            />
+        );
+    }
+
     return (
         <div className="mx-auto max-w-[1480px] px-4 py-6 sm:px-6 lg:px-8">
             <section className="crt-panel relative overflow-hidden p-6 sm:p-8">
@@ -415,9 +544,10 @@ export function TalkToBagsTerminal() {
                             <SessionChip icon={<ShieldCheck className="h-3.5 w-3.5" />} label="OFFICIAL BAGS ONLY" tone="green" />
                             <SessionChip
                                 icon={<Wallet className="h-3.5 w-3.5" />}
-                                label={activeWallet ? `CLAIMS ${shortenAddress(activeWallet, 6)}` : "NO WALLET CONTEXT"}
-                                tone={activeWallet ? "green" : "neutral"}
+                                label={`$SCAN VERIFIED ${shortenAddress(activeWallet ?? walletAddress, 6)}`}
+                                tone="green"
                             />
+                            {talkAccess ? <SessionChip icon={<Sparkles className="h-3.5 w-3.5" />} label={`${talkAccess.balanceUi} $SCAN`} tone="neutral" /> : null}
                         </div>
 
                         <div className="flex flex-wrap gap-2">
@@ -439,25 +569,11 @@ export function TalkToBagsTerminal() {
                         <div className="mt-4 space-y-3">
                             <SessionRow label="Mode" value="OpenClaw + official BAGS context" />
                             <SessionRow label="Scope" value="Pools, creators, fees, claims, hackathon, launch" />
-                            <SessionRow label="Wallet" value={activeWallet ? shortenAddress(activeWallet, 6) : "Not included"} />
+                            <SessionRow label="Wallet" value={shortenAddress(activeWallet ?? walletAddress, 6)} />
+                            {talkAccess ? <SessionRow label="Access" value={`${talkAccess.requiredUi} $SCAN unlocked`} /> : null}
                         </div>
 
                         <div className="mt-5 flex flex-col gap-2">
-                            {connected ? (
-                                <button
-                                    type="button"
-                                    onClick={() => setIncludeWallet((current) => !current)}
-                                    className={cn(
-                                        "inline-flex items-center justify-center gap-2 border px-3 py-3 text-[10px] tracking-[0.2em] transition-all",
-                                        includeWallet
-                                            ? "border-[#00ff41]/25 bg-[#00ff41]/10 text-[#9dffb8]"
-                                            : "border-white/10 bg-white/[0.03] text-white/55"
-                                    )}
-                                >
-                                    <Wallet className="h-4 w-4" />
-                                    {includeWallet ? "REMOVE WALLET CONTEXT" : "ADD WALLET CONTEXT"}
-                                </button>
-                            ) : null}
                             <button
                                 type="button"
                                 onClick={() => {
@@ -557,9 +673,101 @@ export function TalkToBagsTerminal() {
 
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[10px] uppercase tracking-[0.2em] text-white/40">
                         <span>OpenClaw answers stay inside official BAGS data.</span>
-                        <span>Use a mint, token name, or $symbol for the cleanest lookup.</span>
+                        <span>Talk To Bags is unlocked only for wallets holding at least 2.5M $SCAN.</span>
                     </div>
                 </form>
+            </section>
+        </div>
+    );
+}
+
+function TalkAccessGate({
+    eyebrow,
+    title,
+    summary,
+    ctaLabel,
+    onPrimaryAction,
+    secondaryHref,
+    secondaryLabel,
+    stats,
+    loading = false,
+}: {
+    eyebrow: string;
+    title: string;
+    summary: string;
+    ctaLabel: string;
+    onPrimaryAction: () => void;
+    secondaryHref?: string;
+    secondaryLabel?: string;
+    stats: Array<{ label: string; value: string }>;
+    loading?: boolean;
+}) {
+    return (
+        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+            <section className="crt-panel relative overflow-hidden p-6 sm:p-8">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,255,65,0.14),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(0,170,255,0.08),transparent_30%)]" />
+                <div className="relative z-[1] grid gap-8 xl:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="space-y-5">
+                        <div className="flex items-start gap-4">
+                            <div className="flex h-14 w-14 items-center justify-center border border-[#00ff41]/25 bg-[#00ff41]/10 shadow-[0_0_28px_rgba(0,255,65,0.16)]">
+                                {loading ? <Loader2 className="h-7 w-7 animate-spin text-[#00ff41]" /> : <LockKeyhole className="h-7 w-7 text-[#00ff41]" />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[11px] uppercase tracking-[0.34em] text-[#00ff41]/55">{eyebrow}</p>
+                                <h1 className="mt-2 text-3xl tracking-[0.16em] text-[#d8ffe6] sm:text-5xl" style={{ textShadow: "0 0 18px rgba(0,255,65,0.18)" }}>
+                                    {title}
+                                </h1>
+                                <p className="mt-4 max-w-3xl text-sm leading-7 text-[#d8ffe6]/72 sm:text-[15px]">{summary}</p>
+                            </div>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            {stats.map((stat) => (
+                                <div key={stat.label} className="border border-[#00ff41]/12 bg-black/55 px-4 py-4">
+                                    <p className="text-[10px] uppercase tracking-[0.24em] text-[#00ff41]/42">{stat.label}</p>
+                                    <p className="mt-2 text-lg tracking-[0.12em] text-[#d8ffe6]">{stat.value}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                            <button
+                                type="button"
+                                onClick={onPrimaryAction}
+                                className="inline-flex min-h-[52px] items-center justify-center gap-2 border border-[#00ff41]/25 bg-[#00ff41]/10 px-5 py-3 text-[11px] tracking-[0.24em] text-[#9dffb8] transition-all hover:bg-[#00ff41]/16"
+                            >
+                                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+                                {ctaLabel}
+                            </button>
+                            {secondaryHref && secondaryLabel ? (
+                                <a
+                                    href={secondaryHref}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex min-h-[52px] items-center justify-center gap-2 border border-[#00aaff]/22 bg-[#00aaff]/10 px-5 py-3 text-[11px] tracking-[0.24em] text-[#8dd8ff] transition-all hover:bg-[#00aaff]/16"
+                                >
+                                    <ArrowUpRight className="h-4 w-4" />
+                                    {secondaryLabel}
+                                </a>
+                            ) : null}
+                        </div>
+                    </div>
+
+                    <div className="border border-white/10 bg-black/55 p-5">
+                        <p className="text-[11px] uppercase tracking-[0.24em] text-[#00ff41]/48">Talk Access</p>
+                        <div className="mt-4 space-y-3">
+                            <SessionRow label="Eligibility" value="Minimum 2.5M $SCAN" />
+                            <SessionRow label="Model" value="OpenClaw + official BAGS data" />
+                            <SessionRow label="Scope" value="Tokens, creators, fees, claims, launch, hackathon" />
+                        </div>
+                        <div className="mt-5 border border-[#ffaa00]/16 bg-[#ffaa00]/7 px-4 py-4">
+                            <p className="text-[10px] uppercase tracking-[0.22em] text-[#ffd37a]">Holder-only release</p>
+                            <p className="mt-2 text-sm leading-6 text-[#f6edcf]/72">
+                                Talk To Bags is now published, but reserved for committed $SCAN holders while the assistant continues hardening.
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </section>
         </div>
     );
@@ -608,6 +816,13 @@ function StreamingAssistantBubble({
                 ) : (
                     <>
                         <div className="space-y-3">
+                            {state.reply.priorityNotice ? (
+                                <div className="border border-[#ffaa00]/28 bg-[#ffaa00]/10 px-4 py-3">
+                                    <p className="text-[11px] uppercase tracking-[0.3em] text-[#ffd37a] sm:text-[12px]">
+                                        {state.reply.priorityNotice}
+                                    </p>
+                                </div>
+                            ) : null}
                             <h3 className="text-lg tracking-[0.14em] text-[#d8ffe6] sm:text-xl">
                                 {state.reply.title}
                                 {!isReady ? <span className="ml-1 inline-block h-5 w-[2px] animate-pulse bg-[#00ff41]/85 align-middle" /> : null}
@@ -728,6 +943,13 @@ function AssistantBubble({
 
             <div className="mt-4 space-y-4">
                 <div className="space-y-3">
+                    {reply.priorityNotice ? (
+                        <div className="border border-[#ffaa00]/28 bg-[#ffaa00]/10 px-4 py-3">
+                            <p className="text-[11px] uppercase tracking-[0.3em] text-[#ffd37a] sm:text-[12px]">
+                                {reply.priorityNotice}
+                            </p>
+                        </div>
+                    ) : null}
                     <h3 className="text-lg tracking-[0.14em] text-[#d8ffe6] sm:text-xl">
                         {titleTyping.display}
                         {shouldAnimate && !titleTyping.done ? <span className="ml-1 inline-block h-5 w-[2px] animate-pulse bg-[#00ff41]/85 align-middle" /> : null}

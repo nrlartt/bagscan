@@ -149,6 +149,29 @@ export interface BagsClaimablePosition {
     userBps?: number | null;
 }
 
+export interface BagsOfficialTopToken {
+    tokenMint: string;
+    name?: string;
+    symbol?: string;
+    image?: string;
+    twitter?: string;
+    website?: string;
+    telegram?: string;
+    creatorUsername?: string;
+    creatorWallet?: string;
+    creatorPfp?: string;
+    creatorProvider?: string | null;
+    creatorProviderUsername?: string | null;
+    marketCap?: number;
+    fdvUsd?: number;
+    liquidityUsd?: number;
+    priceUsd?: number;
+    volume24hUsd?: number;
+    lifetimeFeesLamports?: string;
+    holderCount?: number;
+    createdAt?: string;
+}
+
 // ── Trade ────────────────────────────────────
 export interface BagsQuoteRequest {
     tokenMint?: string;

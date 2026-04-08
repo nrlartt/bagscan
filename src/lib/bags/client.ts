@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import bs58 from "bs58";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import type {
@@ -36,14 +38,29 @@ import type {
     BagsStartIncorporationResponse,
     HeliusAsset,
     BagsConfigType,
+    BagsOfficialTopToken,
 } from "./types";
 import { getBagsSdk } from "./sdk";
 import { getRpcUrl, SOL_MINT } from "@/lib/solana";
+
+export type BagsFetchStatus = "ok" | "missing" | "rate_limited" | "error";
+
+export interface BagsFetchResult<T> {
+    status: BagsFetchStatus;
+    data: T;
+    error?: string;
+}
 
 const BASE = () => {
     const url = process.env.BAGS_API_BASE_URL || "https://public-api-v2.bags.fm/api/v1";
     return url.endsWith("/") ? url.slice(0, -1) : url;
 };
+
+const OFFICIAL_TOP_TOKENS_SNAPSHOT_PATH = join(process.cwd(), ".cache", "official-bags-top-tokens.json");
+const OFFICIAL_TOP_TOKENS_CACHE_TTL_MS = 5 * 60_000;
+const OFFICIAL_TOP_TOKENS_STALE_TTL_MS = 60 * 60_000;
+
+let officialTopTokensCache: { ts: number; tokens: BagsOfficialTopToken[] } | null = null;
 
 function headers(): HeadersInit {
     const h: Record<string, string> = {
@@ -179,6 +196,48 @@ function wait(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function readOfficialTopTokensSnapshot() {
+    try {
+        const raw = await readFile(OFFICIAL_TOP_TOKENS_SNAPSHOT_PATH, "utf8");
+        const parsed = JSON.parse(raw) as {
+            fetchedAt?: string;
+            tokens?: BagsOfficialTopToken[];
+        };
+        if (!Array.isArray(parsed.tokens) || parsed.tokens.length === 0) return null;
+        const fetchedAt = parsed.fetchedAt ? new Date(parsed.fetchedAt).getTime() : 0;
+        if (!Number.isFinite(fetchedAt) || Date.now() - fetchedAt > OFFICIAL_TOP_TOKENS_STALE_TTL_MS) {
+            return null;
+        }
+
+        return {
+            ts: fetchedAt,
+            tokens: parsed.tokens,
+        };
+    } catch {
+        return null;
+    }
+}
+
+async function writeOfficialTopTokensSnapshot(tokens: BagsOfficialTopToken[]) {
+    try {
+        await mkdir(dirname(OFFICIAL_TOP_TOKENS_SNAPSHOT_PATH), { recursive: true });
+        await writeFile(
+            OFFICIAL_TOP_TOKENS_SNAPSHOT_PATH,
+            JSON.stringify(
+                {
+                    fetchedAt: new Date().toISOString(),
+                    tokens,
+                },
+                null,
+                2
+            ),
+            "utf8"
+        );
+    } catch {
+        // Snapshot writes are best-effort only.
+    }
+}
+
 function getApiErrorDetail(error: unknown) {
     if (!error || typeof error !== "object") return error instanceof Error ? error.message : String(error);
 
@@ -199,6 +258,22 @@ function getApiErrorDetail(error: unknown) {
     }
 
     return maybeError.message ?? String(error);
+}
+
+function classifyBagsFetchError(error: unknown): BagsFetchStatus {
+    const detail = getApiErrorDetail(error).toLowerCase();
+    if (detail.includes("rate limit") || detail.includes("429") || detail.includes("throttl")) {
+        return "rate_limited";
+    }
+    return "error";
+}
+
+function buildFetchErrorResult<T>(error: unknown, fallback: T): BagsFetchResult<T> {
+    return {
+        status: classifyBagsFetchError(error),
+        data: fallback,
+        error: getApiErrorDetail(error),
+    };
 }
 
 function buildTxBlockhash(tx: VersionedTransaction) {
@@ -326,13 +401,22 @@ export async function getBagsPools(): Promise<BagsPool[]> {
 }
 
 export async function getBagsPoolInfo(tokenMint: string): Promise<BagsPoolInfo | null> {
+    const result = await getBagsPoolInfoWithStatus(tokenMint);
+    return result.data;
+}
+
+export async function getBagsPoolInfoWithStatus(tokenMint: string): Promise<BagsFetchResult<BagsPoolInfo | null>> {
     try {
-        return await bagsGet<BagsPoolInfo>(
+        const poolInfo = await bagsGet<BagsPoolInfo>(
             `/solana/bags/pools/token-mint?tokenMint=${tokenMint}`,
             { revalidate: 60 }
         );
-    } catch {
-        return null;
+        return {
+            status: poolInfo ? "ok" : "missing",
+            data: poolInfo ?? null,
+        };
+    } catch (error) {
+        return buildFetchErrorResult(error, null);
     }
 }
 
@@ -349,11 +433,20 @@ export async function getBagsPool(tokenMint: string): Promise<BagsPool | null> {
 }
 
 export async function getCreatorsV3(tokenMint: string): Promise<BagsCreatorV3[]> {
+    const result = await getCreatorsV3WithStatus(tokenMint);
+    return result.data;
+}
+
+export async function getCreatorsV3WithStatus(tokenMint: string): Promise<BagsFetchResult<BagsCreatorV3[]>> {
     try {
         const creators = await getBagsSdk().state.getTokenCreators(toPublicKey(tokenMint, "token mint"));
-        return creators.map(normalizeCreator);
-    } catch {
-        return [];
+        const normalized = creators.map(normalizeCreator);
+        return {
+            status: normalized.length > 0 ? "ok" : "missing",
+            data: normalized,
+        };
+    } catch (error) {
+        return buildFetchErrorResult(error, []);
     }
 }
 
@@ -381,20 +474,38 @@ export async function getCreatorInfo(tokenMint: string): Promise<BagsCreatorResp
 }
 
 export async function getLifetimeFees(tokenMint: string): Promise<string | null> {
+    const result = await getLifetimeFeesWithStatus(tokenMint);
+    return result.data;
+}
+
+export async function getLifetimeFeesWithStatus(tokenMint: string): Promise<BagsFetchResult<string | null>> {
     try {
         const lamports = await getBagsSdk().state.getTokenLifetimeFees(toPublicKey(tokenMint, "token mint"));
-        return String(lamports);
-    } catch {
-        return null;
+        const serialized = String(lamports);
+        return {
+            status: serialized ? "ok" : "missing",
+            data: serialized,
+        };
+    } catch (error) {
+        return buildFetchErrorResult(error, null);
     }
 }
 
 export async function getClaimStatsDetailed(tokenMint: string): Promise<BagsClaimStatEntry[]> {
+    const result = await getClaimStatsDetailedWithStatus(tokenMint);
+    return result.data;
+}
+
+export async function getClaimStatsDetailedWithStatus(tokenMint: string): Promise<BagsFetchResult<BagsClaimStatEntry[]>> {
     try {
         const stats = await getBagsSdk().state.getTokenClaimStats(toPublicKey(tokenMint, "token mint"));
-        return stats.map(normalizeClaimStatEntry);
-    } catch {
-        return [];
+        const normalized = stats.map(normalizeClaimStatEntry);
+        return {
+            status: normalized.length > 0 ? "ok" : "missing",
+            data: normalized,
+        };
+    } catch (error) {
+        return buildFetchErrorResult(error, []);
     }
 }
 
@@ -412,6 +523,72 @@ export async function getClaimStats(tokenMint: string): Promise<BagsClaimStatsRe
         };
     } catch {
         return null;
+    }
+}
+
+export async function getOfficialTopTokensByLifetimeFees(): Promise<BagsOfficialTopToken[]> {
+    if (officialTopTokensCache && Date.now() - officialTopTokensCache.ts < OFFICIAL_TOP_TOKENS_CACHE_TTL_MS) {
+        return officialTopTokensCache.tokens;
+    }
+
+    try {
+        const items = await getBagsSdk().state.getTopTokensByLifetimeFees();
+        const tokens = items.map((item) => {
+            const tokenInfo = item.tokenInfo;
+            const primaryCreator =
+                item.creators?.find((creator) => creator.isCreator) ??
+                item.creators?.find((creator) => creator.isAdmin) ??
+                item.creators?.[0] ??
+                null;
+            const stats24h = tokenInfo?.stats24h;
+            const officialVolume24hUsd =
+                stats24h && (stats24h.buyVolume !== undefined || stats24h.sellVolume !== undefined)
+                    ? (stats24h.buyVolume ?? 0) + (stats24h.sellVolume ?? 0)
+                    : undefined;
+
+            return {
+                tokenMint: item.token,
+                name: tokenInfo?.name,
+                symbol: tokenInfo?.symbol,
+                image: tokenInfo?.icon,
+                twitter: tokenInfo?.twitter,
+                website: tokenInfo?.website,
+                telegram: tokenInfo?.telegram,
+                creatorUsername:
+                    primaryCreator?.providerUsername ??
+                    primaryCreator?.twitterUsername ??
+                    primaryCreator?.bagsUsername ??
+                    primaryCreator?.username ??
+                    undefined,
+                creatorWallet: primaryCreator?.wallet,
+                creatorPfp: primaryCreator?.pfp,
+                creatorProvider: primaryCreator?.provider ?? undefined,
+                creatorProviderUsername: primaryCreator?.providerUsername ?? undefined,
+                marketCap: tokenInfo?.mcap,
+                fdvUsd: tokenInfo?.fdv,
+                liquidityUsd: tokenInfo?.liquidity,
+                priceUsd: tokenInfo?.usdPrice ?? item.tokenLatestPrice?.priceUSD,
+                volume24hUsd: officialVolume24hUsd,
+                lifetimeFeesLamports: item.lifetimeFees,
+                holderCount: tokenInfo?.holderCount,
+                createdAt: tokenInfo?.firstPool?.createdAt,
+            } satisfies BagsOfficialTopToken;
+        });
+        officialTopTokensCache = { ts: Date.now(), tokens };
+        void writeOfficialTopTokensSnapshot(tokens);
+        return tokens;
+    } catch {
+        if (officialTopTokensCache?.tokens.length) {
+            return officialTopTokensCache.tokens;
+        }
+
+        const snapshot = await readOfficialTopTokensSnapshot();
+        if (snapshot) {
+            officialTopTokensCache = snapshot;
+            return snapshot.tokens;
+        }
+
+        return [];
     }
 }
 

@@ -71,7 +71,24 @@ export function isOpenClawTalkEnabled() {
 }
 
 function referencesActiveToken(message: string) {
-    return /\b(this token|that token|this coin|that coin|this project|that project|this one|that one|it)\b/i.test(message);
+    if (/\b(this token|that token|this coin|that coin|this project|that project|this one|that one)\b/i.test(message)) {
+        return true;
+    }
+
+    if (!/\b(it|its)\b/i.test(message)) {
+        return false;
+    }
+
+    if (/\b(best|strongest|highest|largest|biggest|most|oldest|earliest|first|newest|latest|freshest)\b/i.test(message) && /\b(token|coin|project)\b/i.test(message)) {
+        return false;
+    }
+
+    const wordCount = message.split(/\s+/).filter(Boolean).length;
+    if (wordCount > 8) {
+        return false;
+    }
+
+    return /\b(who created it|what fees has it earned|what fees did it earn|tell me about it|show me its|when was it created|what are its|show its)\b/i.test(message);
 }
 
 function extractExplicitTokenReference(message: string) {
@@ -170,6 +187,7 @@ function compactReply(reply: TalkReply) {
         intent: reply.intent,
         title: reply.title,
         summary: reply.summary,
+        priorityNotice: reply.priorityNotice,
         bullets: reply.bullets.slice(0, 5),
         cards: reply.cards.slice(0, 3).map((card) => ({
             id: card.id,
@@ -212,6 +230,7 @@ function buildClarificationReply(context?: TalkContext): TalkReply {
 
 function shouldBypassOpenClaw(groundedReply: TalkReply) {
     return (
+        groundedReply.intent === "token" ||
         groundedReply.title === "WHICH TOKEN?" ||
         groundedReply.title === "TOKEN NOT FOUND" ||
         groundedReply.title === "OFFICIAL TOKEN NOT FOUND" ||
@@ -332,6 +351,7 @@ function sanitizeReply(raw: unknown, fallbackContext?: TalkContext): TalkReply {
         intent: validIntents.includes(candidate.intent as TalkIntent) ? (candidate.intent as TalkIntent) : "overview",
         title: candidate.title ? String(candidate.title) : "TALK TO BAGS",
         summary: candidate.summary ? String(candidate.summary) : "Official BAGS response.",
+        priorityNotice: candidate.priorityNotice ? String(candidate.priorityNotice) : undefined,
         bullets: Array.isArray(candidate.bullets) ? candidate.bullets.slice(0, 5).map(String) : [],
         cards: Array.isArray(candidate.cards)
             ? candidate.cards
@@ -371,6 +391,7 @@ function mergeReplies(groundedReply: TalkReply, modelReply: TalkReply): TalkRepl
         intent: groundedReply.intent,
         title,
         summary,
+        priorityNotice: groundedReply.priorityNotice ?? modelReply.priorityNotice,
         bullets,
         cards,
         actions,

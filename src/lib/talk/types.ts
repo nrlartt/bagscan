@@ -40,6 +40,16 @@ export interface TalkContext {
     lastIntent?: TalkIntent;
 }
 
+export interface TalkAccessState {
+    wallet: string;
+    eligible: boolean;
+    mint: string;
+    balanceUi: string;
+    requiredUi: string;
+    shortfallUi: string;
+    checkedAt: string;
+}
+
 export interface TalkHistoryTurn {
     role: "user" | "assistant";
     content: string;
@@ -51,6 +61,7 @@ export interface TalkReply {
     intent: TalkIntent;
     title: string;
     summary: string;
+    priorityNotice?: string;
     bullets: string[];
     cards: TalkCard[];
     actions: TalkAction[];

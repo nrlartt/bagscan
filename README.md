@@ -1,66 +1,249 @@
+<div align="center">
+
 # BagScan
 
-BagScan is a full-stack, Next.js 14+ based web application serving as a highly polished, Bags-native token discovery and launch terminal. It allows users to browse Bags tokens, view robust analytics like fees and claims, instantly generate cross-chain token buy transactions, and launch new tokens with customizable fee-sharing directly integrated with Bags.
+### Solana discovery, Bags-native execution
+
+BagScan is a premium discovery and launch terminal for the Bags ecosystem, with Solana-native wallet flows, official Bags SDK integration, alerts, portfolio tracking, and a growing assistant layer.
+
+[![Next.js](https://img.shields.io/badge/Next.js-16.1.6-0b0b0b?style=flat-square)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.2.3-0b0b0b?style=flat-square)](https://react.dev/)
+[![Bags SDK](https://img.shields.io/badge/Bags_SDK-1.3.5-0b0b0b?style=flat-square)](https://www.npmjs.com/package/@bagsfm/bags-sdk)
+[![License: MIT](https://img.shields.io/badge/License-MIT-0b0b0b?style=flat-square)](./LICENSE)
+[![Live App](https://img.shields.io/badge/Live-bagscan.app-0b0b0b?style=flat-square)](https://bagscan.app)
+
+`DISCOVER` `ALPHA` `AGENTS` `LAUNCH` `PORTFOLIO` `ALERTS`
+
+</div>
+
+---
+
+## What BagScan Does
+
+BagScan brings Bags market discovery, launch infrastructure, partner monetization, portfolio visibility, and notification workflows into one terminal.
+
+- Discover live Bags tokens through premium boards for trending, spotlight, new launches, hackathon, and leaderboard views.
+- Launch tokens through the official Bags SDK with fee sharing, admin settings, company incorporation support, and safer transaction handling.
+- Track holdings, estimated PnL, and claimable fee positions from a wallet-native portfolio surface.
+- Deliver in-app, browser, Telegram, and Telegram group alert flows through a server-backed notification engine.
+- Surface the Bags Hackathon ecosystem through dedicated boards for apps, AI agents, accepted projects, and category slices.
+- Run `Talk To Bags` as a private-beta assistant layer backed by official Bags data and OpenClaw orchestration.
+
+## Product Surface
+
+| Surface | Purpose |
+| --- | --- |
+| `Discover` | Bags token boards, market slices, spotlight, and hackathon views |
+| `Alpha` | Higher-conviction monitoring and premium Bags market views |
+| `Agents` | Bags Hackathon AI agents directory with tokenized project enrichment |
+| `Launch` | Token launch flow with official Bags SDK integration |
+| `Portfolio` | Wallet-native holdings, fees, and PnL visibility |
+| `Alerts` | In-app, browser, Telegram, and group broadcast notifications |
+| `Talk To Bags` | Private-beta assistant for official Bags-backed answers |
+
+## Architecture
+
+### High-Level System
+
+```mermaid
+flowchart LR
+    U[User Wallet + Browser] --> W[BagScan Web App]
+    W --> A[App Router + API Routes]
+    A --> B[Bags SDK 1.3.5]
+    A --> C[Official Bags API]
+    A --> D[Solana RPC / Helius]
+    A --> E[PostgreSQL / Prisma]
+    A --> F[Alerts Runtime]
+    F --> G[Telegram / Browser Push / In-App]
+    A --> H[OpenClaw]
+    H --> T[Talk To Bags Private Beta]
+```
+
+### Discovery And Execution Model
+
+```mermaid
+flowchart TD
+    Market[Live Bags market data] --> Discover[Discover boards]
+    Market --> Alpha[Alpha views]
+    Market --> Agents[Agents directory]
+    Market --> Talk[Talk To Bags]
+
+    Wallet[Wallet session] --> Portfolio[Portfolio]
+    Wallet --> Launch[Launch flow]
+    Wallet --> Alerts[Alerts engine]
+
+    Launch --> BagsSDK[Official Bags SDK]
+    BagsSDK --> BagsChain[Bags + Solana execution]
+
+    Alerts --> NotificationCenter[Notification Center]
+    Alerts --> Telegram[Telegram delivery]
+    Alerts --> Push[Browser push]
+```
+
+### Launch Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Launch UI
+    participant API as BagScan API
+    participant SDK as Bags SDK
+    participant Solana as Solana / Bags
+
+    User->>UI: Fill metadata, settings, fees, admin, company
+    UI->>API: Create metadata + fee config
+    API->>SDK: Prepare official launch payload
+    SDK->>Solana: Build launch transaction(s)
+    Solana-->>API: Return serialized tx / execution state
+    API-->>UI: Review-ready transaction flow
+    User->>UI: Sign and confirm
+    UI->>API: Submit signed transaction
+    API->>Solana: Broadcast + confirm
+    Solana-->>UI: Launch complete
+```
+
+### Alerts Delivery
+
+```mermaid
+flowchart LR
+    Engine[Alert evaluation engine] --> Inbox[In-app inbox]
+    Engine --> Push[Browser push]
+    Engine --> TG[Telegram direct alerts]
+    Engine --> Group[Telegram group broadcasts]
+    Cron[External cron backup] --> Engine
+    Runtime[Internal runtime] --> Engine
+```
+
+## Core Capabilities
+
+### Discovery
+
+- Premium terminal UI across trending, spotlight, new launches, hackathon, and leaderboard surfaces
+- Official Bags market data blended with Bags-native discovery workflows
+- AI Agents directory sourced from the Bags Hackathon category
+- Curated spotlight rotation and current-pulse presentation
+
+### Launch
+
+- Official Bags SDK `1.3.5` integration
+- Fee sharing and admin configuration
+- Partner fee configuration support
+- Company incorporation support in the launch flow
+- Safer transaction confirmation and retry handling
+
+### Portfolio And Alerts
+
+- Wallet portfolio panel and full portfolio page
+- Cost-basis-aware PnL work completed in product flows
+- In-app inbox, browser push, Telegram direct alerts
+- Telegram group broadcast targets
+- Internal runtime plus external cron backup
+
+### Talk To Bags
+
+- Private beta / internal development surface
+- OpenClaw orchestration layer
+- Grounded around official Bags-backed responses
+- Not fully published yet; kept behind a feature flag while being hardened
 
 ## Tech Stack
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS V4
-- **Database**: Prisma + SQLite (local development)
-- **Wallet**: Solana Wallet Adapter
-- **State/Fetching**: TanStack Query
-- **Charts**: Recharts
 
-## Setup Instructions
+- `Next.js 16`
+- `React 19`
+- `TypeScript`
+- `Tailwind CSS v4`
+- `Prisma`
+- `PostgreSQL`
+- `@bagsfm/bags-sdk 1.3.5`
+- `Solana Wallet Adapter`
+- `TanStack Query`
+- `Recharts`
+- `web-push`
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+## Local Development
 
-2. Generate Prisma Client and apply migrations:
-   (This creates your local `dev.db` SQLite database)
-   ```bash
-   npx prisma generate
-   npx prisma migrate dev
-   ```
+### 1. Install
 
-3. Configure Environment Variables:
-   Copy `.env.example` to `.env` if it doesn't exist, and fill in your variables.
-   ```bash
-   cp .env.example .env
-   ```
-   **Important Variables:**
-   - `DATABASE_URL`: Path to your database.
-   - `NEXT_PUBLIC_SOLANA_RPC_URL`: Mainnet beta RPC URL because swap logic requires live connection to Solana.
-   - `BAGS_API_KEY`: Required string from your Bags developer account to access /v1 endpoints.
-   - `BAGSCAN_ADMIN_SECRET`: Your customized password to access `/partner` dashboard.
-   - `BAGSCAN_AGENT_API_KEY`: Shared secret for OpenClaw/SolClaw access to `/api/agent/v1/*`.
+```bash
+npm install
+```
 
-4. Run the development server:
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000)
+### 2. Configure Environment
 
-## How BagScan Monetizes
-BagScan is fully integrated with the Bags **Partner Configuration**. 
+Copy `.env.example` into `.env` and fill in the required values:
 
-1. Within your `.env`, you must provide a `BAGSCAN_PARTNER_WALLET` and a `BAGSCAN_PARTNER_CONFIG`.
-2. When any user visits the `/launch` page and creates a Token through BagScan, the UI includes a default-enabled toggle for "BagScan Partner Fee". 
-3. If this toggle is on, the BagScan backend automatically injects the exact `BAGSCAN_PARTNER_WALLET` and `BAGSCAN_PARTNER_CONFIG` into the `POST /api/launch/fee-share-config` request proxied to Bags.
-4. Bags creates an on-chain fee splitting config including your partner details. Later, as this token trades, fees are attributed to your Partner account.
-5. The admin can log in to `/partner` (using `BAGSCAN_ADMIN_SECRET`) to view partner revenue and generate a claim transaction to withdraw claimable partner fees direct to their wallet!
+```bash
+cp .env.example .env
+```
 
-## OpenClaw / SolClaw Integration
-BagScan provides a secured agent API under `/api/agent/v1/*` so chat-based agents can quote, prepare swaps, broadcast signed transactions, launch tokens, and read alpha feed data.
+Most important variables:
 
-Integration guide:
-- `docs/OPENCLAW_INTEGRATION.md`
-- Hosted skill file for agent bootstrapping: `/skill.md`
-- Human-facing setup UI: `/agents`
+- `DATABASE_URL`
+- `NEXT_PUBLIC_SOLANA_RPC_URL`
+- `HELIUS_API_KEY`
+- `BAGS_API_KEY`
+- `ALERTS_SESSION_SECRET`
+- `ALERTS_CRON_SECRET`
+- `TELEGRAM_BOT_TOKEN`
 
-## Known Limitations
-1. **Wallet Ecosystem**: It only natively integrates Solana wallets at this time. Users from other ecosystems must use a compatible Solana wallet (e.g. Phantom, Solflare).
-2. **Chart Snapshots Limit**: BagScan does not run a background cron service right now. Chart plotting depends on user-driven read requests ("snapshot on read"). If a token page is not visited for a long time, the chart will have gaps or sparse points. 
-3. **Price/Supply Fallbacks**: In cases where Bags does not return standard `totalSupply` or `tokenPrice`, the platform gracefully falls back to displaying 'Unavailable' for FDV, rather than fake math representing incorrect Market Caps.
+### 3. Generate Prisma Client
+
+```bash
+npx prisma generate
+```
+
+### 4. Push Schema
+
+```bash
+npm run db:push
+```
+
+### 5. Secure Public Tables
+
+If your environment creates Prisma tables in the Supabase `public` schema, run:
+
+```bash
+npm run db:secure:public
+```
+
+See [docs/SUPABASE_SECURITY_HARDENING.md](./docs/SUPABASE_SECURITY_HARDENING.md) for details.
+
+### 6. Start The App
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+## Environment Notes
+
+- `ENABLE_INTERNAL_ALERTS_RUNTIME="true"` enables the server-side alert runtime.
+- External cron for `/api/alerts/cron` can remain enabled as a backup.
+- `Talk To Bags` is published behind an on-chain holder gate and currently requires a wallet holding at least `2.5M $SCAN`.
+
+## Security
+
+BagScan is designed primarily around server-side access to application data. Internal Prisma tables currently use RLS hardening when created in Supabase `public`, and the longer-term direction is to keep internal data in non-exposed schemas.
+
+- Read the security process in [SECURITY.md](./SECURITY.md)
+- Read the Supabase hardening notes in [docs/SUPABASE_SECURITY_HARDENING.md](./docs/SUPABASE_SECURITY_HARDENING.md)
+
+## Contributing
+
+Contributions are welcome. Before opening large changes, please describe the intended direction in an issue or discussion so the discovery, launch, and alert surfaces stay coherent.
+
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
+
+## Roadmap Direction
+
+Near-term focus areas:
+
+- Hardening `Talk To Bags` until it is ready for public release
+- Continuing Bags-native launch reliability improvements
+- Expanding assistant and notification workflows
+- Improving Solana-wide discovery without losing Bags-native execution depth
+
+## License
+
+This project is licensed under the [MIT License](./LICENSE).

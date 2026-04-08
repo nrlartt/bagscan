@@ -137,3 +137,24 @@ CREATE TABLE IF NOT EXISTS "TelegramBotState" (
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "TelegramBotState_pkey" PRIMARY KEY ("key")
 );
+
+DO $$
+DECLARE
+    table_name TEXT;
+    alert_tables CONSTANT TEXT[] := ARRAY[
+        'AlertPreference',
+        'PushSubscription',
+        'AlertNotification',
+        'TelegramBroadcastTarget',
+        'TelegramBotState'
+    ];
+BEGIN
+    FOREACH table_name IN ARRAY alert_tables LOOP
+        IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
+            EXECUTE format(
+                'ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',
+                table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
