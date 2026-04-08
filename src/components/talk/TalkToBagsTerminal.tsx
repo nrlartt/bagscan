@@ -19,6 +19,7 @@ import {
 import type { TalkAccessState, TalkContext, TalkHistoryTurn, TalkReply, TalkResponse, TalkStreamEvent, TalkStreamPhase } from "@/lib/talk/types";
 import { cn, shortenAddress } from "@/lib/utils";
 import { TALK_SCAN_MINT } from "@/lib/talk/access";
+import { BubbleMapInline } from "@/components/bagscan/BubbleMapEmbed";
 
 type ChatMessage =
     | { id: string; role: "user"; content: string; timestamp: string }
@@ -900,7 +901,8 @@ function AssistantBubble({
     const summaryTyping = useTypewriter(reply.summary, shouldAnimate, 11, shouldAnimate ? Math.max(180, reply.title.length * 18 * 0.55) : 0);
     const [visibleBullets, setVisibleBullets] = useState(shouldAnimate ? 0 : reply.bullets.length);
     const [detailsReady, setDetailsReady] = useState(!shouldAnimate);
-    const [detailsOpen, setDetailsOpen] = useState(false);
+    const hasBubbleMapCard = reply.cards.some((card) => card.kind === "bubblemap");
+    const [detailsOpen, setDetailsOpen] = useState(hasBubbleMapCard);
 
     useEffect(() => {
         if (!shouldAnimate) return;
@@ -1035,6 +1037,10 @@ function AssistantBubble({
 }
 
 function ResultCard({ card }: { card: TalkReply["cards"][number] }) {
+    if (card.kind === "bubblemap" && card.mint) {
+        return <BubbleMapInline mint={card.mint} symbol={card.symbol} />;
+    }
+
     const content = (
         <div className="border border-white/10 bg-black/60 p-4 transition-all hover:border-[#00ff41]/22 hover:bg-[#00ff41]/[0.03]">
             <div className="flex items-start justify-between gap-3">

@@ -13,6 +13,7 @@ import {
     getLifetimeFeesWithStatus,
     getOfficialTopTokensByLifetimeFees,
     type HackathonApp,
+    type BagsFetchStatus,
     type BagsFetchResult,
 } from "@/lib/bags/client";
 import type { BagsClaimStatEntry, BagsCreatorV3, BagsOfficialTopToken, BagsPool } from "@/lib/bags/types";
@@ -140,7 +141,9 @@ let officialPoolsCache: { pools: OfficialPoolView[]; ts: number } | null = null;
 let officialHackathonCache: { feed: OfficialHackathonFeed; ts: number } | null = null;
 let officialLeaderboardCache: { tokens: OfficialLeaderboardView[]; ts: number } | null = null;
 let dexBagsBoardCache: { pairs: DexBagsBoardEntry[]; ts: number } | null = null;
-const TOKEN_DETAIL_TTL_MS = 90_000;
+const TOKEN_DETAIL_OK_TTL_MS = 90_000;
+const TOKEN_DETAIL_MISSING_TTL_MS = 30_000;
+const TOKEN_DETAIL_STALE_FALLBACK_TTL_MS = 15 * 60_000;
 const INVESTMENT_NOTICE = "NOT FINANCIAL ADVICE // OPENCLAW MARKET SCREEN";
 
 interface OfficialLeaderboardView extends OfficialPoolView {
@@ -248,6 +251,28 @@ function metric(label: string, value: string, tone?: TalkMetric["tone"]): TalkMe
 
 function action(label: string, href: string, tone: TalkAction["tone"] = "default"): TalkAction {
     return { label, href, tone };
+}
+
+function missingFetchResult<T>(data: T): BagsFetchResult<T> {
+    return {
+        status: "missing",
+        data,
+        source: "live",
+    };
+}
+
+function liveFetchResult<T>(result: BagsFetchResult<T>): BagsFetchResult<T> {
+    return {
+        ...result,
+        source: result.source === "stale" ? "stale" : "live",
+    };
+}
+
+function staleFetchResult<T>(result: BagsFetchResult<T>): BagsFetchResult<T> {
+    return {
+        ...result,
+        source: "stale",
+    };
 }
 
 function formatAgeLabel(value?: string) {
@@ -754,7 +779,8 @@ async function readCachedTokenDetail<T>(
     loader: () => Promise<BagsFetchResult<T>>
 ) {
     const cached = cache.get(tokenMint);
-    if (cached && Date.now() - cached.ts < TOKEN_DETAIL_TTL_MS) {
+    const cachedAge = cached ? Date.now() - cached.ts : Number.POSITIVE_INFINITY;
+    if (cached && cachedAge < getTokenDetailCacheTtl(cached.result.status)) {
         return cached.result;
     }
 
@@ -765,9 +791,30 @@ async function readCachedTokenDetail<T>(
 
     const next = loader()
         .then((result) => {
-            cache.set(tokenMint, { ts: Date.now(), result });
+            const now = Date.now();
+            const normalizedResult = liveFetchResult(result);
+            const cacheTtl = getTokenDetailCacheTtl(normalizedResult.status);
+
+            if (cacheTtl > 0) {
+                cache.set(tokenMint, { ts: now, result: normalizedResult });
+                inflight.delete(tokenMint);
+                return normalizedResult;
+            }
+
+            const previous = cache.get(tokenMint);
+            const previousAge = previous ? now - previous.ts : Number.POSITIVE_INFINITY;
+            if (
+                (normalizedResult.status === "rate_limited" || normalizedResult.status === "error") &&
+                previous &&
+                previous.result.status === "ok" &&
+                previousAge < TOKEN_DETAIL_STALE_FALLBACK_TTL_MS
+            ) {
+                inflight.delete(tokenMint);
+                return staleFetchResult(previous.result);
+            }
+
             inflight.delete(tokenMint);
-            return result;
+            return normalizedResult;
         })
         .catch((error) => {
             inflight.delete(tokenMint);
@@ -776,6 +823,17 @@ async function readCachedTokenDetail<T>(
 
     inflight.set(tokenMint, next);
     return next;
+}
+
+function getTokenDetailCacheTtl(status: BagsFetchStatus) {
+    switch (status) {
+        case "ok":
+            return TOKEN_DETAIL_OK_TTL_MS;
+        case "missing":
+            return TOKEN_DETAIL_MISSING_TTL_MS;
+        default:
+            return 0;
+    }
 }
 
 async function loadTokenPoolInfo(tokenMint: string) {
@@ -840,6 +898,20 @@ function buildOfficialPoolCard(pool: OfficialPoolView, eyebrow?: string): TalkCa
         description: truncate(pool.description) ?? "Official BAGS pool data",
         href: getBagsTokenHref(pool.tokenMint),
         metrics: metrics.slice(0, 4),
+    };
+}
+
+function buildBubbleMapTalkCard(pool: OfficialPoolView): TalkCard {
+    return {
+        id: `${pool.tokenMint}-bubblemap`,
+        kind: "bubblemap",
+        mint: pool.tokenMint,
+        symbol: pool.symbol,
+        title: "Holder Bubblemap",
+        subtitle: pool.symbol ? `$${pool.symbol}` : shortenAddress(pool.tokenMint, 5),
+        eyebrow: "VISUAL",
+        description: `Live holder clusters for ${pool.name ?? pool.symbol ?? "the resolved token"} on Solana.`,
+        href: `https://app.bubblemaps.io/sol/token/${pool.tokenMint}`,
     };
 }
 
@@ -1226,7 +1298,14 @@ function getMissingMessage(subject: string) {
     return `The official BAGS ${subject} endpoint did not return a value for this token.`;
 }
 
+function getStaleSnapshotMessage(subject: string) {
+    return `Using the most recent verified official BAGS ${subject} snapshot because the live endpoint is temporarily busy.`;
+}
+
 function buildDataAvailabilityLine(subject: string, result: BagsFetchResult<unknown>) {
+    if (result.source === "stale") {
+        return getStaleSnapshotMessage(subject);
+    }
     if (result.status === "rate_limited") {
         return getRateLimitMessage(subject);
     }
@@ -1790,16 +1869,16 @@ async function buildTokenReply(
     const [poolInfoResult, creatorsResult, feesResult, claimStatsResult] = await Promise.all([
         shouldLoadPoolInfo
             ? loadTokenPoolInfo(pool.tokenMint)
-            : Promise.resolve({ status: "missing", data: null } satisfies BagsFetchResult<Awaited<ReturnType<typeof getBagsPoolInfo>>>),
+            : Promise.resolve(missingFetchResult<Awaited<ReturnType<typeof getBagsPoolInfo>>>(null)),
         shouldLoadCreators
             ? loadTokenCreators(pool.tokenMint)
-            : Promise.resolve({ status: "missing", data: [] } satisfies BagsFetchResult<Awaited<ReturnType<typeof getCreatorsV3>>>),
+            : Promise.resolve(missingFetchResult<Awaited<ReturnType<typeof getCreatorsV3>>>([])),
         shouldLoadFees
             ? loadTokenLifetimeFees(pool.tokenMint)
-            : Promise.resolve({ status: "missing", data: null } satisfies BagsFetchResult<Awaited<ReturnType<typeof getLifetimeFees>>>),
+            : Promise.resolve(missingFetchResult<Awaited<ReturnType<typeof getLifetimeFees>>>(null)),
         shouldLoadClaims
             ? loadTokenClaimStats(pool.tokenMint)
-            : Promise.resolve({ status: "missing", data: [] } satisfies BagsFetchResult<Awaited<ReturnType<typeof getClaimStatsDetailed>>>),
+            : Promise.resolve(missingFetchResult<Awaited<ReturnType<typeof getClaimStatsDetailed>>>([])),
     ]);
 
     const primaryCreator = getPrimaryCreator(creatorsResult.data);
@@ -1822,7 +1901,10 @@ async function buildTokenReply(
         matchedViaProjectAlias && pool.symbol
             ? `Your query matched the official project name ${pool.name}; the official BAGS token symbol for this pool is $${pool.symbol}.`
             : undefined;
-    const baseCards: TalkCard[] = [buildOfficialPoolCard(pool, "Official pool")];
+    const baseCards: TalkCard[] = [
+        buildOfficialPoolCard(pool, "Official pool"),
+        buildBubbleMapTalkCard(pool),
+    ];
     const baseActions: TalkAction[] = [action("Open BAGS Token", getBagsTokenHref(pool.tokenMint), "info")];
 
     if (socials.website) baseActions.push(action("Open Website", socials.website));
@@ -1834,12 +1916,15 @@ async function buildTokenReply(
             intent: "token",
             title: creatorLabel ? `${identity} // CREATOR` : `${identity} // CREATOR CHECK`,
             summary: primaryCreator
-                ? `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} was created by ${creatorLabel} on BAGS.`
+                ? creatorsResult.source === "stale"
+                    ? `Using the most recent verified official creator snapshot, ${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} was created by ${creatorLabel} on BAGS.`
+                    : `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} was created by ${creatorLabel} on BAGS.`
                 : creatorsResult.status === "rate_limited"
                     ? `I resolved ${identity}, but the official creator endpoint is rate-limited right now.`
                     : `I resolved ${identity}, but the official creator endpoint does not currently expose a creator profile for it.`,
             bullets: [
                 ...(aliasResolutionLine ? [aliasResolutionLine] : []),
+                ...(creatorsResult.source === "stale" ? [getStaleSnapshotMessage("creator")] : []),
                 ...(primaryCreator
                     ? [
                         `Creator wallet: ${shortenAddress(primaryCreator.wallet, 6)}.`,
@@ -1893,7 +1978,9 @@ async function buildTokenReply(
             title: `${identity} // FEES`,
             summary:
                 feesResult.status === "ok" && lifetimeFeesSol !== undefined
-                    ? `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} has earned ${formatSolAmount(lifetimeFeesSol)} in official lifetime fees on BAGS.`
+                    ? feesResult.source === "stale"
+                        ? `Using the most recent verified official fee snapshot, ${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} has earned ${formatSolAmount(lifetimeFeesSol)} in official lifetime fees on BAGS.`
+                        : `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} has earned ${formatSolAmount(lifetimeFeesSol)} in official lifetime fees on BAGS.`
                     : feesResult.status === "rate_limited"
                         ? `I resolved ${identity}, but the official lifetime-fees endpoint is rate-limited right now.`
                         : feesResult.status === "missing"
@@ -1901,9 +1988,11 @@ async function buildTokenReply(
                             : `I resolved ${identity}, but I could not verify official lifetime-fee data on this pass.`,
             bullets: [
                 ...(aliasResolutionLine ? [aliasResolutionLine] : []),
+                ...(feesResult.source === "stale" ? [getStaleSnapshotMessage("lifetime fees")] : []),
                 ...(feesResult.status === "ok" && lifetimeFeesSol !== undefined
                     ? [`Official lifetime fees currently read ${formatSolAmount(lifetimeFeesSol)}.`]
                     : [buildDataAvailabilityLine("lifetime fees", feesResult) ?? getMissingMessage("lifetime fees")]),
+                ...(claimStatsResult.source === "stale" ? [getStaleSnapshotMessage("claim stats")] : []),
                 ...(claimStatsResult.status === "ok"
                     ? [`Official claim stats show ${formatNumber(claimStats.length, false)} visible claimers with ${formatSolAmount(totalClaimedSol)} claimed in total.`]
                     : [buildDataAvailabilityLine("claim stats", claimStatsResult) ?? getMissingMessage("claim stats")]),
@@ -1941,7 +2030,9 @@ async function buildTokenReply(
             title: `${identity} // CLAIMS`,
             summary:
                 claimStatsResult.status === "ok"
-                    ? `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} shows ${formatNumber(claimStats.length, false)} visible claimers in official BAGS claim stats.`
+                    ? claimStatsResult.source === "stale"
+                        ? `Using the most recent verified official claims snapshot, ${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} shows ${formatNumber(claimStats.length, false)} visible claimers in official BAGS claim stats.`
+                        : `${identity}${pool.symbol ? ` ($${pool.symbol})` : ""} shows ${formatNumber(claimStats.length, false)} visible claimers in official BAGS claim stats.`
                     : claimStatsResult.status === "rate_limited"
                         ? `I resolved ${identity}, but the official claim-stats endpoint is rate-limited right now.`
                         : claimStatsResult.status === "missing"
@@ -1949,6 +2040,7 @@ async function buildTokenReply(
                             : `I resolved ${identity}, but I could not verify official claim stats on this pass.`,
             bullets: [
                 ...(aliasResolutionLine ? [aliasResolutionLine] : []),
+                ...(claimStatsResult.source === "stale" ? [getStaleSnapshotMessage("claim stats")] : []),
                 ...(claimStatsResult.status === "ok"
                     ? [
                         `Official claim stats currently show ${formatNumber(claimStats.length, false)} visible claimers.`,
@@ -2067,6 +2159,9 @@ async function buildTokenReply(
 
     if (rateLimitedOrErroredDetails > 0) {
         overviewBullets.push("Some official detail endpoints are temporarily limited, so this snapshot is intentionally lighter right now.");
+    }
+    if ([creatorsResult, feesResult, claimStatsResult, poolInfoResult].some((result) => result.source === "stale")) {
+        overviewBullets.push("Recent verified official snapshots were reused where live endpoints were temporarily busy.");
     }
 
     if (overviewBullets.length === 0) {

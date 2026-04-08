@@ -44,6 +44,8 @@ interface PoolEntry {
     symbol?: string;
     image?: string;
     twitter?: string;
+    projectTwitterHandle?: string;
+    projectTwitterFollowers?: number;
     priceUsd?: number;
     marketCap?: number;
     fdvUsd?: number;
@@ -51,6 +53,8 @@ interface PoolEntry {
     volume24hUsd?: number;
     creatorWallet?: string;
     creatorDisplay?: string;
+    provider?: string;
+    providerUsername?: string;
 }
 
 type DexPair = Awaited<ReturnType<typeof getDexScreenerPairs>>[number];
@@ -126,6 +130,8 @@ async function getAllPools(): Promise<PoolEntry[]> {
                     symbol: p.symbol,
                     image: p.image,
                     twitter: p.twitter,
+                    projectTwitterHandle: p.projectTwitterHandle,
+                    projectTwitterFollowers: Number(p.projectTwitterFollowers) || undefined,
                     priceUsd: Number(p.tokenPriceUsd) || Number(p.priceUsd) || undefined,
                     marketCap: undefined,
                     fdvUsd: Number(p.fdvUsd) || Number(p.fdv) || undefined,
@@ -133,6 +139,8 @@ async function getAllPools(): Promise<PoolEntry[]> {
                     volume24hUsd: Number(p.volume24hUsd) || Number(p.volume24h) || undefined,
                     creatorWallet: p.creatorWallet,
                     creatorDisplay: p.creatorDisplayName || p.creatorUsername,
+                    provider: typeof p.provider === "string" ? p.provider : undefined,
+                    providerUsername: typeof p.providerUsername === "string" ? p.providerUsername : undefined,
                 };
             })
             .filter((p): p is PoolEntry => p !== null);
@@ -158,6 +166,8 @@ function mergeBagsPoolMarketData(
         symbol: pool.symbol ?? token.symbol,
         image: pool.image ?? token.image,
         twitter: pool.twitter ?? token.twitter,
+        projectTwitterHandle: pool.projectTwitterHandle ?? token.projectTwitterHandle,
+        projectTwitterFollowers: pool.projectTwitterFollowers ?? token.projectTwitterFollowers,
         priceUsd: pool.priceUsd ?? token.priceUsd,
         marketCap: pool.marketCap ?? token.marketCap,
         fdvUsd: pool.fdvUsd ?? token.fdvUsd,
@@ -165,6 +175,27 @@ function mergeBagsPoolMarketData(
         volume24hUsd: pool.volume24hUsd ?? token.volume24hUsd,
         creatorWallet: pool.creatorWallet ?? token.creatorWallet,
         creatorDisplay: pool.creatorDisplay ?? token.creatorDisplay,
+        provider: pool.provider ?? token.provider,
+        providerUsername: pool.providerUsername ?? token.providerUsername,
+    };
+}
+
+function mergeHackathonSocialData(
+    token: NormalizedToken,
+    app?: Pick<EnrichedHackathonApp, "name" | "description" | "icon" | "twitterUrl" | "twitterHandle" | "twitterFollowers">
+): NormalizedToken {
+    if (!app) {
+        return token;
+    }
+
+    return {
+        ...token,
+        name: token.name ?? app.name,
+        description: token.description ?? app.description,
+        image: token.image ?? app.icon,
+        twitter: token.twitter ?? app.twitterUrl,
+        projectTwitterHandle: token.projectTwitterHandle ?? app.twitterHandle,
+        projectTwitterFollowers: token.projectTwitterFollowers ?? app.twitterFollowers,
     };
 }
 
@@ -1802,6 +1833,7 @@ export async function syncTokenDetail(
         holderCount,
         metadataMap,
         poolEntry,
+        hackathonApp,
     ] = await Promise.all([
         getCreatorsV3(tokenMint),
         getLifetimeFees(tokenMint),
@@ -1811,6 +1843,7 @@ export async function syncTokenDetail(
         getHeliusHolderCount(tokenMint),
         getTokenMetadataBatch([tokenMint]),
         getAllPools().then((pools) => pools.find((pool) => pool.tokenMint === tokenMint)).catch(() => undefined),
+        syncHackathonApps().then((apps) => apps.find((app) => app.tokenAddress === tokenMint)).catch(() => undefined),
     ]);
 
     const onChainMeta = metadataMap.get(tokenMint);
@@ -1836,6 +1869,7 @@ export async function syncTokenDetail(
 
     token = mergeHeliusData(token, heliusAsset);
     token = mergeBagsPoolMarketData(token, poolEntry);
+    token = mergeHackathonSocialData(token, hackathonApp);
     token = mergeDexScreenerData(token, dexPairs);
     token = mergeCreatorsV3(token, creators);
     token = mergeLifetimeFees(token, feesLamports, solPrice);

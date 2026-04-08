@@ -49,6 +49,7 @@ export interface BagsFetchResult<T> {
     status: BagsFetchStatus;
     data: T;
     error?: string;
+    source?: "live" | "stale";
 }
 
 const BASE = () => {

@@ -6,12 +6,15 @@ export interface TalkMetric {
 
 export interface TalkCard {
     id: string;
+    kind?: "default" | "bubblemap";
     title: string;
     subtitle?: string;
     eyebrow?: string;
     description?: string;
     href?: string;
     metrics?: TalkMetric[];
+    mint?: string;
+    symbol?: string;
 }
 
 export interface TalkAction {

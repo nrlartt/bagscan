@@ -10,6 +10,7 @@ import { ProviderBadge, CreatorBadge } from "@/components/bagscan/Badges";
 import { BuyWidget } from "@/components/bagscan/BuyWidget";
 import { ClaimEventsList } from "@/components/bagscan/ClaimEventsList";
 import { SnapshotChart } from "@/components/bagscan/SnapshotChart";
+import { BubbleMapEmbed } from "@/components/bagscan/BubbleMapEmbed";
 import { ErrorState } from "@/components/bagscan/States";
 import { DetailSkeleton } from "@/components/bagscan/Skeletons";
 import {
@@ -28,7 +29,7 @@ import type {
     BagsIncorporationProject,
 } from "@/lib/bags/types";
 import {
-    TrendingUp, Coins, Zap, Users, Globe, ExternalLink,
+    TrendingUp, Coins, Zap, Users, ExternalLink,
     DollarSign, BarChart3, Activity, ArrowUpDown, Percent,
     Layers, UserCheck, Twitter, ArrowLeft, Calendar, Building2,
 } from "lucide-react";
@@ -67,7 +68,7 @@ export default function TokenDetailPage() {
 
     if (isLoading) {
         return (
-            <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8">
+            <div className="mx-auto max-w-[92rem] px-4 py-8 sm:px-6 lg:px-8">
                 <DetailSkeleton />
             </div>
         );
@@ -75,7 +76,7 @@ export default function TokenDetailPage() {
 
     if (error || !data?.success || !data?.data?.token) {
         return (
-            <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8">
+            <div className="mx-auto max-w-[92rem] px-4 py-8 sm:px-6 lg:px-8">
                 <ErrorState
                     title="TOKEN NOT FOUND"
                     error={error ? String(error) : "This token could not be loaded."}
@@ -88,9 +89,60 @@ export default function TokenDetailPage() {
     const { token, claimEvents, snapshots, incorporation } = data.data;
     const priceChangePositive = (token.priceChange24h ?? 0) >= 0;
     const valuation = getValuationMetric(token);
+    const officialXHandle = getOfficialProjectXHandle(token);
+    const officialXUrl = officialXHandle ? `https://x.com/${officialXHandle}` : undefined;
+    const officialCreatorXHandle = getPrimaryCreatorXHandle(token);
+    const officialWebsiteUrl = normalizeExternalHref(token.website);
+    const officialTelegramUrl = normalizeTelegramHref(token.telegram);
+    const officialWebsiteHost = getWebsiteHost(token.website);
+    const officialProjectFollowers = token.projectTwitterFollowers ?? token.creatorFollowers;
+    const secondaryMetrics: Array<{
+        key: string;
+        label: string;
+        value: string;
+        subValue?: string;
+        icon: React.ReactNode;
+    }> = [];
+
+    if (token.liquidityUsd !== undefined) {
+        secondaryMetrics.push({
+            key: "liquidity",
+            label: "Liquidity",
+            value: formatCurrency(token.liquidityUsd),
+            icon: <BarChart3 className="w-5 h-5" />,
+        });
+    }
+
+    if (token.volume24hUsd !== undefined) {
+        secondaryMetrics.push({
+            key: "volume",
+            label: "24h Volume",
+            value: formatCurrency(token.volume24hUsd),
+            icon: <Activity className="w-5 h-5" />,
+        });
+    }
+
+    if (token.txCount24h !== undefined) {
+        secondaryMetrics.push({
+            key: "tx",
+            label: "24h Transactions",
+            value: formatNumber(token.txCount24h),
+            subValue: token.buyCount24h !== undefined ? `${token.buyCount24h}B / ${token.sellCount24h ?? 0}S` : undefined,
+            icon: <ArrowUpDown className="w-5 h-5" />,
+        });
+    }
+
+    if (token.holderCount !== undefined && token.holderCount > 0) {
+        secondaryMetrics.push({
+            key: "holders",
+            label: "Holders",
+            value: formatNumber(token.holderCount),
+            icon: <Users className="w-5 h-5" />,
+        });
+    }
 
     return (
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mx-auto max-w-[92rem] px-4 py-8 sm:px-6 lg:px-8">
             {/* Breadcrumb */}
             <div className="flex items-center gap-2 text-[10px] text-[#00ff41]/30 mb-6 animate-fade-in tracking-wider">
                 <Link href="/" className="flex items-center gap-1 hover:text-[#00ff41]/60 transition-colors">
@@ -101,9 +153,9 @@ export default function TokenDetailPage() {
                 <span className="text-[#00ff41]/50">{token.symbol ?? shortenAddress(mint)}</span>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.85fr)_minmax(320px,0.95fr)]">
                 {/* Left column */}
-                <div className="lg:col-span-2 space-y-6">
+                <div className="space-y-6">
                     {/* Hero */}
                     <div className="crt-panel p-6 animate-fade-in-scale">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
@@ -167,15 +219,20 @@ export default function TokenDetailPage() {
                                     <LinkChip href={getExplorerTokenUrl(token.tokenMint)} label="SOLSCAN" />
                                     <LinkChip href={`https://dexscreener.com/solana/${token.tokenMint}`} label="DEXSCREENER" />
                                     <LinkChip href={`https://bags.fm/${token.tokenMint}`} label="BAGS.FM" accent />
-                                    {token.twitterUsername && (
+                                    {officialXUrl && officialXHandle && (
                                         <a
-                                            href={`https://twitter.com/${token.twitterUsername}`}
+                                            href={officialXUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="inline-flex items-center gap-1 px-2 py-1 text-[10px] tracking-wider bg-[#00aaff]/10 hover:bg-[#00aaff]/20 text-[#00aaff]/60 hover:text-[#00aaff] transition-all border border-[#00aaff]/20"
                                         >
                                             <Twitter className="w-3 h-3" />
-                                            @{token.twitterUsername}
+                                            @{officialXHandle}
+                                            {officialProjectFollowers ? (
+                                                <span className="text-[#8dd8ff]/55">
+                                                    · {formatNumber(officialProjectFollowers)}
+                                                </span>
+                                            ) : null}
                                         </a>
                                     )}
                                 </div>
@@ -188,53 +245,53 @@ export default function TokenDetailPage() {
                         </div>
                     </div>
 
-                    {/* Primary metrics */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 stagger-children">
-                        <MetricCard
-                            label="Price"
-                            value={formatCurrency(token.priceUsd, { compact: false, decimals: 6 })}
-                            icon={<DollarSign className="w-5 h-5" />}
-                            subValue={token.priceChange24h !== undefined ? `${token.priceChange24h >= 0 ? "+" : ""}${token.priceChange24h.toFixed(1)}% 24h` : undefined}
-                        />
-                        <MetricCard
-                            label={valuation.longLabel}
-                            value={formatCurrency(valuation.value)}
-                            tooltip={valuation.source === "market-cap" ? "BagScan displays the official market cap when Bags provides it." : valuation.source === "fdv" ? "FDV fallback shown because official Bags market cap is unavailable." : undefined}
-                            icon={<TrendingUp className="w-5 h-5" />}
-                        />
-                        <MetricCard
-                            label="Lifetime Fees"
-                            value={formatCurrency(token.lifetimeFees)}
-                            subValue={token.lifetimeFeesSol !== undefined ? `${token.lifetimeFeesSol.toFixed(2)} SOL` : undefined}
-                            icon={<Coins className="w-5 h-5" />}
-                        />
-                        <MetricCard
-                            label="Fee Claimers"
-                            value={formatNumber(token.claimStats?.length ?? token.claimCount)}
-                            subValue={token.claimVolume ? `${formatCurrency(token.claimVolume)} claimed` : undefined}
-                            icon={<Zap className="w-5 h-5" />}
-                        />
-                    </div>
+                    <div className="crt-panel p-5 animate-fade-in">
+                        <div className="panel-header flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4 text-[#00ff41]/55" />
+                            ╔══ MARKET SNAPSHOT ══╗
+                        </div>
 
-                    {/* Secondary metrics */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 stagger-children">
-                        {token.liquidityUsd !== undefined && (
-                            <MetricCard label="Liquidity" value={formatCurrency(token.liquidityUsd)} icon={<BarChart3 className="w-5 h-5" />} />
-                        )}
-                        {token.volume24hUsd !== undefined && (
-                            <MetricCard label="24h Volume" value={formatCurrency(token.volume24hUsd)} icon={<Activity className="w-5 h-5" />} />
-                        )}
-                        {token.txCount24h !== undefined && (
+                        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             <MetricCard
-                                label="24h Transactions"
-                                value={formatNumber(token.txCount24h)}
-                                subValue={token.buyCount24h !== undefined ? `${token.buyCount24h}B / ${token.sellCount24h ?? 0}S` : undefined}
-                                icon={<ArrowUpDown className="w-5 h-5" />}
+                                label="Price"
+                                value={formatCurrency(token.priceUsd, { compact: false, decimals: 6 })}
+                                icon={<DollarSign className="w-5 h-5" />}
+                                subValue={token.priceChange24h !== undefined ? `${token.priceChange24h >= 0 ? "+" : ""}${token.priceChange24h.toFixed(1)}% 24h move` : undefined}
+                                className="min-h-[134px] border-[#00ff41]/20 bg-[linear-gradient(180deg,rgba(0,255,65,0.08),rgba(0,255,65,0.02))] shadow-[0_0_24px_rgba(0,255,65,0.05)] sm:min-h-[144px] xl:col-span-2"
                             />
-                        )}
-                        {token.holderCount !== undefined && token.holderCount > 0 && (
-                            <MetricCard label="Holders" value={formatNumber(token.holderCount)} icon={<Users className="w-5 h-5" />} />
-                        )}
+                            <MetricCard
+                                label={valuation.longLabel}
+                                value={formatCurrency(valuation.value)}
+                                tooltip={valuation.source === "market-cap" ? "BagScan displays the official market cap when Bags provides it." : valuation.source === "fdv" ? "FDV fallback shown because official Bags market cap is unavailable." : undefined}
+                                icon={<TrendingUp className="w-5 h-5" />}
+                                subValue={valuation.source === "market-cap" ? "Official Bags market cap" : valuation.source === "fdv" ? "FDV fallback surface" : undefined}
+                                className="min-h-[134px] border-[#00ff41]/18 bg-[linear-gradient(180deg,rgba(0,255,65,0.055),rgba(0,0,0,0.4))] sm:min-h-[144px] xl:col-span-2"
+                            />
+                            <MetricCard
+                                label="Lifetime Fees"
+                                value={formatCurrency(token.lifetimeFees)}
+                                subValue={token.lifetimeFeesSol !== undefined ? `${token.lifetimeFeesSol.toFixed(2)} SOL total` : undefined}
+                                icon={<Coins className="w-5 h-5" />}
+                                className="min-h-[120px]"
+                            />
+                            <MetricCard
+                                label="Fee Claimers"
+                                value={formatNumber(token.claimStats?.length ?? token.claimCount)}
+                                subValue={token.claimVolume ? `${formatCurrency(token.claimVolume)} claimed` : undefined}
+                                icon={<Zap className="w-5 h-5" />}
+                                className="min-h-[120px]"
+                            />
+                            {secondaryMetrics.map((item) => (
+                                <MetricCard
+                                    key={item.key}
+                                    label={item.label}
+                                    value={item.value}
+                                    subValue={item.subValue}
+                                    icon={item.icon}
+                                    className="min-h-[120px]"
+                                />
+                            ))}
+                        </div>
                     </div>
 
                     {/* Chart */}
@@ -245,6 +302,8 @@ export default function TokenDetailPage() {
                         </div>
                         <SnapshotChart data={snapshots} />
                     </div>
+
+                    <BubbleMapEmbed mint={token.tokenMint} symbol={token.symbol} />
 
                     {/* Fee Share Breakdown */}
                     {token.claimStats && token.claimStats.length > 0 && (
@@ -257,20 +316,86 @@ export default function TokenDetailPage() {
                         </div>
                     )}
 
-                    {/* Claim events */}
-                    <div className="crt-panel p-5 animate-fade-in">
-                        <div className="panel-header flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-[#ffaa00]/50" />
-                            ╔══ RECENT CLAIM EVENTS ══╗
-                        </div>
-                        <ClaimEventsList events={claimEvents} />
-                    </div>
                 </div>
 
                 {/* Right column */}
                 <div className="space-y-6">
                     <div className="animate-slide-in-right" style={{ animationDelay: "100ms" }}>
                         <BuyWidget tokenMint={token.tokenMint} tokenSymbol={token.symbol} />
+                    </div>
+
+                    <div className="crt-panel animate-slide-in-right overflow-hidden border border-[#00aaff]/14 bg-[linear-gradient(180deg,rgba(0,170,255,0.07),rgba(0,0,0,0.42))] p-0 shadow-[0_0_26px_rgba(0,170,255,0.06)]" style={{ animationDelay: "130ms" }}>
+                        <div className="border-b border-[#00aaff]/10 px-4 py-4">
+                            <div className="panel-header flex items-center gap-2 text-[#8dd8ff]/76">
+                                <Twitter className="w-4 h-4 text-[#8dd8ff]/65" />
+                                ╔══ OFFICIAL SOCIAL SURFACE ══╗
+                            </div>
+                            <p className="mt-2 text-[10px] tracking-[0.12em] text-[#8dd8ff]/38">
+                                Project identity, X visibility, and public links resolved from the live Bags token surface.
+                            </p>
+                        </div>
+                        <div className="space-y-4 px-4 py-4">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div className="border border-[#8dd8ff]/12 bg-[#8dd8ff]/[0.04] px-3 py-3">
+                                    <p className="text-[10px] tracking-[0.18em] text-[#8dd8ff]/48">OFFICIAL X</p>
+                                    <p className="mt-2 text-sm tracking-[0.12em] text-[#d8ffe6]/84">
+                                        {officialXHandle ? `@${officialXHandle}` : "Not exposed"}
+                                    </p>
+                                    <p className="mt-1 text-[10px] tracking-[0.12em] text-[#d8ffe6]/38">
+                                        {officialProjectFollowers !== undefined
+                                            ? `${formatNumber(officialProjectFollowers)} followers`
+                                            : "Follower count not exposed"}
+                                    </p>
+                                </div>
+                                <div className="border border-[#00ff41]/12 bg-[#00ff41]/[0.035] px-3 py-3">
+                                    <p className="text-[10px] tracking-[0.18em] text-[#00ff41]/42">CREATOR X</p>
+                                    <p className="mt-2 text-sm tracking-[0.12em] text-[#d8ffe6]/84">
+                                        {officialCreatorXHandle ? `@${officialCreatorXHandle}` : "Not exposed"}
+                                    </p>
+                                    <p className="mt-1 text-[10px] tracking-[0.12em] text-[#d8ffe6]/38">
+                                        {token.creatorDisplay ?? "Primary creator surface"}
+                                    </p>
+                                </div>
+                                <div className="border border-white/8 bg-white/[0.025] px-3 py-3">
+                                    <p className="text-[10px] tracking-[0.18em] text-[#00ff41]/34">WEBSITE</p>
+                                    <p className="mt-2 text-sm tracking-[0.12em] text-[#d8ffe6]/78">
+                                        {officialWebsiteHost ?? "Not exposed"}
+                                    </p>
+                                </div>
+                                <div className="border border-white/8 bg-white/[0.025] px-3 py-3">
+                                    <p className="text-[10px] tracking-[0.18em] text-[#00ff41]/34">TELEGRAM</p>
+                                    <p className="mt-2 text-sm tracking-[0.12em] text-[#d8ffe6]/78">
+                                        {officialTelegramUrl ? "Public group / channel" : "Not exposed"}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                {officialXUrl ? <LinkChip href={officialXUrl} label="OPEN X" /> : null}
+                                {officialWebsiteUrl ? <LinkChip href={officialWebsiteUrl} label="OPEN SITE" /> : null}
+                                {officialTelegramUrl ? <LinkChip href={officialTelegramUrl} label="OPEN TG" /> : null}
+                                <LinkChip href={`https://bags.fm/${token.tokenMint}`} label="OPEN BAGS" accent />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="crt-panel animate-slide-in-right overflow-hidden p-0" style={{ animationDelay: "160ms" }}>
+                        <div className="flex items-center justify-between gap-3 border-b border-[#00ff41]/10 px-4 py-4">
+                            <div className="min-w-0">
+                                <div className="panel-header flex items-center gap-2">
+                                    <Zap className="w-4 h-4 text-[#ffaa00]/55" />
+                                    ╔══ RECENT CLAIM EVENTS ══╗
+                                </div>
+                                <p className="mt-2 text-[10px] tracking-[0.12em] text-[#00ff41]/32">
+                                    Latest visible fee claims, kept compact for quick scanning.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="px-2 py-2">
+                            <div className="max-h-[24rem] overflow-y-auto pr-1 xl:max-h-[38rem]">
+                                <ClaimEventsList events={claimEvents} compact limit={24} />
+                            </div>
+                        </div>
                     </div>
 
                     {incorporation && (
@@ -367,17 +492,17 @@ export default function TokenDetailPage() {
                                     </div>
                                 )}
                                 <InfoRow label="DISPLAY" value={token.creatorDisplay} />
-                                {token.twitterUsername && (
+                                {officialCreatorXHandle && (
                                     <div className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:justify-between">
                                         <span className="text-[10px] text-[#00ff41]/25 tracking-[0.15em]">TWITTER</span>
                                         <a
-                                            href={`https://twitter.com/${token.twitterUsername}`}
+                                            href={`https://x.com/${officialCreatorXHandle}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="flex items-center gap-1.5 text-[11px] text-[#00aaff]/60 hover:text-[#00aaff] transition-colors tracking-wider"
                                         >
                                             <Twitter className="w-3 h-3" />
-                                            @{token.twitterUsername}
+                                            @{officialCreatorXHandle}
                                         </a>
                                     </div>
                                 )}
@@ -392,31 +517,6 @@ export default function TokenDetailPage() {
                         )}
                     </div>
 
-                    {/* Links */}
-                    {(token.website || token.twitter || token.telegram) && (
-                        <div className="crt-panel p-5 animate-slide-in-right" style={{ animationDelay: "400ms" }}>
-                            <div className="panel-header flex items-center gap-2">
-                                <Globe className="w-4 h-4 text-[#00ff41]/50" />
-                                ╔══ LINKS ══╗
-                            </div>
-                            <div className="space-y-2">
-                                {token.website && <ExtLink href={token.website} label="WEBSITE" icon={<Globe className="w-3.5 h-3.5" />} />}
-                                {token.twitter && (
-                                    <ExtLink
-                                        href={token.twitter.startsWith("http") ? token.twitter : `https://twitter.com/${token.twitter}`}
-                                        label="TWITTER / X"
-                                        icon={<Twitter className="w-3.5 h-3.5" />}
-                                    />
-                                )}
-                                {token.telegram && (
-                                    <ExtLink
-                                        href={token.telegram.startsWith("http") ? token.telegram : `https://t.me/${token.telegram}`}
-                                        label="TELEGRAM"
-                                    />
-                                )}
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
         </div>
@@ -553,27 +653,63 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
     );
 }
 
+function normalizeSocialHandle(value?: string | null) {
+    if (!value) return undefined;
+    return value
+        .replace(/^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i, "")
+        .replace(/^@+/, "")
+        .split(/[/?#]/)[0]
+        .trim() || undefined;
+}
+
+function normalizeExternalHref(value?: string | null) {
+    if (!value) return undefined;
+    return /^https?:\/\//i.test(value) ? value : `https://${value.replace(/^\/+/, "")}`;
+}
+
+function normalizeTelegramHref(value?: string | null) {
+    if (!value) return undefined;
+    if (/^https?:\/\//i.test(value)) return value;
+    return `https://t.me/${value.replace(/^@+/, "").replace(/^t\.me\//i, "")}`;
+}
+
+function getWebsiteHost(value?: string | null) {
+    const href = normalizeExternalHref(value);
+    if (!href) return undefined;
+    try {
+        return new URL(href).hostname.replace(/^www\./i, "");
+    } catch {
+        return undefined;
+    }
+}
+
+function getOfficialProjectXHandle(token: NormalizedToken) {
+    return (
+        token.projectTwitterHandle ??
+        normalizeSocialHandle(token.twitter) ??
+        token.twitterUsername ??
+        (token.provider === "twitter" ? token.providerUsername ?? undefined : undefined) ??
+        token.creators?.find((creator) => creator.isCreator)?.twitterUsername ??
+        token.creators?.find((creator) => creator.provider === "twitter")?.providerUsername ??
+        undefined
+    );
+}
+
+function getPrimaryCreatorXHandle(token: NormalizedToken) {
+    const primaryCreator = token.creators?.find((creator) => creator.isCreator) ?? token.creators?.[0];
+    return (
+        primaryCreator?.twitterUsername ??
+        (primaryCreator?.provider === "twitter" ? primaryCreator.providerUsername ?? undefined : undefined) ??
+        token.twitterUsername ??
+        (token.provider === "twitter" ? token.providerUsername ?? undefined : undefined) ??
+        undefined
+    );
+}
+
 function formatLaunchDate(dateStr: string): string {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
     const pad = (n: number) => n.toString().padStart(2, "0");
     const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
     return `${pad(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()} · ${pad(d.getHours())}:${pad(d.getMinutes())} UTC`;
-}
-
-function ExtLink({ href, label, icon }: { href: string; label: string; icon?: React.ReactNode }) {
-    return (
-        <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between py-2.5 px-3 border border-[#00ff41]/10 bg-black/40 hover:bg-[#00ff41]/5 hover:border-[#00ff41]/25 transition-all group"
-        >
-            <div className="flex items-center gap-2">
-                {icon && <span className="text-[#00ff41]/25 group-hover:text-[#00ff41]/60">{icon}</span>}
-                <span className="text-[10px] text-[#00ff41]/40 group-hover:text-[#00ff41]/70 tracking-wider">{label}</span>
-            </div>
-            <ExternalLink className="w-3 h-3 text-[#00ff41]/15 group-hover:text-[#00ff41]/40" />
-        </a>
-    );
 }

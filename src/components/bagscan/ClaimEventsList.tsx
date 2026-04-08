@@ -18,13 +18,20 @@ function parseTimestamp(ts: string): Date {
 interface ClaimEventsListProps {
     events: BagsClaimEvent[];
     className?: string;
+    compact?: boolean;
+    limit?: number;
 }
 
-export function ClaimEventsList({ events, className }: ClaimEventsListProps) {
+export function ClaimEventsList({
+    events,
+    className,
+    compact = false,
+    limit = 30,
+}: ClaimEventsListProps) {
     if (!events || events.length === 0) {
         return (
             <div className={className}>
-                <p className="text-[10px] text-[#00ff41]/25 text-center py-6 tracking-wider">
+                <p className={`text-center tracking-wider text-[#00ff41]/25 ${compact ? "py-4 text-[10px]" : "py-6 text-[10px]"}`}>
                     NO CLAIM EVENTS AVAILABLE
                 </p>
             </div>
@@ -34,7 +41,7 @@ export function ClaimEventsList({ events, className }: ClaimEventsListProps) {
     return (
         <div className={className}>
             <div className="space-y-0.5">
-                {events.slice(0, 30).map((event, i) => {
+                {events.slice(0, limit).map((event, i) => {
                     let solAmount = 0;
                     try {
                         solAmount = Number(BigInt(event.amount)) / LAMPORTS_PER_SOL;
@@ -46,21 +53,25 @@ export function ClaimEventsList({ events, className }: ClaimEventsListProps) {
                     return (
                         <div
                             key={event.signature ?? i}
-                            className="flex items-center justify-between py-2.5 px-3 hover:bg-[#00ff41]/[0.02] transition-colors group border-b border-[#00ff41]/5 last:border-0"
+                            className={`group flex items-center justify-between border-b border-[#00ff41]/5 transition-colors last:border-0 ${
+                                compact
+                                    ? "px-2.5 py-2 hover:bg-[#00ff41]/[0.03]"
+                                    : "px-3 py-2.5 hover:bg-[#00ff41]/[0.02]"
+                            }`}
                         >
-                            <div className="flex items-center gap-3 min-w-0">
-                                <Zap className="w-3.5 h-3.5 text-[#ffaa00]/40 flex-shrink-0" />
+                            <div className={`min-w-0 flex items-center ${compact ? "gap-2.5" : "gap-3"}`}>
+                                <Zap className={`${compact ? "h-3 w-3" : "h-3.5 w-3.5"} flex-shrink-0 text-[#ffaa00]/40`} />
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2">
-                                        <p className="text-[11px] text-[#00ff41]/50 truncate tracking-wider">
+                                        <p className={`${compact ? "text-[10px]" : "text-[11px]"} truncate tracking-wider text-[#00ff41]/50`}>
                                             {shortenAddress(event.wallet ?? "")}
                                         </p>
                                         {event.isCreator && (
-                                            <span className="text-[8px] text-[#00ff41]/30 tracking-wider">CREATOR</span>
+                                            <span className="text-[8px] tracking-wider text-[#00ff41]/30">CREATOR</span>
                                         )}
                                     </div>
                                     {event.timestamp && (
-                                        <p className="text-[9px] text-[#00ff41]/20 tracking-wider">
+                                        <p className={`${compact ? "text-[8px]" : "text-[9px]"} tracking-wider text-[#00ff41]/20`}>
                                             {(() => {
                                                 const d = parseTimestamp(event.timestamp);
                                                 if (isNaN(d.getTime()) || d.getFullYear() < 2020) return event.timestamp;
@@ -70,8 +81,8 @@ export function ClaimEventsList({ events, className }: ClaimEventsListProps) {
                                     )}
                                 </div>
                             </div>
-                            <div className="text-right flex-shrink-0 ml-3">
-                                <p className="text-[11px] text-[#00ff41]/60 tracking-wider">
+                            <div className={`flex-shrink-0 text-right ${compact ? "ml-2" : "ml-3"}`}>
+                                <p className={`${compact ? "text-[10px]" : "text-[11px]"} tracking-wider text-[#00ff41]/60`}>
                                     {solAmount > 0 ? `${solAmount.toFixed(4)} SOL` : "—"}
                                 </p>
                                 {event.signature && (
@@ -79,7 +90,7 @@ export function ClaimEventsList({ events, className }: ClaimEventsListProps) {
                                         href={`https://solscan.io/tx/${event.signature}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-[9px] text-[#00ff41]/15 hover:text-[#00ff41]/50 transition-colors tracking-wider"
+                                        className={`${compact ? "text-[8px]" : "text-[9px]"} tracking-wider text-[#00ff41]/15 transition-colors hover:text-[#00ff41]/50`}
                                     >
                                         VIEW TX
                                     </a>
