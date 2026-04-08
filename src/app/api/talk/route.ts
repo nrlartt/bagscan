@@ -4,7 +4,7 @@ import { generateTalkReply } from "@/lib/talk/service";
 import type { TalkResponse, TalkReply, TalkStreamEvent } from "@/lib/talk/types";
 import { TalkAccessError, ensureTalkAccess } from "@/lib/talk/access";
 
-const talkIntentSchema = z.enum(["overview", "market", "spotlight", "new-launches", "hackathon", "leaderboard", "token", "portfolio", "launch", "alerts", "trade"]);
+const talkIntentSchema = z.enum(["overview", "docs", "market", "spotlight", "new-launches", "hackathon", "leaderboard", "token", "portfolio", "launch", "alerts", "trade"]);
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;

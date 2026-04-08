@@ -18,6 +18,7 @@ import {
 } from "@/lib/bags/client";
 import type { BagsClaimStatEntry, BagsCreatorV3, BagsOfficialTopToken, BagsPool } from "@/lib/bags/types";
 import type { TalkAction, TalkCard, TalkContext, TalkMetric, TalkReply, TalkIntent } from "@/lib/talk/types";
+import { findOfficialKnowledgeEntry, getOfficialKnowledgeEntry, getOfficialKnowledgeHub } from "@/lib/talk/officialKnowledge";
 import { formatCurrency, formatNumber, getValuationMetric, shortenAddress } from "@/lib/utils";
 
 const BASE58_MINT_REGEX = /\b[1-9A-HJ-NP-Za-km-z]{32,48}\b/;
@@ -124,6 +125,7 @@ interface ParsedPrompt {
     cleaned: string;
     lowered: string;
     intent: TalkIntent;
+    docsTopicId?: string;
     tokenQuery?: string;
     tokenFocus?: "creator" | "fees" | "claims" | "socials" | "overview";
     referencesActiveToken?: boolean;
@@ -476,6 +478,10 @@ function detectLeaderboardScope(lowered: string): ParsedPrompt["leaderboardScope
     return undefined;
 }
 
+function shouldRouteToDocsIntent(lowered: string) {
+    return /\b(api docs?|documentation|docs?|faq|help center|support|partner key|partner fees|fee sharing|founder mode|admin settings|incorporation|company|withdraw to fiat|private key|seed phrase|transaction failed)\b/i.test(lowered);
+}
+
 function shouldInferLooseTokenQuery(cleaned: string, lowered: string) {
     const words = cleaned.split(/\s+/).filter(Boolean);
     if (words.length === 0 || words.length > 4) return false;
@@ -489,6 +495,7 @@ function parsePrompt(message: string): ParsedPrompt {
     const refersToActiveToken = referencesActiveToken(lowered);
     const tokenSpecificQuestion = isTokenSpecificQuestion(lowered);
     const explicitTokenQuery = parseExplicitTokenQuery(cleaned);
+    const docsTopic = !explicitTokenQuery && !refersToActiveToken ? findOfficialKnowledgeEntry(cleaned) : undefined;
     const leaderboardScope = !explicitTokenQuery && !refersToActiveToken ? detectLeaderboardScope(lowered) : undefined;
     const marketWideQuestion = !explicitTokenQuery && !refersToActiveToken && asksForMarketWideQuestion(lowered);
     const broadRankingPrompt = Boolean(leaderboardScope || marketWideQuestion);
@@ -503,6 +510,14 @@ function parsePrompt(message: string): ParsedPrompt {
         Boolean(tokenQuery) &&
         cleaned.split(/\s+/).filter(Boolean).length <= 3 &&
         !/\b(hackathon|launch|leaderboard|market|volume|accepted|ai agents|wallet|claimable|best|oldest|newest|transactions?|txns?)\b/i.test(lowered);
+
+    if (docsTopic) {
+        return { cleaned, lowered, intent: "docs", docsTopicId: docsTopic.id, tokenQuery: undefined };
+    }
+
+    if (!explicitTokenQuery && !refersToActiveToken && shouldRouteToDocsIntent(lowered)) {
+        return { cleaned, lowered, intent: "docs", docsTopicId: getOfficialKnowledgeHub().id, tokenQuery: undefined };
+    }
 
     if (/\b(launch|deploy|create token|token launch)\b/i.test(lowered)) {
         return { cleaned, lowered, intent: "launch", tokenQuery };
@@ -1416,6 +1431,32 @@ function buildUnsupportedBagScanLayerReply(layer: "alpha" | "spotlight"): TalkRe
     };
 }
 
+function buildDocsReply(topicId?: string): TalkReply {
+    const entry = topicId ? getOfficialKnowledgeEntry(topicId) : undefined;
+    const resolved = entry ?? getOfficialKnowledgeHub();
+
+    const cards: TalkCard[] = resolved.links.slice(0, 3).map((link, index) => ({
+        id: `${resolved.id}-link-${index + 1}`,
+        title: link.label,
+        subtitle: link.href.replace(/^https?:\/\//i, ""),
+        eyebrow: index === 0 ? "OFFICIAL SOURCE" : "REFERENCE",
+        description: index === 0
+            ? "Open the primary official Bags source for this topic."
+            : "Supplementary official Bags documentation or support guidance.",
+        href: link.href,
+    }));
+
+    return withContext({
+        intent: "docs",
+        title: resolved.title,
+        summary: resolved.summary,
+        bullets: resolved.bullets,
+        cards,
+        actions: resolved.links.slice(0, 3).map((link, index) => action(link.label, link.href, index === 0 ? "info" : "default")),
+        suggestions: resolved.suggestions,
+    });
+}
+
 async function buildOverviewReply(wallet?: string): Promise<TalkReply> {
     const [pools, leaderboard, hackathon] = await Promise.all([
         loadOfficialPools(),
@@ -1433,6 +1474,7 @@ async function buildOverviewReply(wallet?: string): Promise<TalkReply> {
             `${formatNumber(pools.length, false)} official BAGS pools are currently indexed in this session.`,
             `${formatNumber(withMarketCap, false)} official top tokens expose market cap, while ${formatNumber(withVolume, false)} expose 24h volume on the official leaderboard surface.`,
             `${formatNumber(hackathon.totalItems, false)} official hackathon apps are available, with ${formatNumber(hackathon.acceptedOverall, false)} accepted teams.`,
+            "Docs and FAQ questions are answered from official Bags docs and support material instead of token search.",
             wallet
                 ? `Wallet context is limited to official BAGS claimable positions for ${shortenAddress(wallet, 6)}.`
                 : "Connect a wallet if you want official BAGS claimable-position answers.",
@@ -1476,6 +1518,7 @@ async function buildOverviewReply(wallet?: string): Promise<TalkReply> {
         ],
         suggestions: [
             "Show me recent launches on BAGS",
+            "How do partner keys work on Bags?",
             "Show me the official market board",
             "Who created this token?",
             "Show me accepted hackathon projects",
@@ -2468,6 +2511,8 @@ export async function generateTalkReplyLocal(message: string, wallet?: string, c
     const resolvedTokenQuery = parsed.tokenQuery ?? contextTokenQuery;
 
     switch (parsed.intent) {
+        case "docs":
+            return buildDocsReply(parsed.docsTopicId);
         case "market":
             return await buildOfficialMarketFlowReply();
         case "spotlight":

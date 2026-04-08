@@ -25,6 +25,7 @@ export interface TalkAction {
 
 export type TalkIntent =
     | "overview"
+    | "docs"
     | "market"
     | "spotlight"
     | "new-launches"

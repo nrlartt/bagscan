@@ -119,6 +119,9 @@ function resolveConversationToken(message: string, context?: TalkContext) {
 function detectPromptMode(message: string) {
     const lowered = message.toLowerCase();
 
+    if (/\b(api docs?|documentation|docs?|faq|help center|support|partner key|partner fees|incorporation|company|fee sharing|founder mode|admin settings)\b/.test(lowered)) {
+        return "docs";
+    }
     if (/\b(popular|top|most active|highest volume|biggest|largest|right now|market board|market)\b/.test(lowered)) {
         return "market";
     }
@@ -230,6 +233,7 @@ function buildClarificationReply(context?: TalkContext): TalkReply {
 
 function shouldBypassOpenClaw(groundedReply: TalkReply) {
     return (
+        groundedReply.intent === "docs" ||
         groundedReply.intent === "token" ||
         groundedReply.title === "WHICH TOKEN?" ||
         groundedReply.title === "TOKEN NOT FOUND" ||
@@ -335,6 +339,7 @@ function sanitizeReply(raw: unknown, fallbackContext?: TalkContext): TalkReply {
     const candidate = raw as Partial<TalkReply>;
     const validIntents: TalkIntent[] = [
         "overview",
+        "docs",
         "market",
         "spotlight",
         "new-launches",
@@ -410,10 +415,11 @@ const SYSTEM_PROMPT = [
     "Do not give the same generic token-style answer to unrelated prompts.",
     "For market-wide questions, keep the answer market-wide. Do not collapse into a single token profile.",
     "For creator, fees, and claim questions, stay tightly scoped to the grounded token or wallet subject.",
+    "For docs, FAQ, support, launch-settings, partner, and company questions, preserve the official Bags guidance in groundedDraft instead of inventing a token answer.",
     "Prefer concise, useful answers with direct facts and next actions.",
     "You may rewrite titles, summaries, bullets, cards, actions, and suggestions, but keep them consistent with groundedDraft.",
     "Return ONLY valid JSON with the shape:",
-    '{"intent":"overview|market|spotlight|new-launches|hackathon|leaderboard|token|portfolio|launch|alerts|trade","title":"string","summary":"string","bullets":["string"],"cards":[{"id":"string","title":"string","subtitle":"string","eyebrow":"string","description":"string","href":"string","metrics":[{"label":"string","value":"string","tone":"default|positive|negative|info|warning"}]}],"actions":[{"label":"string","href":"string","tone":"default|info|warning"}],"suggestions":["string"],"context":{"activeTokenMint":"string","activeTokenName":"string","activeTokenSymbol":"string","lastIntent":"overview|market|spotlight|new-launches|hackathon|leaderboard|token|portfolio|launch|alerts|trade"}}',
+    '{"intent":"overview|docs|market|spotlight|new-launches|hackathon|leaderboard|token|portfolio|launch|alerts|trade","title":"string","summary":"string","bullets":["string"],"cards":[{"id":"string","title":"string","subtitle":"string","eyebrow":"string","description":"string","href":"string","metrics":[{"label":"string","value":"string","tone":"default|positive|negative|info|warning"}]}],"actions":[{"label":"string","href":"string","tone":"default|info|warning"}],"suggestions":["string"],"context":{"activeTokenMint":"string","activeTokenName":"string","activeTokenSymbol":"string","lastIntent":"overview|docs|market|spotlight|new-launches|hackathon|leaderboard|token|portfolio|launch|alerts|trade"}}',
 ].join("\n");
 
 export async function generateTalkReplyWithOpenClaw(message: string, wallet?: string, context?: TalkContext, history?: TalkHistoryTurn[]): Promise<TalkReply> {
