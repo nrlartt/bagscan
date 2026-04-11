@@ -26,7 +26,9 @@ interface ChatCompletionResponse {
 
 function getOpenClawConfig(): OpenClawConfig {
     const baseUrl = process.env.OPENCLAW_BASE_URL?.trim();
-    const token = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
+    const token =
+        process.env.OPENCLAW_GATEWAY_AUTH_TOKEN?.trim() ||
+        process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
     const requestedModel = process.env.OPENCLAW_MODEL?.trim();
     const agentId = process.env.OPENCLAW_AGENT_ID?.trim() || "main";
     const model =

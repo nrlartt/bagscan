@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import bs58 from "bs58";
+import { VersionedTransaction } from "@solana/web3.js";
 
 const CONFIRMATION_ATTEMPTS = 18;
 const CONFIRMATION_DELAY_MS = 1200;
@@ -16,6 +18,30 @@ const RPC_ENDPOINTS = [
 
 function wait(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function deriveTransactionSignature(signedTransaction: string) {
+    try {
+        const bytes = Buffer.from(signedTransaction, "base64");
+        const tx = VersionedTransaction.deserialize(bytes);
+        const signature = tx.signatures[0];
+        return signature ? bs58.encode(signature) : null;
+    } catch {
+        return null;
+    }
+}
+
+function isAlreadyProcessedError(error: { code?: number; message?: string; data?: unknown } | string) {
+    const serialized =
+        typeof error === "string"
+            ? error
+            : JSON.stringify({
+                  code: error.code,
+                  message: error.message,
+                  data: error.data,
+              });
+
+    return /alreadyprocessed|already been processed/i.test(serialized);
 }
 
 async function rpcRequest<T>(rpc: string, method: string, params: unknown[]) {
@@ -59,6 +85,37 @@ async function waitForConfirmation(rpc: string, signature: string) {
     throw new Error("Timed out while waiting for transaction confirmation");
 }
 
+async function getSignatureStatus(rpc: string, signature: string) {
+    const statusResponse = await rpcRequest<
+        Array<{
+            err: unknown;
+            confirmationStatus?: "processed" | "confirmed" | "finalized";
+        } | null>
+    >(rpc, "getSignatureStatuses", [[signature], { searchTransactionHistory: true }]);
+
+    return statusResponse.result?.[0] ?? null;
+}
+
+async function confirmKnownSignature(signature: string) {
+    for (const rpc of RPC_ENDPOINTS) {
+        try {
+            await waitForConfirmation(rpc, signature);
+            return { confirmed: true, rpc };
+        } catch {
+            try {
+                const status = await getSignatureStatus(rpc, signature);
+                if (status && !status.err) {
+                    return { confirmed: false, rpc };
+                }
+            } catch {
+                // Ignore and keep checking other RPCs.
+            }
+        }
+    }
+
+    return null;
+}
+
 export async function POST(req: NextRequest) {
     try {
         const { signedTransaction } = await req.json();
@@ -70,6 +127,7 @@ export async function POST(req: NextRequest) {
         }
 
         let lastError = "";
+        const derivedSignature = deriveTransactionSignature(signedTransaction);
 
         for (const rpc of RPC_ENDPOINTS) {
             try {
@@ -79,16 +137,30 @@ export async function POST(req: NextRequest) {
                 ]);
 
                 if (data.result) {
-                    await waitForConfirmation(rpc, data.result);
+                    const confirmation = await confirmKnownSignature(data.result);
                     return NextResponse.json({
                         success: true,
-                        data: { signature: data.result },
+                        data: {
+                            signature: data.result,
+                            confirmed: confirmation?.confirmed ?? false,
+                        },
                     });
                 }
 
                 if (data.error) {
                     lastError = JSON.stringify(data.error);
                     if (data.error.code === 403) continue;
+                    if (derivedSignature && isAlreadyProcessedError(data.error)) {
+                        const confirmation = await confirmKnownSignature(derivedSignature);
+                        return NextResponse.json({
+                            success: true,
+                            data: {
+                                signature: derivedSignature,
+                                confirmed: confirmation?.confirmed ?? false,
+                                alreadyProcessed: true,
+                            },
+                        });
+                    }
                     return NextResponse.json(
                         { success: false, error: lastError },
                         { status: 400 }
@@ -96,6 +168,17 @@ export async function POST(req: NextRequest) {
                 }
             } catch (e) {
                 lastError = String(e);
+                if (derivedSignature && isAlreadyProcessedError(lastError)) {
+                    const confirmation = await confirmKnownSignature(derivedSignature);
+                    return NextResponse.json({
+                        success: true,
+                        data: {
+                            signature: derivedSignature,
+                            confirmed: confirmation?.confirmed ?? false,
+                            alreadyProcessed: true,
+                        },
+                    });
+                }
                 continue;
             }
         }

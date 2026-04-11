@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
+import { Share_Tech_Mono } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import { TopNav } from "@/components/bagscan/TopNav";
 import { Footer } from "@/components/bagscan/Footer";
 import "./globals.css";
+
+const shareTechMono = Share_Tech_Mono({
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "BagScan - Bags-Native Token Discovery Terminal",
@@ -18,7 +25,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen flex flex-col antialiased">
+      <body className={`${shareTechMono.className} min-h-screen flex flex-col antialiased`}>
         <Providers>
           <div className="crt-scanlines" />
           <div className="crt-flicker" />

@@ -93,6 +93,67 @@ export const swapBodySchema = z
         path: ["amount"],
     });
 
+export const jupiterOrderBodySchema = z.object({
+    outputMint: z.string().min(1),
+    inputMint: z.string().optional(),
+    amount: z.number().positive(),
+    taker: z.string().min(1).optional(),
+    slippageBps: z.number().int().min(0).max(10000).optional(),
+});
+
+export const jupiterExecuteBodySchema = z.object({
+    outputMint: z.string().min(1),
+    signedTransaction: z.string().min(1),
+    requestId: z.string().min(1),
+});
+
+export const predictionPrepareBodySchema = z.object({
+    ownerPubkey: z.string().min(32),
+    scanAmountUi: z.number().positive(),
+    slippageBps: z.number().int().min(0).max(5000).optional(),
+});
+
+export const predictionOrderBodySchema = z.object({
+    ownerPubkey: z.string().min(32),
+    marketId: z.string().min(1),
+    isYes: z.boolean(),
+    depositAmount: z.string().min(1),
+});
+
+export const predictionFundingExecuteBodySchema = z.object({
+    signedTransaction: z.string().min(1),
+    requestId: z.string().min(1),
+});
+
+export const predictionPositionsQuerySchema = z.object({
+    ownerPubkey: z.string().min(32),
+});
+
+export const predictionClaimBodySchema = z.object({
+    ownerPubkey: z.string().min(32),
+    positionPubkey: z.string().min(1),
+});
+
+export const predictionCloseBodySchema = z.object({
+    ownerPubkey: z.string().min(32),
+    positionPubkey: z.string().min(1),
+});
+
+export const predictionSettlementBodySchema = z.object({
+    ownerPubkey: z.string().min(32),
+    baselineRaw: z.string().min(1),
+    slippageBps: z.number().int().min(0).max(5000).optional(),
+});
+
+export const predictionSettlementExecuteBodySchema = z.object({
+    signedTransaction: z.string().min(1),
+    requestId: z.string().min(1),
+});
+
+export const predictionTokenBalanceQuerySchema = z.object({
+    ownerPubkey: z.string().min(32),
+});
+
 export const createTokenInfoSchema = z.object({
     name: z.string().min(1).max(32),
     symbol: z.string().min(1).max(10),

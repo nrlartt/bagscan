@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Rocket, Menu, X, Zap, Scan, Bot, MessageSquareText } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Rocket, Menu, X, Zap, Scan, Bot, MessageSquareText, Target } from "lucide-react";
+import { useState } from "react";
 import { BagLogo } from "./BagLogo";
 import { NotificationCenter } from "./NotificationCenter";
 import { WalletPortfolioButton } from "./WalletPortfolioButton";
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
     { href: "/", label: "DISCOVER", icon: Scan },
     { href: "/alpha", label: "ALPHA", icon: Zap, highlight: true },
     { href: "/talk", label: "TALK TO BAGS", icon: MessageSquareText },
+    { href: "/prediction", label: "PREDICTION", icon: Target },
     { href: "/agents", label: "AGENTS", icon: Bot },
     { href: "/launch", label: "LAUNCH", icon: Rocket },
 ];
@@ -20,22 +21,11 @@ const NAV_ITEMS = [
 export function TopNav() {
     const pathname = usePathname();
     const [mobileOpen, setMobileOpen] = useState(false);
-    const [time, setTime] = useState("");
-
-    useEffect(() => {
-        const tick = () => {
-            const now = new Date();
-            setTime(now.toLocaleTimeString("en-GB", { hour12: false }));
-        };
-        tick();
-        const timer = setInterval(tick, 1000);
-        return () => clearInterval(timer);
-    }, []);
 
     return (
         <header className="sticky top-0 z-30 border-b-2 border-[#00ff41]/50 bg-black/90 backdrop-blur-sm">
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div className="flex h-14 items-center justify-between">
+                <div className="flex h-14 items-center justify-between gap-4">
                     {/* Logo */}
                     <Link href="/" className="flex items-center gap-2.5 group">
                         <div className="relative flex items-center justify-center group-hover:scale-105 transition-transform duration-300" style={{ filter: 'drop-shadow(0 0 6px rgba(0,255,65,0.25))' }}>
@@ -67,7 +57,7 @@ export function TopNav() {
                                     key={item.href}
                                     href={item.href}
                                     className={cn(
-                                        "relative px-3 py-1.5 text-xs tracking-[0.15em] transition-all duration-300 flex items-center gap-1.5 border",
+                                        "relative px-2.5 py-1.5 text-xs tracking-[0.15em] transition-all duration-300 flex items-center gap-1.5 border",
                                         active
                                             ? isHighlight
                                                 ? "border-[#ffaa00]/60 bg-[#ffaa00]/10 text-[#ffaa00]"
@@ -87,19 +77,10 @@ export function TopNav() {
                     </nav>
 
                     {/* Right section */}
-                    <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex items-center gap-2">
                         {/* $SCAN token link */}
                         {/* Alert status — fixed width to prevent layout shift */}
                         {/* Ship time */}
-                        <div className="hidden sm:block text-right">
-                            <div className="text-[10px] text-[#00ff41] tracking-[0.2em] font-medium" style={{ textShadow: '0 0 6px rgba(0,255,65,0.3)' }}>
-                                {time}
-                            </div>
-                            <div className="text-[8px] text-[#00ff41]/40 tracking-[0.15em]">
-                                SHIP TIME [GMT]
-                            </div>
-                        </div>
-
                         <NotificationCenter />
                         <WalletPortfolioButton key={pathname} />
                         <button

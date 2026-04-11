@@ -1,8 +1,9 @@
-import { createRequire } from "module";
+import "server-only";
 import type { PrismaClient } from "@prisma/client";
 import type { Pool, PoolClient } from "pg";
 
-const require = createRequire(import.meta.url);
+// Keep Node-only packages out of the webpack graph during builds.
+const runtimeRequire = eval("require") as NodeJS.Require;
 
 const globalForPrisma = globalThis as { prisma?: PrismaClient; prismaPool?: Pool };
 
@@ -41,7 +42,7 @@ function getConnectionString() {
 
 export function getPgPool(): Pool {
     if (!globalForPrisma.prismaPool) {
-        const { Pool } = require("pg") as typeof import("pg");
+        const { Pool } = runtimeRequire("pg") as typeof import("pg");
         globalForPrisma.prismaPool = new Pool({
             connectionString: getConnectionString(),
         });
@@ -82,8 +83,8 @@ export async function withPgAdvisoryLock<T>(
 
 function getPrismaClient(): PrismaClient {
     if (!globalForPrisma.prisma) {
-        const { PrismaClient } = require("@prisma/client") as typeof import("@prisma/client");
-        const { PrismaPg } = require("@prisma/adapter-pg") as { PrismaPg: typeof import("@prisma/adapter-pg").PrismaPg };
+        const { PrismaClient } = runtimeRequire("@prisma/client") as typeof import("@prisma/client");
+        const { PrismaPg } = runtimeRequire("@prisma/adapter-pg") as { PrismaPg: typeof import("@prisma/adapter-pg").PrismaPg };
         const adapter = new PrismaPg(getPgPool());
         globalForPrisma.prisma = new PrismaClient({ adapter });
     }

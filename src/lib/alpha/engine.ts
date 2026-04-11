@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import "server-only";
+import { mkdir, readFile, writeFile } from "fs/promises";
+import { dirname, join } from "path";
 import {
     getBagsPools,
     getCreatorsV3,

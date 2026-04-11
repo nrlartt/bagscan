@@ -20,6 +20,7 @@ type Step = "input" | "quoting" | "quoted" | "signing" | "success" | "error";
 export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps) {
     const { connected, publicKey, signTransaction } = useWallet();
     const { setVisible } = useWalletModal();
+    const isBagsMint = tokenMint.endsWith("BAGS");
 
     const [step, setStep] = useState<Step>("input");
     const [amount, setAmount] = useState("0.1");
@@ -30,7 +31,7 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
     const [txSig, setTxSig] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const outputAmount = getNumericField(quote, "outputAmount", "outAmount");
-    const priceImpact = getNumericField(quote, "priceImpact");
+    const priceImpact = getNumericField(quote, "priceImpact", "priceImpactPct");
     const fee = getNumericField(quote, "fee");
 
     const fetchQuote = useCallback(async () => {
@@ -43,13 +44,14 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
                 throw new Error("Amount must be greater than zero");
             }
 
-            const res = await fetch("/api/quote", {
+            const res = await fetch("/api/jupiter/order", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     outputMint: tokenMint,
                     inputMint: SOL_MINT,
                     amount: amountInBaseUnits,
+                    taker: publicKey?.toBase58(),
                     slippageBps: parseInt(slippage, 10),
                 }),
             });
@@ -61,7 +63,7 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
             setError(String(e));
             setStep("error");
         }
-    }, [tokenMint, amount, slippage]);
+    }, [tokenMint, amount, slippage, publicKey]);
 
     const executeBuy = useCallback(async () => {
         if (!publicKey || !signTransaction) return;
@@ -78,46 +80,44 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
                 throw new Error("Missing quote payload. Please fetch quote again.");
             }
 
-            const res = await fetch("/api/swap", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    outputMint: tokenMint,
-                    inputMint: SOL_MINT,
-                    userPublicKey: publicKey.toBase58(),
-                    quoteResponse: quote,
-                    ...(quoteRequestId ? { quoteRequestId } : {}),
-                    amount: amountInBaseUnits,
-                    slippageBps: parseInt(slippage, 10),
-                }),
-            });
-            const data = await res.json();
-            if (!data.success) throw new Error(data.error || "Swap failed");
-
-            const txData =
-                data.data.transaction ||
-                data.data.serializedTransaction ||
-                data.data.swapTransaction;
-            if (!txData) throw new Error("No transaction returned");
+            const txData = getStringField(
+                quote,
+                "transaction",
+                "serializedTransaction",
+                "swapTransaction"
+            );
+            if (!txData || !quoteRequestId) {
+                throw new Error("Missing Jupiter order transaction. Please fetch quote again.");
+            }
 
             const txBuffer = decodeTransactionData(txData);
             const transaction = VersionedTransaction.deserialize(txBuffer);
             const signed = await signTransaction(transaction);
 
-            const { Connection } = await import("@solana/web3.js");
-            const connection = new Connection(
-                process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com"
-            );
-            const sig = await connection.sendRawTransaction(signed.serialize(), {
-                skipPreflight: true,
+            const executeRes = await fetch("/api/jupiter/execute", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    outputMint: tokenMint,
+                    requestId: quoteRequestId,
+                    signedTransaction: uint8ArrayToBase64(signed.serialize()),
+                }),
             });
+            const executeData = await executeRes.json();
+            if (!executeData.success) {
+                throw new Error(executeData.error || "Jupiter execution failed");
+            }
+
+            const sig =
+                getStringField(executeData.data, "signature", "txid") ??
+                quoteRequestId;
             setTxSig(sig);
             setStep("success");
         } catch (e) {
             setError(String(e));
             setStep("error");
         }
-    }, [quote, tokenMint, amount, slippage, publicKey, signTransaction]);
+    }, [quote, tokenMint, amount, publicKey, signTransaction]);
 
     return (
         <div className={cn("crt-panel p-5", className)}>
@@ -126,7 +126,13 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
                 ╔══ QUICK BUY {tokenSymbol ? `$${tokenSymbol}` : ""} ══╗
             </div>
 
-            {!connected ? (
+            {!isBagsMint ? (
+                <div className="border border-[#ffaa00]/25 bg-[#ffaa00]/5 px-4 py-4">
+                    <p className="text-[10px] tracking-wider text-[#ffaa00]/75">
+                        QUICK BUY IS ENABLED ONLY FOR ...BAGS TOKENS.
+                    </p>
+                </div>
+            ) : !connected ? (
                 <button
                     onClick={() => setVisible(true)}
                     className="w-full py-3 border-2 border-[#00ff41]/40 bg-[#00ff41]/10 text-[#00ff41] text-xs tracking-wider
@@ -313,6 +319,22 @@ function getNumericField(
     return null;
 }
 
+function getStringField(
+    payload: Record<string, unknown> | null | undefined,
+    ...keys: string[]
+): string | null {
+    if (!payload) return null;
+
+    for (const key of keys) {
+        const raw = payload[key];
+        if (typeof raw === "string" && raw.trim().length > 0) {
+            return raw;
+        }
+    }
+
+    return null;
+}
+
 function decodeTransactionData(raw: string): Uint8Array {
     const base64 = tryDecodeBase64(raw);
     if (base64) return base64;
@@ -325,7 +347,7 @@ function decodeTransactionData(raw: string): Uint8Array {
 
 function tryDecodeBase64(raw: string): Uint8Array | null {
     try {
-        const bytes = Buffer.from(raw, "base64");
+        const bytes = base64ToUint8Array(raw);
         VersionedTransaction.deserialize(bytes);
         return bytes;
     } catch {
@@ -341,4 +363,25 @@ function tryDecodeBase58(raw: string): Uint8Array | null {
     } catch {
         return null;
     }
+}
+
+function base64ToUint8Array(raw: string): Uint8Array {
+    const normalized = raw.replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(normalized);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+
+    return bytes;
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 1) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+
+    return btoa(binary);
 }

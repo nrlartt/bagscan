@@ -1,5 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
-@import "tailwindcss";
+@import "../../node_modules/tailwindcss/index.css";
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    BAGSCAN TERMINAL â€“ NOSTROMO CRT INTERFACE
@@ -28,7 +27,6 @@ html {
 body {
   background: #000000;
   color: var(--crt-green);
-  font-family: 'Share Tech Mono', 'Courier New', monospace;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: 0.03em;

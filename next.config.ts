@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: [
+    "web-push",
+    "https-proxy-agent",
+    "agent-base",
+    "@prisma/client",
+    "@prisma/adapter-pg",
+    "pg",
+  ],
   turbopack: {
     root: process.cwd(),
   },

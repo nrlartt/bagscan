@@ -43,6 +43,9 @@ function BubbleMapUnavailable({
 }: BubbleMapEmbedProps & { compact?: boolean }) {
     const href = getExternalBubbleMapUrl(mint);
     const hasProductionPartnerId = Boolean(CONFIGURED_PARTNER_ID && CONFIGURED_PARTNER_ID !== "demo");
+    const description = hasProductionPartnerId
+        ? "Inline holder maps are temporarily unavailable on this pass. Open the full map for now."
+        : "Inline Bubblemaps on the live domain are coming soon. Open the full map for now.";
 
     return (
         <div className={`overflow-hidden border border-white/10 bg-[linear-gradient(180deg,rgba(141,216,255,0.08),rgba(0,0,0,0.46))] ${compact ? "" : "shadow-[0_0_30px_rgba(141,216,255,0.06)]"}`}>
@@ -54,9 +57,7 @@ function BubbleMapUnavailable({
                     {symbol ? `$${symbol}` : "Resolved token"} holder map
                 </h4>
                 <p className={`mt-3 max-w-2xl leading-relaxed tracking-[0.08em] text-[#d8ffe6]/58 ${compact ? "text-[11px]" : "text-[12px]"}`}>
-                    {hasProductionPartnerId
-                        ? "The embedded map is temporarily unavailable on this pass. You can still open the full Bubblemaps view in a new tab."
-                        : "The embedded Bubblemaps view is not unlocked for this live domain yet. Open the full map now, then attach a production partner ID to enable inline viewing."}
+                    {description}
                 </p>
                 <div className={`mt-4 flex flex-wrap gap-2 ${compact ? "" : "sm:mt-5"}`}>
                     <a

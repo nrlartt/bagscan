@@ -16,6 +16,7 @@ import {
     RefreshCw,
     Search,
     Sparkles,
+    Target,
     TrendingDown,
     TrendingUp,
     Wallet,
@@ -23,6 +24,7 @@ import {
 import { cn, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
 import { fetchPortfolio } from "@/lib/portfolio/client";
 import type { PortfolioResponse } from "@/lib/portfolio/types";
+import type { JupiterPredictionPosition } from "@/lib/jupiter/types";
 
 export default function PortfolioPage() {
     const { publicKey, connected } = useWallet();
@@ -49,9 +51,45 @@ export default function PortfolioPage() {
         staleTime: 20_000,
         refetchInterval: 45_000,
     });
+    const predictionPositionsQuery = useQuery<JupiterPredictionPosition[]>({
+        queryKey: ["portfolio-prediction-positions", deferredWallet],
+        enabled: Boolean(deferredWallet) && !walletError,
+        queryFn: async () => {
+            const res = await fetch(`/api/prediction/positions?ownerPubkey=${encodeURIComponent(deferredWallet)}`);
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || "Prediction positions could not be loaded.");
+            return json.data as JupiterPredictionPosition[];
+        },
+        staleTime: 20_000,
+        refetchInterval: 45_000,
+    });
 
     const portfolio = portfolioQuery.data;
     const summary = portfolio?.summary;
+    const predictionPositions = useMemo(
+        () => predictionPositionsQuery.data ?? [],
+        [predictionPositionsQuery.data]
+    );
+    const predictionSummary = useMemo(() => {
+        const totalUnrealizedPnlUsd = predictionPositions.reduce(
+            (sum, position) => sum + (position.unrealizedPnlUsd ?? 0),
+            0
+        );
+        const totalClaimablePayoutUsd = predictionPositions.reduce(
+            (sum, position) => sum + (position.claimablePayoutUsd ?? 0),
+            0
+        );
+        const claimableCount = predictionPositions.filter(
+            (position) => (position.status ?? "").toLowerCase() === "claimable"
+        ).length;
+
+        return {
+            count: predictionPositions.length,
+            totalUnrealizedPnlUsd,
+            totalClaimablePayoutUsd,
+            claimableCount,
+        };
+    }, [predictionPositions]);
 
     return (
         <div className="mx-auto max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">
@@ -264,6 +302,50 @@ export default function PortfolioPage() {
                     </div>
 
                     <div className="crt-panel p-4 sm:p-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#00ff41]/12 pb-4">
+                            <div>
+                                <p className="text-[11px] uppercase tracking-[0.28em] text-[#00ff41]/55">Prediction Desk</p>
+                                <h2 className="mt-1 text-lg tracking-[0.16em] text-[#d8ffe6] sm:text-xl">YOUR PREDICTION POSITIONS</h2>
+                            </div>
+                            {deferredWallet && !predictionPositionsQuery.isLoading && !predictionPositionsQuery.isError ? (
+                                <div className="flex flex-wrap gap-2">
+                                    <span className="inline-flex items-center gap-2 border border-[#00aaff]/20 bg-[#00aaff]/10 px-2.5 py-1 text-[10px] tracking-[0.18em] text-[#8dd8ff]">
+                                        <Target className="h-3.5 w-3.5" />
+                                        {formatNumber(predictionSummary.count, false)} POSITIONS
+                                    </span>
+                                    <span className="inline-flex items-center gap-2 border border-[#ffaa00]/20 bg-[#ffaa00]/10 px-2.5 py-1 text-[10px] tracking-[0.18em] text-[#ffd37a]">
+                                        {formatCurrency(predictionSummary.totalClaimablePayoutUsd)} CLAIMABLE
+                                    </span>
+                                </div>
+                            ) : null}
+                        </div>
+
+                        {!deferredWallet ? (
+                            <EmptyPanel message="Prediction positions will appear here after wallet scan." compact />
+                        ) : predictionPositionsQuery.isLoading ? (
+                            <LoadingPanel rows={4} compact />
+                        ) : predictionPositionsQuery.isError ? (
+                            <EmptyPanel
+                                message={
+                                    predictionPositionsQuery.error instanceof Error
+                                        ? predictionPositionsQuery.error.message
+                                        : "Prediction positions could not be loaded."
+                                }
+                                tone="error"
+                                compact
+                            />
+                        ) : predictionPositions.length === 0 ? (
+                            <EmptyPanel message="No Jupiter prediction positions are visible for this wallet yet." compact />
+                        ) : (
+                            <div className="mt-5 space-y-3 max-h-[540px] overflow-y-auto pr-1">
+                                {predictionPositions.map((position) => (
+                                    <PredictionPositionRow key={position.positionPubkey} position={position} />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="crt-panel p-4 sm:p-5">
                         <div className="border-b border-[#00ff41]/12 pb-4">
                             <p className="text-[11px] uppercase tracking-[0.28em] text-[#00ff41]/55">Release Notes</p>
                             <h2 className="mt-1 text-lg tracking-[0.16em] text-[#d8ffe6] sm:text-xl">MVP SCOPE</h2>
@@ -354,6 +436,124 @@ function HoldingRow({ holding }: { holding: PortfolioResponse["holdings"][number
 
             <ArrowUpRight className="hidden h-4 w-4 text-[#00ff41]/28 transition-colors group-hover:text-[#00ff41]/72 md:block" />
         </Link>
+    );
+}
+
+function PredictionPositionRow({ position }: { position: JupiterPredictionPosition }) {
+    const href = position.eventId
+        ? `/prediction/${encodeURIComponent(position.eventId)}${position.marketId ? `?market=${encodeURIComponent(position.marketId)}` : ""}`
+        : null;
+    const pnlPositive = (position.unrealizedPnlUsd ?? 0) >= 0;
+    const claimable = (position.status ?? "").toLowerCase() === "claimable";
+    const body = (
+        <>
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span
+                            className={cn(
+                                "border px-1.5 py-0.5 text-[10px] tracking-[0.18em]",
+                                position.side === "YES"
+                                    ? "border-[#adcc60]/24 bg-[#adcc60]/10 text-[#dff7ae]"
+                                    : "border-[#00aaff]/24 bg-[#00aaff]/10 text-[#b8ecff]"
+                            )}
+                        >
+                            {position.side ?? "POSITION"}
+                        </span>
+                        <span className="border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-[10px] tracking-[0.18em] text-white/60">
+                            {(position.status ?? "open").toUpperCase()}
+                        </span>
+                        {claimable ? (
+                            <span className="border border-[#ffaa00]/20 bg-[#ffaa00]/10 px-1.5 py-0.5 text-[10px] tracking-[0.18em] text-[#ffd37a]">
+                                READY TO CLAIM
+                            </span>
+                        ) : null}
+                    </div>
+                    <h3 className="mt-3 text-sm tracking-[0.12em] text-[#d8ffe6]">
+                        {position.marketTitle ?? "Prediction Market"}
+                    </h3>
+                    <p className="mt-1 text-[11px] tracking-[0.16em] text-[#00ff41]/46">
+                        {position.eventTitle ?? "Jupiter prediction event"}
+                    </p>
+                </div>
+
+                {href ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.18em] text-[#8dd8ff] transition group-hover:text-[#b8ecff]">
+                        Open Event
+                        <ArrowUpRight className="h-3.5 w-3.5" />
+                    </span>
+                ) : null}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <MetricTile
+                    label="Contracts"
+                    value={
+                        position.quantity !== null && position.quantity !== undefined
+                            ? formatNumber(position.quantity, false)
+                            : "—"
+                    }
+                />
+                <MetricTile
+                    label="Avg Price"
+                    value={
+                        position.averagePrice !== null && position.averagePrice !== undefined
+                            ? formatCurrency(position.averagePrice, { compact: false, decimals: 2 })
+                            : "—"
+                    }
+                />
+                <MetricTile
+                    label="Mark Price"
+                    value={
+                        position.currentPrice !== null && position.currentPrice !== undefined
+                            ? formatCurrency(position.currentPrice, { compact: false, decimals: 2 })
+                            : "—"
+                    }
+                />
+                <MetricTile
+                    label="PnL"
+                    value={
+                        position.unrealizedPnlUsd !== null && position.unrealizedPnlUsd !== undefined
+                            ? formatSignedCurrency(position.unrealizedPnlUsd)
+                            : "—"
+                    }
+                    tone={pnlPositive ? "positive" : "negative"}
+                />
+            </div>
+
+            {position.claimablePayoutUsd !== null && position.claimablePayoutUsd !== undefined ? (
+                <div className="flex items-center justify-between gap-3 border border-[#ffaa00]/12 bg-[#ffaa00]/[0.04] px-3 py-3 text-[10px] uppercase tracking-[0.18em] text-[#ffd37a]">
+                    <span>Claimable Payout</span>
+                    <span>{formatCurrency(position.claimablePayoutUsd, { compact: false, decimals: 2 })}</span>
+                </div>
+            ) : null}
+        </>
+    );
+
+    const className = cn(
+        "group flex flex-col gap-4 border border-[#00ff41]/10 bg-black/60 p-4 transition-all",
+        href && "hover:border-[#00ff41]/28 hover:bg-[#00ff41]/[0.02]"
+    );
+
+    if (href) {
+        return (
+            <Link
+                href={href}
+                className={className}
+            >
+                {body}
+            </Link>
+        );
+    }
+
+    return (
+        <div
+            className={cn(
+                "group flex flex-col gap-4 border border-[#00ff41]/10 bg-black/60 p-4 transition-all"
+            )}
+        >
+            {body}
+        </div>
     );
 }
 

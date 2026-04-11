@@ -1,7 +1,15 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import "server-only";
 import { ed25519 } from "@noble/curves/ed25519";
 import bs58 from "bs58";
 import type { NextRequest, NextResponse } from "next/server";
+
+// Keep Node built-ins out of the webpack graph for server-only alert auth.
+const runtimeRequire = eval("require") as NodeJS.Require;
+const {
+    createHmac,
+    randomBytes,
+    timingSafeEqual,
+} = runtimeRequire("crypto") as typeof import("crypto");
 
 const CHALLENGE_COOKIE = "bagscan_alerts_challenge";
 const SESSION_COOKIE = "bagscan_alerts_session";

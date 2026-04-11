@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { syncTokenDetail, getTokenSnapshots } from "@/lib/sync";
 import { getClaimEvents, getCompanyTokenDetails, getDexScreenerPairs } from "@/lib/bags/client";
+import { getJupiterTokenDetail } from "@/lib/jupiter/client";
 
 type DexPair = Awaited<ReturnType<typeof getDexScreenerPairs>>[number];
 
@@ -85,6 +86,10 @@ export async function GET(
             getDexScreenerPairs([mint]),
             getCompanyTokenDetails(mint),
         ]);
+        const jupiter = await getJupiterTokenDetail(mint).catch((error) => {
+            console.error("[api/tokens/[mint]] jupiter lookup error:", error);
+            return null;
+        });
 
         const claimEvents = claimEventsData?.events ?? claimEventsData?.claims ?? [];
 
@@ -106,7 +111,7 @@ export async function GET(
 
         return NextResponse.json({
             success: true,
-            data: { token, claimEvents, snapshots, incorporation },
+            data: { token, claimEvents, snapshots, incorporation, jupiter },
         });
     } catch (e) {
         console.error("[api/tokens/[mint]] error:", e);

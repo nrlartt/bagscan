@@ -1,4 +1,3 @@
-import webpush from "web-push";
 import type {
     AlertNotification as AlertNotificationRecord,
     AlertPreference as AlertPreferenceRecord,
@@ -18,6 +17,10 @@ import type {
     AlertStateResponse,
 } from "./types";
 import { withPgAdvisoryLock } from "@/lib/db";
+import type {
+    WebPushSendError,
+    WebPushSubscriptionPayload,
+} from "./webpush.server";
 
 const ALERT_EVALUATION_INTERVAL_MS = 90_000;
 const DEFAULT_NOTIFICATION_LIMIT = 30;
@@ -297,7 +300,12 @@ async function sendBrowserPush(
         return;
     }
 
-    webpush.setVapidDetails(pushConfig.subject!, pushConfig.publicKey!, pushConfig.privateKey!);
+    const { getConfiguredWebPush } = await import("./webpush.server");
+    const webpush = getConfiguredWebPush({
+        subject: pushConfig.subject!,
+        publicKey: pushConfig.publicKey!,
+        privateKey: pushConfig.privateKey!,
+    });
 
     const top = notifications[0];
     const payload = JSON.stringify({
@@ -327,13 +335,13 @@ async function sendBrowserPush(
                             p256dh: subscription.p256dh,
                             auth: subscription.auth,
                         },
-                    },
+                    } satisfies WebPushSubscriptionPayload,
                     payload
                 );
             } catch (error) {
                 const statusCode =
                     typeof error === "object" && error !== null && "statusCode" in error
-                        ? Number((error as { statusCode?: number }).statusCode)
+                        ? Number((error as WebPushSendError).statusCode)
                         : undefined;
 
                 if (statusCode === 404 || statusCode === 410) {

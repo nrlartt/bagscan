@@ -11,6 +11,7 @@ import { BuyWidget } from "@/components/bagscan/BuyWidget";
 import { ClaimEventsList } from "@/components/bagscan/ClaimEventsList";
 import { SnapshotChart } from "@/components/bagscan/SnapshotChart";
 import { BubbleMapEmbed } from "@/components/bagscan/BubbleMapEmbed";
+import { JupiterTokenPanel } from "@/components/bagscan/JupiterTokenPanel";
 import { ErrorState } from "@/components/bagscan/States";
 import { DetailSkeleton } from "@/components/bagscan/Skeletons";
 import {
@@ -28,6 +29,7 @@ import type {
     BagsClaimStatEntry,
     BagsIncorporationProject,
 } from "@/lib/bags/types";
+import type { JupiterTokenDetail } from "@/lib/jupiter/types";
 import {
     TrendingUp, Coins, Zap, Users, ExternalLink,
     DollarSign, BarChart3, Activity, ArrowUpDown, Percent,
@@ -40,6 +42,7 @@ interface TokenDetailResponse {
         token: NormalizedToken;
         claimEvents: BagsClaimEvent[];
         incorporation?: BagsIncorporationProject | null;
+        jupiter?: JupiterTokenDetail | null;
         snapshots: {
             capturedAt: string;
             fdvUsd?: number | null;
@@ -86,7 +89,7 @@ export default function TokenDetailPage() {
         );
     }
 
-    const { token, claimEvents, snapshots, incorporation } = data.data;
+    const { token, claimEvents, snapshots, incorporation, jupiter } = data.data;
     const priceChangePositive = (token.priceChange24h ?? 0) >= 0;
     const valuation = getValuationMetric(token);
     const officialXHandle = getOfficialProjectXHandle(token);
@@ -324,14 +327,20 @@ export default function TokenDetailPage() {
                         <BuyWidget tokenMint={token.tokenMint} tokenSymbol={token.symbol} />
                     </div>
 
+                    {jupiter ? (
+                        <div className="animate-slide-in-right" style={{ animationDelay: "115ms" }}>
+                            <JupiterTokenPanel data={jupiter} />
+                        </div>
+                    ) : null}
+
                     <div className="crt-panel animate-slide-in-right overflow-hidden border border-[#00aaff]/14 bg-[linear-gradient(180deg,rgba(0,170,255,0.07),rgba(0,0,0,0.42))] p-0 shadow-[0_0_26px_rgba(0,170,255,0.06)]" style={{ animationDelay: "130ms" }}>
                         <div className="border-b border-[#00aaff]/10 px-4 py-4">
                             <div className="panel-header flex items-center gap-2 text-[#8dd8ff]/76">
                                 <Twitter className="w-4 h-4 text-[#8dd8ff]/65" />
-                                ╔══ OFFICIAL SOCIAL SURFACE ══╗
+                                ╔══ OFFICIAL SOCIAL LINKS ══╗
                             </div>
                             <p className="mt-2 text-[10px] tracking-[0.12em] text-[#8dd8ff]/38">
-                                Project identity, X visibility, and public links resolved from the live Bags token surface.
+                                Project identity, X visibility, and public links resolved from the live Bags token data.
                             </p>
                         </div>
                         <div className="space-y-4 px-4 py-4">
@@ -353,7 +362,7 @@ export default function TokenDetailPage() {
                                         {officialCreatorXHandle ? `@${officialCreatorXHandle}` : "Not exposed"}
                                     </p>
                                     <p className="mt-1 text-[10px] tracking-[0.12em] text-[#d8ffe6]/38">
-                                        {token.creatorDisplay ?? "Primary creator surface"}
+                                        {token.creatorDisplay ?? "Primary creator profile"}
                                     </p>
                                 </div>
                                 <div className="border border-white/8 bg-white/[0.025] px-3 py-3">
