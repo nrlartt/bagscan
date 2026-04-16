@@ -38,9 +38,17 @@ function isAlreadyProcessedMessage(message: string) {
     return /alreadyprocessed|already been processed/i.test(message);
 }
 
+function isRegionBlockedMessage(message: string) {
+    return /trading is not available in your region|not available in your region/i.test(message);
+}
+
 function normalizePredictionUiError(message: string) {
     if (isAlreadyProcessedMessage(message)) {
         return "This transaction was already submitted. BagScan is checking the live result now.";
+    }
+
+    if (isRegionBlockedMessage(message)) {
+        return "Prediction trading is currently unavailable for this region or environment.";
     }
 
     return message;
@@ -810,6 +818,85 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
         );
     }
 
+    async function settleUsdcDeltaBackToScan(
+        baselineRaw: string,
+        fallbackMessage: string,
+        attempts = 10,
+        delayMs = 1500
+    ) {
+        if (!signTransaction) {
+            throw new Error(fallbackMessage);
+        }
+
+        const settlementData = await waitForSettlementOrder(baselineRaw, attempts, delayMs);
+        const settlementTx = getStringField(
+            settlementData?.settlementOrder,
+            "transaction",
+            "serializedTransaction",
+            "swapTransaction"
+        );
+        const requestId = getStringField(
+            settlementData?.settlementOrder,
+            "requestId",
+            "quoteRequestId",
+            "id"
+        );
+
+        if (!settlementTx || !requestId) {
+            throw new Error(fallbackMessage);
+        }
+
+        const signedSettlement = await signTransaction(
+            VersionedTransaction.deserialize(decodeTransactionData(settlementTx))
+        );
+
+        const executeRes = await fetch("/api/prediction/settlement-execute", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                requestId,
+                signedTransaction: uint8ArrayToBase64(signedSettlement.serialize()),
+            }),
+        });
+        const executeJson = await executeRes.json();
+        if (!executeJson.success) {
+            throw new Error(
+                normalizePredictionUiError(
+                    executeJson.error || fallbackMessage
+                )
+            );
+        }
+
+        return executeJson.data as Record<string, unknown>;
+    }
+
+    async function verifyPredictionEligibility(prepared: PrepareData) {
+        if (!wallet || !selectedMarket) {
+            throw new Error("Choose a live market first.");
+        }
+
+        const eligibilityRes = await fetch("/api/prediction/order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                ownerPubkey: wallet,
+                marketId: selectedMarket.marketId,
+                isYes: side === "YES",
+                depositAmount: prepared.reservedOutRaw,
+            }),
+        });
+        const eligibilityJson = await eligibilityRes.json();
+        if (!eligibilityJson.success) {
+            throw new Error(
+                normalizePredictionUiError(
+                    eligibilityJson.error || "Prediction order is unavailable for this environment."
+                )
+            );
+        }
+
+        return true;
+    }
+
     async function fundPreparedPrediction(prepared: PrepareData) {
         if (!signTransaction) throw new Error("Wallet signing is required.");
 
@@ -894,15 +981,59 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
         setError(null);
 
         try {
+            const usdcBaseline = await getPredictionUsdcBalance();
             const prepared = prepare ?? (await prepareFundingRequest());
+            let fundedThisPass = false;
+
+            setOrderStatus("checking");
+            await verifyPredictionEligibility(prepared);
 
             if (!fundingSig) {
                 setOrderStatus("funding");
                 await fundPreparedPrediction(prepared);
+                fundedThisPass = true;
             }
 
-            setOrderStatus("ordering");
-            await openPreparedPosition(prepared);
+            try {
+                setOrderStatus("ordering");
+                await openPreparedPosition(prepared);
+            } catch (orderError) {
+                if (fundedThisPass || fundingSig) {
+                    try {
+                        await settleUsdcDeltaBackToScan(
+                            usdcBaseline.rawAmount,
+                            "Prediction entry failed after funding, and auto-return to $SCAN could not be completed.",
+                            8,
+                            1200
+                        );
+                    } catch (settlementError) {
+                        const orderMessage =
+                            orderError instanceof Error ? orderError.message : "Prediction entry failed.";
+                        const settlementMessage =
+                            settlementError instanceof Error
+                                ? settlementError.message
+                                : "Auto-return to $SCAN failed.";
+                        throw new Error(
+                            `${normalizePredictionUiError(orderMessage)} Auto-return to $SCAN also failed: ${normalizePredictionUiError(settlementMessage)}`
+                        );
+                    }
+
+                    const orderMessage =
+                        orderError instanceof Error ? orderError.message : "Prediction entry failed.";
+
+                    if (isRegionBlockedMessage(orderMessage)) {
+                        throw new Error(
+                            "Prediction trading is currently unavailable for this region or environment. Your funds were returned to $SCAN."
+                        );
+                    }
+
+                    throw new Error(
+                        `${normalizePredictionUiError(orderMessage)} Funds were returned to $SCAN.`
+                    );
+                }
+
+                throw orderError;
+            }
         } catch (entryError) {
             setError(
                 normalizePredictionUiError(
