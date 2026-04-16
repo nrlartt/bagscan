@@ -51,6 +51,10 @@ function normalizePredictionUiError(message: string) {
         return "Prediction trading is currently unavailable for this region or environment.";
     }
 
+    if (/429|too many requests|rate limit/i.test(message)) {
+        return "The Solana RPC is rate-limiting this action right now. Please wait a few seconds and try again.";
+    }
+
     return message;
 }
 

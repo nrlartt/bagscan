@@ -44,6 +44,19 @@ function isAlreadyProcessedError(error: { code?: number; message?: string; data?
     return /alreadyprocessed|already been processed/i.test(serialized);
 }
 
+function isRateLimitedError(error: { code?: number; message?: string; data?: unknown } | string) {
+    const serialized =
+        typeof error === "string"
+            ? error
+            : JSON.stringify({
+                  code: error.code,
+                  message: error.message,
+                  data: error.data,
+              });
+
+    return /429|too many requests|rate limit/i.test(serialized);
+}
+
 async function rpcRequest<T>(rpc: string, method: string, params: unknown[]) {
     const res = await fetch(rpc, {
         method: "POST",
@@ -150,6 +163,7 @@ export async function POST(req: NextRequest) {
                 if (data.error) {
                     lastError = JSON.stringify(data.error);
                     if (data.error.code === 403) continue;
+                    if (isRateLimitedError(data.error)) continue;
                     if (derivedSignature && isAlreadyProcessedError(data.error)) {
                         const confirmation = await confirmKnownSignature(derivedSignature);
                         return NextResponse.json({
@@ -168,6 +182,9 @@ export async function POST(req: NextRequest) {
                 }
             } catch (e) {
                 lastError = String(e);
+                if (isRateLimitedError(lastError)) {
+                    continue;
+                }
                 if (derivedSignature && isAlreadyProcessedError(lastError)) {
                     const confirmation = await confirmKnownSignature(derivedSignature);
                     return NextResponse.json({

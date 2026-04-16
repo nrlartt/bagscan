@@ -1,5 +1,5 @@
 import { Connection, ParsedAccountData, PublicKey } from "@solana/web3.js";
-import { getRpcUrl } from "./index";
+import { getRpcCandidates } from "./index";
 
 const TOKEN_PROGRAM_ID = new PublicKey(
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
@@ -9,21 +9,49 @@ function isParsedTokenAccountData(data: unknown): data is ParsedAccountData {
     return typeof data === "object" && data !== null && "parsed" in data;
 }
 
-export async function getMintDecimals(mint: string): Promise<number> {
-    const connection = new Connection(getRpcUrl(), "confirmed");
-    const response = await connection.getParsedAccountInfo(new PublicKey(mint), "confirmed");
-    const parsed = response.value?.data as
-        | {
-              parsed?: {
-                  info?: {
-                      decimals?: unknown;
-                  };
-              };
-          }
-        | undefined;
+function isRpcRateLimitError(error: unknown) {
+    const detail =
+        error instanceof Error
+            ? error.message
+            : typeof error === "string"
+                ? error
+                : JSON.stringify(error);
 
-    const decimals = parsed?.parsed?.info?.decimals;
-    return typeof decimals === "number" ? decimals : 6;
+    return /429|too many requests|rate limit/i.test(detail);
+}
+
+export async function getMintDecimals(mint: string): Promise<number> {
+    let lastError: unknown = null;
+
+    for (const rpc of getRpcCandidates()) {
+        try {
+            const connection = new Connection(rpc, "confirmed");
+            const response = await connection.getParsedAccountInfo(new PublicKey(mint), "confirmed");
+            const parsed = response.value?.data as
+                | {
+                      parsed?: {
+                          info?: {
+                              decimals?: unknown;
+                          };
+                      };
+                  }
+                | undefined;
+
+            const decimals = parsed?.parsed?.info?.decimals;
+            return typeof decimals === "number" ? decimals : 6;
+        } catch (error) {
+            lastError = error;
+            if (!isRpcRateLimitError(error)) {
+                break;
+            }
+        }
+    }
+
+    if (lastError) {
+        throw lastError;
+    }
+
+    return 6;
 }
 
 export function parseUiAmountToRaw(value: number, decimals: number) {
@@ -59,37 +87,52 @@ export function formatRawAmountToUi(raw: bigint, decimals: number) {
 }
 
 export async function getTokenBalanceRaw(ownerPubkey: string, mint: string) {
-    const connection = new Connection(getRpcUrl(), "confirmed");
     const owner = new PublicKey(ownerPubkey);
-    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-        owner,
-        { programId: TOKEN_PROGRAM_ID },
-        "confirmed"
-    );
+    let lastError: unknown = null;
 
-    let rawAmount = BigInt(0);
-    let decimals = 6;
+    for (const rpc of getRpcCandidates()) {
+        try {
+            const connection = new Connection(rpc, "confirmed");
+            const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+                owner,
+                { programId: TOKEN_PROGRAM_ID },
+                "confirmed"
+            );
 
-    for (const entry of tokenAccounts.value) {
-        if (!isParsedTokenAccountData(entry.account.data)) continue;
+            let rawAmount = BigInt(0);
+            let decimals = 6;
 
-        const info = entry.account.data.parsed.info as {
-            mint?: string;
-            tokenAmount?: {
-                amount?: string;
-                decimals?: number;
+            for (const entry of tokenAccounts.value) {
+                if (!isParsedTokenAccountData(entry.account.data)) continue;
+
+                const info = entry.account.data.parsed.info as {
+                    mint?: string;
+                    tokenAmount?: {
+                        amount?: string;
+                        decimals?: number;
+                    };
+                };
+
+                if (info.mint !== mint || !info.tokenAmount) continue;
+
+                decimals = info.tokenAmount.decimals ?? decimals;
+                rawAmount += BigInt(info.tokenAmount.amount ?? "0");
+            }
+
+            return {
+                rawAmount,
+                decimals,
+                uiAmount: formatRawAmountToUi(rawAmount, decimals),
             };
-        };
-
-        if (info.mint !== mint || !info.tokenAmount) continue;
-
-        decimals = info.tokenAmount.decimals ?? decimals;
-        rawAmount += BigInt(info.tokenAmount.amount ?? "0");
+        } catch (error) {
+            lastError = error;
+            if (!isRpcRateLimitError(error)) {
+                break;
+            }
+        }
     }
 
-    return {
-        rawAmount,
-        decimals,
-        uiAmount: formatRawAmountToUi(rawAmount, decimals),
-    };
+    throw lastError instanceof Error
+        ? lastError
+        : new Error("Token balance could not be loaded from the configured Solana RPC.");
 }
