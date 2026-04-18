@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
-export { preferredRegion } from "../segment-config";
+/** EU regions — Jupiter Prediction API blocks US/KR server egress. See https://dev.jup.ag/docs/prediction */
+export const preferredRegion = ["fra1", "cdg1", "arn1"];
 
 import { NextRequest, NextResponse } from "next/server";
 import { predictionSettlementExecuteBodySchema } from "@/lib/validators";
