@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, Flame, Loader2, Search, Target } from "lucide-react";
 import type { JupiterPredictionEvent, JupiterPredictionTradingStatus } from "@/lib/jupiter/types";
-import { cn, formatCurrency, formatNumber } from "@/lib/utils";
+import { cn, formatCurrency, formatNumber, parseFetchResponseAsJson } from "@/lib/utils";
 
 interface MarketboardData {
     tradingStatus: JupiterPredictionTradingStatus;
@@ -22,9 +22,9 @@ export function PredictionBrowse() {
         queryKey: ["prediction-marketboard"],
         queryFn: async () => {
             const res = await fetch("/api/prediction/marketboard");
-            const json = await res.json();
+            const json = await parseFetchResponseAsJson(res);
             if (!json.success) throw new Error(json.error || "Prediction marketboard could not be loaded.");
-            return json.data;
+            return json.data as MarketboardData;
         },
         staleTime: 60_000,
         refetchInterval: 90_000,

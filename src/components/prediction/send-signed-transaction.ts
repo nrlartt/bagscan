@@ -1,3 +1,5 @@
+import { parseFetchResponseAsJson } from "@/lib/utils";
+
 function uint8ArrayToBase64(bytes: Uint8Array) {
     let binary = "";
     for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
@@ -17,11 +19,7 @@ export async function sendSignedTransactionWithRetry(serialized: Uint8Array) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ signedTransaction: uint8ArrayToBase64(serialized) }),
         });
-        const sendJson = (await sendRes.json()) as {
-            success?: boolean;
-            data?: Record<string, unknown>;
-            error?: string;
-        };
+        const sendJson = await parseFetchResponseAsJson(sendRes);
 
         if (sendJson.success) return sendJson;
 

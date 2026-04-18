@@ -25,7 +25,7 @@ import type {
     JupiterPredictionTradingStatus,
 } from "@/lib/jupiter/types";
 import { SCAN_BAGS_URL, SCAN_SYMBOL } from "@/lib/scan/constants";
-import { cn, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
+import { cn, formatCurrency, formatNumber, parseFetchResponseAsJson, shortenAddress } from "@/lib/utils";
 import { getExplorerUrl } from "@/lib/solana";
 import { sendSignedTransactionWithRetry } from "./send-signed-transaction";
 
@@ -686,9 +686,9 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
         queryKey: ["prediction-event", eventId],
         queryFn: async () => {
             const res = await fetch(`/api/prediction/event/${encodeURIComponent(eventId)}`);
-            const json = await res.json();
+            const json = await parseFetchResponseAsJson(res);
             if (!json.success) throw new Error(json.error || "Prediction event could not be loaded.");
-            return json.data;
+            return json.data as EventPayload;
         },
         staleTime: 60_000,
         refetchInterval: 90_000,
@@ -699,9 +699,9 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
         enabled: connected && Boolean(wallet),
         queryFn: async () => {
             const res = await fetch(`/api/prediction/positions?ownerPubkey=${encodeURIComponent(wallet)}`);
-            const json = await res.json();
+            const json = await parseFetchResponseAsJson(res);
             if (!json.success) throw new Error(json.error || "Prediction positions could not be loaded.");
-            return json.data;
+            return json.data as JupiterPredictionPosition[];
         },
         staleTime: 20_000,
         refetchInterval: connected ? 45_000 : false,
@@ -783,17 +783,18 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
                 slippageBps: Number(slippageBps),
             }),
         });
-        const json = await res.json();
+        const json = await parseFetchResponseAsJson(res);
         if (!json.success) throw new Error(json.error || "Funding preview failed.");
-        setPrepare(json.data);
-        return json.data as PrepareData;
+        const prepared = json.data as PrepareData;
+        setPrepare(prepared);
+        return prepared;
     }
 
     async function getPredictionUsdcBalance() {
         if (!wallet) throw new Error("Connect a wallet to continue.");
 
         const res = await fetch(`/api/prediction/usdc-balance?ownerPubkey=${encodeURIComponent(wallet)}`);
-        const json = await res.json();
+        const json = await parseFetchResponseAsJson(res);
         if (!json.success) throw new Error(json.error || "USDC balance could not be checked.");
         return json.data as PredictionUsdcBalance;
     }
@@ -811,7 +812,7 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
                     slippageBps: Number(slippageBps),
                 }),
             });
-            const settlementJson = await settlementRes.json();
+            const settlementJson = await parseFetchResponseAsJson(settlementRes);
 
             if (!settlementJson.success) {
                 throw new Error(
@@ -821,8 +822,9 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
                 );
             }
 
-            if (!settlementJson.data?.skipped) {
-                return settlementJson.data;
+            const settlementPayload = settlementJson.data as { skipped?: boolean } | undefined;
+            if (!settlementPayload?.skipped) {
+                return settlementJson.data as Record<string, unknown>;
             }
 
             if (attempt < attempts - 1) {
@@ -846,14 +848,15 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
         }
 
         const settlementData = await waitForSettlementOrder(baselineRaw, attempts, delayMs);
+        const settlementOrderPayload = settlementData?.settlementOrder as Record<string, unknown> | undefined;
         const settlementTx = getStringField(
-            settlementData?.settlementOrder,
+            settlementOrderPayload,
             "transaction",
             "serializedTransaction",
             "swapTransaction"
         );
         const requestId = getStringField(
-            settlementData?.settlementOrder,
+            settlementOrderPayload,
             "requestId",
             "quoteRequestId",
             "id"
@@ -875,7 +878,7 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
                 signedTransaction: uint8ArrayToBase64(signedSettlement.serialize()),
             }),
         });
-        const executeJson = await executeRes.json();
+        const executeJson = await parseFetchResponseAsJson(executeRes);
         if (!executeJson.success) {
             throw new Error(
                 normalizePredictionUiError(
@@ -902,7 +905,7 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
                 depositAmount: prepared.reservedOutRaw,
             }),
         });
-        const eligibilityJson = await eligibilityRes.json();
+        const eligibilityJson = await parseFetchResponseAsJson(eligibilityRes);
         if (!eligibilityJson.success) {
             throw new Error(
                 normalizePredictionUiError(
@@ -927,12 +930,12 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ requestId, signedTransaction: uint8ArrayToBase64(signed.serialize()) }),
         });
-        const json = await res.json();
+        const json = await parseFetchResponseAsJson(res);
         if (!json.success) {
             throw new Error(normalizePredictionUiError(json.error || "Funding swap failed."));
         }
 
-        const signature = getStringField(json.data, "signature", "txid") ?? requestId;
+        const signature = getStringField(json.data as Record<string, unknown>, "signature", "txid") ?? requestId;
         setFundingSig(signature);
         return signature;
     }
@@ -950,11 +953,12 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
                 depositAmount: prepared.reservedOutRaw,
             }),
         });
-        const orderJson = await orderRes.json();
+        const orderJson = await parseFetchResponseAsJson(orderRes);
         if (!orderJson.success) throw new Error(orderJson.error || "Prediction order failed.");
 
-        const tx = getStringField(orderJson.data, "transaction", "serializedTransaction");
-        const pubkey = getStringField(orderJson.data, "orderPubkey");
+        const orderData = orderJson.data as Record<string, unknown>;
+        const tx = getStringField(orderData, "transaction", "serializedTransaction");
+        const pubkey = getStringField(orderData, "orderPubkey");
         if (!tx || !pubkey) throw new Error("Prediction order transaction is incomplete.");
 
         const signed = await signTransaction(VersionedTransaction.deserialize(decodeTransactionData(tx)));
@@ -963,7 +967,7 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
 
         try {
             const sendJson = await sendSignedTransactionWithRetry(signed.serialize());
-            signature = getStringField(sendJson.data, "signature");
+            signature = getStringField(sendJson.data as Record<string, unknown>, "signature");
             setPredictionSig(signature);
         } catch (sendError) {
             const message = sendError instanceof Error ? sendError.message : String(sendError);
@@ -1079,9 +1083,9 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ownerPubkey: wallet, positionPubkey }),
             });
-            const claimJson = await claimRes.json();
+            const claimJson = await parseFetchResponseAsJson(claimRes);
             if (!claimJson.success) throw new Error(claimJson.error || "Claim transaction could not be created.");
-            const tx = getStringField(claimJson.data, "transaction", "serializedTransaction");
+            const tx = getStringField(claimJson.data as Record<string, unknown>, "transaction", "serializedTransaction");
             if (!tx) throw new Error("Claim transaction is incomplete.");
             const signed = await signTransaction(VersionedTransaction.deserialize(decodeTransactionData(tx)));
             try {
@@ -1125,9 +1129,9 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ownerPubkey: wallet, positionPubkey }),
             });
-            const closeJson = await closeRes.json();
+            const closeJson = await parseFetchResponseAsJson(closeRes);
             if (!closeJson.success) throw new Error(closeJson.error || "Close transaction could not be created.");
-            const closeTx = getStringField(closeJson.data, "transaction", "serializedTransaction");
+            const closeTx = getStringField(closeJson.data as Record<string, unknown>, "transaction", "serializedTransaction");
             if (!closeTx) throw new Error("Close transaction is incomplete.");
             const signed = await signTransaction(VersionedTransaction.deserialize(decodeTransactionData(closeTx)));
             try {
@@ -1146,14 +1150,15 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
             );
 
             const settlementData = await waitForSettlementOrder(usdcBaseline.rawAmount);
+            const settlementOrderPayload = settlementData?.settlementOrder as Record<string, unknown> | undefined;
             const settlementTx = getStringField(
-                settlementData?.settlementOrder,
+                settlementOrderPayload,
                 "transaction",
                 "serializedTransaction",
                 "swapTransaction"
             );
             const requestId = getStringField(
-                settlementData?.settlementOrder,
+                settlementOrderPayload,
                 "requestId",
                 "quoteRequestId",
                 "id"
@@ -1174,7 +1179,7 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
                     signedTransaction: uint8ArrayToBase64(signedSettlement.serialize()),
                 }),
             });
-            const executeJson = await executeRes.json();
+            const executeJson = await parseFetchResponseAsJson(executeRes);
             if (!executeJson.success) {
                 throw new Error(
                     normalizePredictionUiError(
@@ -1495,9 +1500,10 @@ async function pollOrderStatus(orderPubkey: string, setStatus: (value: string) =
     for (let attempt = 0; attempt < 12; attempt += 1) {
         try {
             const res = await fetch(`/api/prediction/order-status/${orderPubkey}`);
-            const json = await res.json();
+            const json = await parseFetchResponseAsJson(res);
             if (json.success) {
-                const status = getStringField(json.data, "status", "fillStatus") ?? "pending";
+                const status =
+                    getStringField(json.data as Record<string, unknown>, "status", "fillStatus") ?? "pending";
                 setStatus(status);
                 if (["filled", "matched", "open", "resting", "completed"].some((item) => status.toLowerCase().includes(item))) return;
             } else {

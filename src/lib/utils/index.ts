@@ -98,6 +98,8 @@ export function bpsToPercent(bps: number | null | undefined): string {
     return `${(bps / 100).toFixed(2)}%`;
 }
 
+export { parseFetchResponseAsJson } from "./parse-fetch-json";
+
 /** Copy to clipboard helper. */
 export async function copyToClipboard(text: string): Promise<boolean> {
     try {
