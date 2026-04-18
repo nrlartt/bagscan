@@ -23,6 +23,7 @@ import type {
 } from "./webpush.server";
 
 const ALERT_EVALUATION_INTERVAL_MS = 90_000;
+const DEFAULT_CRON_WALLET_GAP_MS = 250;
 const DEFAULT_NOTIFICATION_LIMIT = 30;
 const PUSH_ACTION_FALLBACK = "/alpha";
 const ALERTS_CRON_LOCK_KEY = 42_091_337;
@@ -125,6 +126,16 @@ function hasAnyDeliveryEnabled(preference: AlertPreferenceRecord) {
 
 function getEventBucket(hours: number) {
     return Math.floor(Date.now() / (hours * 60 * 60 * 1000));
+}
+
+function sleep(ms: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function getCronWalletGapMs() {
+    const raw = Number(process.env.ALERTS_CRON_WALLET_GAP_MS ?? DEFAULT_CRON_WALLET_GAP_MS);
+    if (!Number.isFinite(raw) || raw < 0) return DEFAULT_CRON_WALLET_GAP_MS;
+    return Math.min(raw, 10_000);
 }
 
 function toSeverity(kind: "info" | "hot" | "critical") {
@@ -681,12 +692,21 @@ async function runAlertsCronInternal(limit = 100) {
 
     let createdCount = 0;
 
-    for (const preference of preferences) {
+    const walletGapMs = getCronWalletGapMs();
+
+    for (let index = 0; index < preferences.length; index += 1) {
+        const preference = preferences[index];
         try {
-            const result = await evaluateAlertsForWallet(preference.walletAddress, true);
+            // Do not pass force=true: it bypasses ALERT_EVALUATION_INTERVAL_MS and hammers
+            // Solana RPC for every wallet on each tick (429 storm on serverless).
+            const result = await evaluateAlertsForWallet(preference.walletAddress, false);
             createdCount += result.created.length;
         } catch (error) {
             console.error(`[alerts] cron evaluation failed for ${preference.walletAddress}:`, error);
+        }
+
+        if (walletGapMs > 0 && index < preferences.length - 1) {
+            await sleep(walletGapMs);
         }
     }
 
