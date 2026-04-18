@@ -27,6 +27,7 @@ import type {
 import { SCAN_BAGS_URL, SCAN_SYMBOL } from "@/lib/scan/constants";
 import { cn, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
 import { getExplorerUrl } from "@/lib/solana";
+import { sendSignedTransactionWithRetry } from "./send-signed-transaction";
 
 interface EventPayload {
     tradingStatus: JupiterPredictionTradingStatus;
@@ -42,6 +43,12 @@ function isRegionBlockedMessage(message: string) {
     return /trading is not available in your region|not available in your region/i.test(message);
 }
 
+function isJupiterRateLimitMessage(message: string) {
+    return /jupiter|jup\.ag|api\.jup|ultra\/v1|prediction\/v1|credits|developer portal|plan limit/i.test(
+        message
+    );
+}
+
 function normalizePredictionUiError(message: string) {
     if (isAlreadyProcessedMessage(message)) {
         return "This transaction was already submitted. BagScan is checking the live result now.";
@@ -52,7 +59,13 @@ function normalizePredictionUiError(message: string) {
     }
 
     if (/429|too many requests|rate limit/i.test(message)) {
-        return "The Solana RPC is rate-limiting this action right now. Please wait a few seconds and try again.";
+        if (isJupiterRateLimitMessage(message)) {
+            return "Jupiter APIs are rate-limiting this action. Please wait a few seconds and try again. A higher Jupiter Developer plan increases shared limits.";
+        }
+        if (/solana|jsonrpc|blockhash|signature verification|sendtransaction/i.test(message)) {
+            return "Solana RPC rate limits were hit. Ensure HELIUS_API_KEY is set on the server, wait briefly, and try again.";
+        }
+        return "This step was rate-limited. Wait a few seconds and retry. Production needs HELIUS_API_KEY for Solana and enough Jupiter API quota for swaps and prediction.";
     }
 
     return message;
@@ -503,7 +516,7 @@ function PredictionEntryPanel({
             </label>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
-                {["25000", "100000", "250000"].map((amount) => (
+                {["1000000", "10000000", "100000000"].map((amount) => (
                     <button
                         key={amount}
                         type="button"
@@ -657,7 +670,7 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
 
     const [marketId, setMarketId] = useState(initialMarketId);
     const [side, setSide] = useState<"YES" | "NO">("YES");
-    const [scanAmountUi, setScanAmountUi] = useState("25000");
+    const [scanAmountUi, setScanAmountUi] = useState("1000000");
     const [slippageBps, setSlippageBps] = useState("250");
     const [prepare, setPrepare] = useState<PrepareData | null>(null);
     const [fundingSig, setFundingSig] = useState<string | null>(null);
@@ -949,7 +962,7 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
         let signature: string | null = null;
 
         try {
-            const sendJson = await sendSignedTransaction(signed.serialize());
+            const sendJson = await sendSignedTransactionWithRetry(signed.serialize());
             signature = getStringField(sendJson.data, "signature");
             setPredictionSig(signature);
         } catch (sendError) {
@@ -1072,7 +1085,7 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
             if (!tx) throw new Error("Claim transaction is incomplete.");
             const signed = await signTransaction(VersionedTransaction.deserialize(decodeTransactionData(tx)));
             try {
-                await sendSignedTransaction(signed.serialize());
+                await sendSignedTransactionWithRetry(signed.serialize());
             } catch (claimError) {
                 const message =
                     claimError instanceof Error ? claimError.message : String(claimError);
@@ -1118,7 +1131,7 @@ export function PredictionEventTerminal({ eventId }: { eventId: string }) {
             if (!closeTx) throw new Error("Close transaction is incomplete.");
             const signed = await signTransaction(VersionedTransaction.deserialize(decodeTransactionData(closeTx)));
             try {
-                await sendSignedTransaction(signed.serialize());
+                await sendSignedTransactionWithRetry(signed.serialize());
             } catch (closeError) {
                 const message =
                     closeError instanceof Error ? closeError.message : String(closeError);
@@ -1476,17 +1489,6 @@ function uint8ArrayToBase64(bytes: Uint8Array) {
     let binary = "";
     for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
     return btoa(binary);
-}
-
-async function sendSignedTransaction(serialized: Uint8Array) {
-    const sendRes = await fetch("/api/rpc/send-transaction", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signedTransaction: uint8ArrayToBase64(serialized) }),
-    });
-    const sendJson = await sendRes.json();
-    if (!sendJson.success) throw new Error(sendJson.error || "Transaction could not be sent.");
-    return sendJson;
 }
 
 async function pollOrderStatus(orderPubkey: string, setStatus: (value: string) => void) {

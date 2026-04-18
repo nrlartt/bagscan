@@ -1,5 +1,6 @@
 import "server-only";
 
+import { fetchWithRateLimitRetry } from "@/lib/http/fetch-rate-limit-retry";
 import type {
     JupiterPredictionCreateOrderResponse,
     JupiterPredictionEvent,
@@ -455,10 +456,14 @@ export async function getJupiterPredictionTradingStatus() {
     const cached = getCachedValue(tradingStatusCache.entry);
     if (cached) return cached;
 
-    const response = await fetch(`${getJupPredictionApiBaseUrl()}/trading-status`, {
-        headers: getJupPredictionHeaders(),
-        next: { revalidate: 20 },
-    });
+    const response = await fetchWithRateLimitRetry(
+        `${getJupPredictionApiBaseUrl()}/trading-status`,
+        () => ({
+            headers: getJupPredictionHeaders(),
+            next: { revalidate: 20 },
+        }),
+        { maxAttempts: 5, baseDelayMs: 450 }
+    );
 
     const payload = await parseJsonResponse<JsonRecord>(
         response,
@@ -496,10 +501,14 @@ export async function getJupiterPredictionEvents(limit = 48) {
             end: String(end),
         });
 
-        const response = await fetch(`${getJupPredictionApiBaseUrl()}/events?${params.toString()}`, {
-            headers: getJupPredictionHeaders(),
-            next: { revalidate: 20 },
-        });
+        const response = await fetchWithRateLimitRetry(
+            `${getJupPredictionApiBaseUrl()}/events?${params.toString()}`,
+            () => ({
+                headers: getJupPredictionHeaders(),
+                next: { revalidate: 20 },
+            }),
+            { maxAttempts: 5, baseDelayMs: 450 }
+        );
 
         const payload = await parseJsonResponse<JsonRecord>(
             response,
@@ -570,12 +579,13 @@ export async function getJupiterPredictionEvent(eventId: string) {
     const cached = getCachedValue(predictionEventCache.get(normalizedEventId));
     if (cached) return cached;
 
-    const response = await fetch(
+    const response = await fetchWithRateLimitRetry(
         `${getJupPredictionApiBaseUrl()}/events/${encodeURIComponent(normalizedEventId)}`,
-        {
+        () => ({
             headers: getJupPredictionHeaders(),
             next: { revalidate: 20 },
-        }
+        }),
+        { maxAttempts: 5, baseDelayMs: 450 }
     );
 
     const payload = await parseJsonResponse<JsonRecord>(
@@ -607,12 +617,13 @@ export async function getJupiterPredictionEvent(eventId: string) {
 
 export async function getJupiterPredictionPositions(ownerPubkey: string) {
     const params = new URLSearchParams({ ownerPubkey, start: "0", end: "25" });
-    const response = await fetch(
+    const response = await fetchWithRateLimitRetry(
         `${getJupPredictionApiBaseUrl()}/positions?${params.toString()}`,
-        {
+        () => ({
             headers: getJupPredictionHeaders(),
             cache: "no-store",
-        }
+        }),
+        { maxAttempts: 5, baseDelayMs: 450 }
     );
 
     const payload = await parseJsonResponse<JsonRecord>(
@@ -632,19 +643,24 @@ export async function createJupiterPredictionOrder(params: {
     depositAmount: string;
     depositMint?: string;
 }) {
-    const response = await fetch(`${getJupPredictionApiBaseUrl()}/orders`, {
-        method: "POST",
-        headers: getJupPredictionJsonHeaders(),
-        cache: "no-store",
-        body: JSON.stringify({
-            isBuy: true,
-            ownerPubkey: params.ownerPubkey,
-            marketId: params.marketId,
-            isYes: params.isYes,
-            depositAmount: params.depositAmount,
-            depositMint: params.depositMint ?? JUP_USDC_MINT,
-        }),
+    const orderBody = JSON.stringify({
+        isBuy: true,
+        ownerPubkey: params.ownerPubkey,
+        marketId: params.marketId,
+        isYes: params.isYes,
+        depositAmount: params.depositAmount,
+        depositMint: params.depositMint ?? JUP_USDC_MINT,
     });
+    const response = await fetchWithRateLimitRetry(
+        `${getJupPredictionApiBaseUrl()}/orders`,
+        () => ({
+            method: "POST",
+            headers: getJupPredictionJsonHeaders(),
+            cache: "no-store",
+            body: orderBody,
+        }),
+        { maxAttempts: 5, baseDelayMs: 450 }
+    );
 
     const payload = await parseJsonResponse<JupiterPredictionCreateOrderResponse>(
         response,
@@ -674,12 +690,13 @@ export async function createJupiterPredictionOrder(params: {
 }
 
 export async function getJupiterPredictionOrderStatus(orderPubkey: string) {
-    const response = await fetch(
+    const response = await fetchWithRateLimitRetry(
         `${getJupPredictionApiBaseUrl()}/orders/status/${orderPubkey}`,
-        {
+        () => ({
             headers: getJupPredictionHeaders(),
             cache: "no-store",
-        }
+        }),
+        { maxAttempts: 5, baseDelayMs: 450 }
     );
 
     return parseJsonResponse<JupiterPredictionOrderStatusResponse>(
@@ -692,16 +709,18 @@ export async function claimJupiterPredictionPosition(params: {
     positionPubkey: string;
     ownerPubkey: string;
 }) {
-    const response = await fetch(
+    const claimBody = JSON.stringify({
+        ownerPubkey: params.ownerPubkey,
+    });
+    const response = await fetchWithRateLimitRetry(
         `${getJupPredictionApiBaseUrl()}/positions/${params.positionPubkey}/claim`,
-        {
+        () => ({
             method: "POST",
             headers: getJupPredictionJsonHeaders(),
             cache: "no-store",
-            body: JSON.stringify({
-                ownerPubkey: params.ownerPubkey,
-            }),
-        }
+            body: claimBody,
+        }),
+        { maxAttempts: 5, baseDelayMs: 450 }
     );
 
     return parseJsonResponse<JsonRecord>(
@@ -714,16 +733,18 @@ export async function closeJupiterPredictionPosition(params: {
     positionPubkey: string;
     ownerPubkey: string;
 }) {
-    const response = await fetch(
+    const closeBody = JSON.stringify({
+        ownerPubkey: params.ownerPubkey,
+    });
+    const response = await fetchWithRateLimitRetry(
         `${getJupPredictionApiBaseUrl()}/positions/${params.positionPubkey}`,
-        {
+        () => ({
             method: "DELETE",
             headers: getJupPredictionJsonHeaders(),
             cache: "no-store",
-            body: JSON.stringify({
-                ownerPubkey: params.ownerPubkey,
-            }),
-        }
+            body: closeBody,
+        }),
+        { maxAttempts: 5, baseDelayMs: 450 }
     );
 
     return parseJsonResponse<JsonRecord>(

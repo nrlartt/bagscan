@@ -2,6 +2,7 @@ import "server-only";
 
 import bs58 from "bs58";
 import { VersionedTransaction } from "@solana/web3.js";
+import { fetchWithRateLimitRetry } from "@/lib/http/fetch-rate-limit-retry";
 import type { JupiterExecuteResponse, JupiterOrderResponse } from "./types";
 import { SOL_MINT } from "@/lib/solana";
 import { SCAN_MINT } from "@/lib/scan/constants";
@@ -116,10 +117,14 @@ async function fetchJupiterOrder(params: {
     inputMint?: string;
     slippageBps?: number;
 }) {
-    const response = await fetch(buildOrderUrl(params), {
-        headers: getJupHeaders(),
-        cache: "no-store",
-    });
+    const response = await fetchWithRateLimitRetry(
+        buildOrderUrl(params),
+        () => ({
+            headers: getJupHeaders(),
+            cache: "no-store",
+        }),
+        { maxAttempts: 5, baseDelayMs: 450 }
+    );
 
     const payload = (await response.json().catch(() => null)) as JupiterOrderResponse | null;
 
@@ -146,15 +151,20 @@ async function postJupiterExecute(params: {
     requestId: string;
 }) {
     const baseUrl = getJupSwapApiBaseUrl().replace(/\/+$/, "");
-    const response = await fetch(`${baseUrl}/execute`, {
-        method: "POST",
-        headers: getJupJsonHeaders(),
-        cache: "no-store",
-        body: JSON.stringify({
-            signedTransaction: params.signedTransaction,
-            requestId: params.requestId,
-        }),
+    const body = JSON.stringify({
+        signedTransaction: params.signedTransaction,
+        requestId: params.requestId,
     });
+    const response = await fetchWithRateLimitRetry(
+        `${baseUrl}/execute`,
+        () => ({
+            method: "POST",
+            headers: getJupJsonHeaders(),
+            cache: "no-store",
+            body,
+        }),
+        { maxAttempts: 5, baseDelayMs: 450 }
+    );
 
     const payload = (await response.json().catch(() => null)) as JupiterExecuteResponse | null;
 

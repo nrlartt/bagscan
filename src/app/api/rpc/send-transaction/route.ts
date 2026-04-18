@@ -7,14 +7,20 @@ const CONFIRMATION_ATTEMPTS = 18;
 const CONFIRMATION_DELAY_MS = 1200;
 
 const RPC_ENDPOINTS = [
-    process.env.HELIUS_API_KEY
-        ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
-        : null,
-    process.env.SOLANA_RPC_URL || null,
-    process.env.NEXT_PUBLIC_SOLANA_RPC_URL || null,
-    "https://api.mainnet-beta.solana.com",
-    "https://solana-mainnet.g.alchemy.com/v2/demo",
-].filter(Boolean) as string[];
+    ...new Set(
+        [
+            process.env.HELIUS_API_KEY
+                ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+                : null,
+            process.env.SOLANA_RPC_URL || null,
+            process.env.NEXT_PUBLIC_SOLANA_RPC_URL || null,
+            "https://api.mainnet-beta.solana.com",
+            "https://solana-mainnet.g.alchemy.com/v2/demo",
+        ].filter(Boolean) as string[]
+    ),
+];
+
+const SUBMIT_WAVES = 3;
 
 function wait(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -142,29 +148,51 @@ export async function POST(req: NextRequest) {
         let lastError = "";
         const derivedSignature = deriveTransactionSignature(signedTransaction);
 
-        for (const rpc of RPC_ENDPOINTS) {
-            try {
-                const data = await rpcRequest<string>(rpc, "sendTransaction", [
-                    signedTransaction,
-                    { skipPreflight: false, encoding: "base64", preflightCommitment: "confirmed" },
-                ]);
+        for (let wave = 0; wave < SUBMIT_WAVES; wave += 1) {
+            for (const rpc of RPC_ENDPOINTS) {
+                try {
+                    const data = await rpcRequest<string>(rpc, "sendTransaction", [
+                        signedTransaction,
+                        { skipPreflight: false, encoding: "base64", preflightCommitment: "confirmed" },
+                    ]);
 
-                if (data.result) {
-                    const confirmation = await confirmKnownSignature(data.result);
-                    return NextResponse.json({
-                        success: true,
-                        data: {
-                            signature: data.result,
-                            confirmed: confirmation?.confirmed ?? false,
-                        },
-                    });
-                }
+                    if (data.result) {
+                        const confirmation = await confirmKnownSignature(data.result);
+                        return NextResponse.json({
+                            success: true,
+                            data: {
+                                signature: data.result,
+                                confirmed: confirmation?.confirmed ?? false,
+                            },
+                        });
+                    }
 
-                if (data.error) {
-                    lastError = JSON.stringify(data.error);
-                    if (data.error.code === 403) continue;
-                    if (isRateLimitedError(data.error)) continue;
-                    if (derivedSignature && isAlreadyProcessedError(data.error)) {
+                    if (data.error) {
+                        lastError = JSON.stringify(data.error);
+                        if (data.error.code === 403) continue;
+                        if (isRateLimitedError(data.error)) continue;
+                        if (derivedSignature && isAlreadyProcessedError(data.error)) {
+                            const confirmation = await confirmKnownSignature(derivedSignature);
+                            return NextResponse.json({
+                                success: true,
+                                data: {
+                                    signature: derivedSignature,
+                                    confirmed: confirmation?.confirmed ?? false,
+                                    alreadyProcessed: true,
+                                },
+                            });
+                        }
+                        return NextResponse.json(
+                            { success: false, error: lastError },
+                            { status: 400 }
+                        );
+                    }
+                } catch (e) {
+                    lastError = String(e);
+                    if (isRateLimitedError(lastError)) {
+                        continue;
+                    }
+                    if (derivedSignature && isAlreadyProcessedError(lastError)) {
                         const confirmation = await confirmKnownSignature(derivedSignature);
                         return NextResponse.json({
                             success: true,
@@ -175,28 +203,14 @@ export async function POST(req: NextRequest) {
                             },
                         });
                     }
-                    return NextResponse.json(
-                        { success: false, error: lastError },
-                        { status: 400 }
-                    );
-                }
-            } catch (e) {
-                lastError = String(e);
-                if (isRateLimitedError(lastError)) {
                     continue;
                 }
-                if (derivedSignature && isAlreadyProcessedError(lastError)) {
-                    const confirmation = await confirmKnownSignature(derivedSignature);
-                    return NextResponse.json({
-                        success: true,
-                        data: {
-                            signature: derivedSignature,
-                            confirmed: confirmation?.confirmed ?? false,
-                            alreadyProcessed: true,
-                        },
-                    });
-                }
-                continue;
+            }
+
+            if (wave < SUBMIT_WAVES - 1 && isRateLimitedError(lastError)) {
+                await wait(900 * (wave + 1));
+            } else {
+                break;
             }
         }
 

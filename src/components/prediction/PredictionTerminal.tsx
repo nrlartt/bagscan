@@ -12,6 +12,7 @@ import type { JupiterPredictionEvent, JupiterPredictionPosition, JupiterPredicti
 import { SCAN_BAGS_URL, SCAN_SYMBOL } from "@/lib/scan/constants";
 import { cn, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
 import { getExplorerUrl } from "@/lib/solana";
+import { sendSignedTransactionWithRetry } from "./send-signed-transaction";
 
 interface MarketboardData {
     tradingStatus: JupiterPredictionTradingStatus;
@@ -35,7 +36,7 @@ export function PredictionTerminal() {
     const [eventId, setEventId] = useState("");
     const [marketId, setMarketId] = useState("");
     const [side, setSide] = useState<"YES" | "NO">("YES");
-    const [scanAmountUi, setScanAmountUi] = useState("25000");
+    const [scanAmountUi, setScanAmountUi] = useState("1000000");
     const [slippageBps, setSlippageBps] = useState("250");
     const [search, setSearch] = useState("");
     const [category, setCategory] = useState("all");
@@ -182,7 +183,7 @@ export function PredictionTerminal() {
             const pubkey = getStringField(orderJson.data, "orderPubkey");
             if (!tx || !pubkey) throw new Error("Prediction order transaction is incomplete.");
             const signed = await signTransaction(VersionedTransaction.deserialize(decodeTransactionData(tx)));
-            const sendJson = await sendSignedTransaction(signed.serialize());
+            const sendJson = await sendSignedTransactionWithRetry(signed.serialize());
             setPredictionSig(getStringField(sendJson.data, "signature"));
             setOrderPubkey(pubkey);
             await pollOrderStatus(pubkey, setOrderStatus);
@@ -210,7 +211,7 @@ export function PredictionTerminal() {
             const tx = getStringField(claimJson.data, "transaction", "serializedTransaction");
             if (!tx) throw new Error("Claim transaction is incomplete.");
             const signed = await signTransaction(VersionedTransaction.deserialize(decodeTransactionData(tx)));
-            await sendSignedTransaction(signed.serialize());
+            await sendSignedTransactionWithRetry(signed.serialize());
             await positions.refetch();
         } catch (e) {
             setError(e instanceof Error ? e.message : "Claim failed.");
@@ -234,7 +235,7 @@ export function PredictionTerminal() {
             const tx = getStringField(closeJson.data, "transaction", "serializedTransaction");
             if (!tx) throw new Error("Close transaction is incomplete.");
             const signed = await signTransaction(VersionedTransaction.deserialize(decodeTransactionData(tx)));
-            await sendSignedTransaction(signed.serialize());
+            await sendSignedTransactionWithRetry(signed.serialize());
             await positions.refetch();
         } catch (e) {
             setError(e instanceof Error ? e.message : "Close position failed.");
@@ -494,17 +495,6 @@ function uint8ArrayToBase64(bytes: Uint8Array) {
     let binary = "";
     for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
     return btoa(binary);
-}
-
-async function sendSignedTransaction(serialized: Uint8Array) {
-    const sendRes = await fetch("/api/rpc/send-transaction", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signedTransaction: uint8ArrayToBase64(serialized) }),
-    });
-    const sendJson = await sendRes.json();
-    if (!sendJson.success) throw new Error(sendJson.error || "Transaction could not be sent.");
-    return sendJson;
 }
 
 async function pollOrderStatus(orderPubkey: string, setStatus: (value: string) => void) {

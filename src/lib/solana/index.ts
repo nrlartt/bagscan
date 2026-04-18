@@ -17,12 +17,13 @@ export function getRpcUrl(): string {
 }
 
 export function getRpcCandidates(): string[] {
-    return [
+    const urls = [
         getHeliusRpcUrl(),
         process.env.SOLANA_RPC_URL || null,
         process.env.NEXT_PUBLIC_SOLANA_RPC_URL || null,
         "https://api.mainnet-beta.solana.com",
     ].filter(Boolean) as string[];
+    return [...new Set(urls)];
 }
 
 export function getExplorerUrl(sig: string): string {

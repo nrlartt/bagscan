@@ -5,6 +5,13 @@ const TOKEN_PROGRAM_ID = new PublicKey(
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 );
 
+const RPC_ATTEMPTS_PER_ENDPOINT = 4;
+const RPC_BACKOFF_BASE_MS = 350;
+
+function sleep(ms: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
 function isParsedTokenAccountData(data: unknown): data is ParsedAccountData {
     return typeof data === "object" && data !== null && "parsed" in data;
 }
@@ -17,7 +24,25 @@ function isRpcRateLimitError(error: unknown) {
                 ? error
                 : JSON.stringify(error);
 
-    return /429|too many requests|rate limit/i.test(detail);
+    return /429|too many requests|rate limit|503|timeout|timed out|ECONNRESET/i.test(detail);
+}
+
+async function withPerRpcRetries<T>(run: () => Promise<T>): Promise<T> {
+    let last: unknown;
+    for (let attempt = 0; attempt < RPC_ATTEMPTS_PER_ENDPOINT; attempt += 1) {
+        try {
+            return await run();
+        } catch (error) {
+            last = error;
+            if (!isRpcRateLimitError(error)) {
+                throw error;
+            }
+            if (attempt < RPC_ATTEMPTS_PER_ENDPOINT - 1) {
+                await sleep(Math.min(4000, RPC_BACKOFF_BASE_MS * 2 ** attempt));
+            }
+        }
+    }
+    throw last instanceof Error ? last : new Error(String(last));
 }
 
 export async function getMintDecimals(mint: string): Promise<number> {
@@ -25,6 +50,7 @@ export async function getMintDecimals(mint: string): Promise<number> {
 
     for (const rpc of getRpcCandidates()) {
         try {
+            const decimals = await withPerRpcRetries(async () => {
             const connection = new Connection(rpc, "confirmed");
             const response = await connection.getParsedAccountInfo(new PublicKey(mint), "confirmed");
             const parsed = response.value?.data as
@@ -39,6 +65,8 @@ export async function getMintDecimals(mint: string): Promise<number> {
 
             const decimals = parsed?.parsed?.info?.decimals;
             return typeof decimals === "number" ? decimals : 6;
+            });
+            return decimals;
         } catch (error) {
             lastError = error;
             if (!isRpcRateLimitError(error)) {
@@ -92,6 +120,7 @@ export async function getTokenBalanceRaw(ownerPubkey: string, mint: string) {
 
     for (const rpc of getRpcCandidates()) {
         try {
+            const result = await withPerRpcRetries(async () => {
             const connection = new Connection(rpc, "confirmed");
             const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
                 owner,
@@ -124,6 +153,8 @@ export async function getTokenBalanceRaw(ownerPubkey: string, mint: string) {
                 decimals,
                 uiAmount: formatRawAmountToUi(rawAmount, decimals),
             };
+            });
+            return result;
         } catch (error) {
             lastError = error;
             if (!isRpcRateLimitError(error)) {

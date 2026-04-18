@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export { preferredRegion } from "../segment-config";
 
 import { NextResponse } from "next/server";
 import {
