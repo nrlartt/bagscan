@@ -40,6 +40,7 @@ import type {
     HeliusAsset,
     BagsConfigType,
     BagsOfficialTopToken,
+    BagsTokenLaunchFeedItem,
 } from "./types";
 import { getBagsSdk } from "./sdk";
 import { getRpcUrl, SOL_MINT } from "@/lib/solana";
@@ -400,6 +401,20 @@ export async function getBagsPools(): Promise<BagsPool[]> {
     });
     if (Array.isArray(data)) return data;
     return data.pools ?? data.tokens ?? data.data ?? [];
+}
+
+/** Active/recent launches — complements `/solana/bags/pools` for a fuller index. */
+export async function getTokenLaunchFeed(): Promise<BagsTokenLaunchFeedItem[]> {
+    try {
+        const data = await bagsGet<BagsTokenLaunchFeedItem[]>("/token-launch/feed", {
+            cache: "no-store",
+            timeoutMs: 25_000,
+        });
+        return Array.isArray(data) ? data : [];
+    } catch (error) {
+        console.error("[bags] token-launch feed error:", error);
+        return [];
+    }
 }
 
 export async function getBagsPoolInfo(tokenMint: string): Promise<BagsPoolInfo | null> {
@@ -1024,6 +1039,9 @@ export async function getHackathonApps(page = 1): Promise<HackathonListResponse>
 interface DexScreenerPair {
     chainId?: string;
     dexId?: string;
+    /** e.g. DexScreener UI "via Bags" often mirrored here */
+    labels?: string[];
+    launchpad?: unknown;
     pairCreatedAt?: number | null;
     baseToken: {
         address?: string;
@@ -1095,11 +1113,113 @@ export async function getDexScreenerSearch(query: string): Promise<DexScreenerPa
     }
 }
 
+/**
+ * Homepage trending cache — DexScreener Bags (6h score): bundles still bonding.
+ * `/solana/bags?rankBy=trendingScoreH6&order=desc&maxLaunchpadProgress=99.99&launchpads=1`
+ */
+export async function getDexScreenerBagsTrendingPairs(): Promise<DexScreenerPair[]> {
+    try {
+        const q = encodeURIComponent("bags");
+        const url = `https://api.dexscreener.com/latest/dex/search?q=${q}&rankBy=trendingScoreH6&order=desc&maxLaunchpadProgress=99.99&launchpads=1`;
+        const res = await fetchWithRetry(
+            url,
+            {
+                cache: "no-store",
+                signal: AbortSignal.timeout(10_000),
+            },
+            2,
+            300
+        );
+        if (!res.ok) return [];
+        const json = await res.json();
+        const pairs = Array.isArray(json.pairs) ? (json.pairs as DexScreenerPair[]) : [];
+        return pairs.filter((pair) => pair.chainId === "solana");
+    } catch (error) {
+        console.error("[dexscreener] bags trending search error:", error);
+        return [];
+    }
+}
+
+/**
+ * Explore “Trending 24H” — graduated Bags only (100% launchpad progress), Dex order.
+ * `/solana/bags?rankBy=trendingScoreH24&order=desc&minLaunchpadProgress=100&launchpadIds=bags&launchpads=1`
+ */
+export async function getDexScreenerBagsTrending24hGraduatedPairs(): Promise<DexScreenerPair[]> {
+    try {
+        const q = encodeURIComponent("bags");
+        const url = `https://api.dexscreener.com/latest/dex/search?q=${q}&rankBy=trendingScoreH24&order=desc&minLaunchpadProgress=100&launchpadIds=bags&launchpads=1`;
+        const res = await fetchWithRetry(
+            url,
+            {
+                cache: "no-store",
+                signal: AbortSignal.timeout(12_000),
+            },
+            2,
+            300
+        );
+        if (!res.ok) return [];
+        const json = await res.json();
+        const pairs = Array.isArray(json.pairs) ? (json.pairs as DexScreenerPair[]) : [];
+        return pairs.filter((pair) => pair.chainId === "solana");
+    } catch (error) {
+        console.error("[dexscreener] bags trending 24h graduated search error:", error);
+        return [];
+    }
+}
+
+/** Bags.fm mints on Solana use the `…BAGS` suffix (incl. Meteora / Raydium pools after migration). */
+export function isBagsFamilyTokenMint(mint: string | undefined): boolean {
+    if (!mint || typeof mint !== "string") return false;
+    return mint.toUpperCase().endsWith("BAGS");
+}
+
+/**
+ * DexScreener marks many Bags-origin pools as "via Bags" while the live pool sits on another dex
+ * (e.g. Meteora after migration). Those pairs use dexId "meteora" (etc.), so we also accept
+ * labels / launchpad hints instead of requiring dexId === "bags".
+ */
+function isBagsAttributedDexPair(pair: DexScreenerPair): boolean {
+    if (pair.dexId === "bags") return true;
+
+    if (isBagsFamilyTokenMint(pair.baseToken?.address)) return true;
+
+    const labels = pair.labels;
+    if (Array.isArray(labels)) {
+        for (const l of labels) {
+            if (typeof l === "string" && l.toLowerCase().includes("bag")) return true;
+        }
+    }
+
+    const launchpad = pair.launchpad;
+    if (launchpad && typeof launchpad === "object") {
+        const lp = launchpad as Record<string, unknown>;
+        const blob = [lp.url, lp.icon, lp.name, lp.id]
+            .filter((x): x is string => typeof x === "string")
+            .join(" ")
+            .toLowerCase();
+        if (blob.includes("bags")) return true;
+    }
+
+    try {
+        const raw = JSON.stringify(pair).toLowerCase();
+        if (raw.includes("bags.fm")) return true;
+    } catch {
+        /* ignore */
+    }
+
+    return false;
+}
+
 export async function getDexScreenerNewBagsPairs(): Promise<DexScreenerPair[]> {
     try {
         const pairs = await getDexScreenerSearch("bags");
         return pairs
-            .filter((pair) => pair.dexId === "bags" && pair.baseToken?.address && pair.pairCreatedAt)
+            .filter(
+                (pair) =>
+                    pair.baseToken?.address &&
+                    pair.pairCreatedAt &&
+                    isBagsAttributedDexPair(pair)
+            )
             .sort((a, b) => (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0));
     } catch (error) {
         console.error("[dexscreener] new bags pairs error:", error);

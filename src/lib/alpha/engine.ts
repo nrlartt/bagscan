@@ -66,7 +66,7 @@ const ALPHA_SNAPSHOT_PATH = join(process.cwd(), ".cache", "alpha-feed.json");
 
 const SIGNAL_WEIGHTS: Record<string, number> = {
     volume_spike: 25,
-    price_pump: 20,
+    price_surge: 20,
     price_dump: 10,
     crowd_activity: 18,
     buy_pressure: 16,
@@ -390,23 +390,23 @@ function detectOnChainSignals(token: AlphaToken) {
     if (token.priceChange24h !== undefined) {
         if (token.priceChange24h > 50) {
             pushSignal(token, {
-                type: "price_pump",
+                type: "price_surge",
                 severity: "critical",
-                title: "Massive Pump",
+                title: "Sharp rally",
                 description: `+${token.priceChange24h.toFixed(1)}% in 24h`,
                 value: `+${token.priceChange24h.toFixed(1)}%`,
             });
         } else if (token.priceChange24h > 20) {
             pushSignal(token, {
-                type: "price_pump",
+                type: "price_surge",
                 severity: "high",
-                title: "Strong Pump",
+                title: "Strong upside",
                 description: `+${token.priceChange24h.toFixed(1)}% in 24h`,
                 value: `+${token.priceChange24h.toFixed(1)}%`,
             });
         } else if (token.priceChange24h > 10) {
             pushSignal(token, {
-                type: "price_pump",
+                type: "price_surge",
                 severity: "medium",
                 title: "Price Rising",
                 description: `+${token.priceChange24h.toFixed(1)}% in 24h`,
@@ -817,7 +817,7 @@ function getPositiveTrendingSignalCount(token: AlphaToken): number {
         signal.type === "volume_spike" ||
         signal.type === "crowd_activity" ||
         signal.type === "buy_pressure" ||
-        signal.type === "price_pump" ||
+        signal.type === "price_surge" ||
         signal.type === "social_buzz" ||
         signal.type === "high_earnings" ||
         signal.type === "fee_momentum" ||

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -21,6 +20,7 @@ import {
 import { fetchPortfolio } from "@/lib/portfolio/client";
 import type { PortfolioResponse } from "@/lib/portfolio/types";
 import { cn, copyToClipboard, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
+import { RemoteFillImage } from "./RemoteFillImage";
 
 export function WalletPortfolioButton() {
     const { publicKey, connected, disconnect } = useWallet();
@@ -81,10 +81,11 @@ export function WalletPortfolioButton() {
             <button
                 type="button"
                 onClick={() => setVisible(true)}
-                className="inline-flex h-9 items-center gap-2 border-2 border-[#00ff41]/40 bg-black/80 px-3 text-[10px] tracking-[0.14em] text-[#00ff41] transition-all hover:border-[#00ff41]/70 hover:bg-[#00ff41]/8 hover:shadow-[0_0_12px_rgba(0,255,65,0.1),inset_0_0_12px_rgba(0,255,65,0.03)]"
+                className="inline-flex h-9 items-center gap-2 border-2 border-[#00ff41]/40 bg-black/80 px-2.5 text-[10px] tracking-[0.14em] text-[#00ff41] transition-all hover:border-[#00ff41]/70 hover:bg-[#00ff41]/8 hover:shadow-[0_0_12px_rgba(0,255,65,0.1),inset_0_0_12px_rgba(0,255,65,0.03)] sm:px-3"
             >
-                <Wallet className="h-3.5 w-3.5" />
-                CONNECT WALLET
+                <Wallet className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="hidden sm:inline">CONNECT WALLET</span>
+                <span className="sm:hidden">CONNECT</span>
             </button>
         );
     }
@@ -412,19 +413,17 @@ function PreviewHoldingRow({ holding }: { holding: PortfolioResponse["holdings"]
             className="group flex items-center gap-3 border border-[#00ff41]/10 bg-black/45 p-3 transition-all hover:border-[#00ff41]/22 hover:bg-[#00ff41]/[0.03]"
         >
             <div className="relative h-11 w-11 flex-shrink-0 overflow-hidden border border-[#00ff41]/15 bg-black/40">
-                {holding.image ? (
-                    <Image
-                        src={holding.image}
-                        alt={holding.symbol ?? holding.name ?? holding.mint}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                    />
-                ) : (
-                    <div className="flex h-full w-full items-center justify-center text-sm text-[#00ff41]/35">
-                        {(holding.symbol ?? holding.name ?? "?").charAt(0)}
-                    </div>
-                )}
+                <RemoteFillImage
+                    src={holding.image}
+                    alt={holding.symbol ?? holding.name ?? holding.mint}
+                    sizes="44px"
+                    className="object-cover"
+                    fallback={
+                        <div className="absolute inset-0 flex items-center justify-center text-sm text-[#00ff41]/35">
+                            {(holding.symbol ?? holding.name ?? "?").charAt(0)}
+                        </div>
+                    }
+                />
             </div>
 
             <div className="min-w-0 flex-1">
@@ -470,19 +469,17 @@ function PreviewClaimableRow({
             className="group flex items-center gap-3 border border-[#00ff41]/10 bg-black/45 p-3 transition-all hover:border-[#00ff41]/22 hover:bg-[#00ff41]/[0.03]"
         >
             <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden border border-[#00ff41]/15 bg-black/40">
-                {position.image ? (
-                    <Image
-                        src={position.image}
-                        alt={position.symbol ?? position.name ?? position.baseMint}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                    />
-                ) : (
-                    <div className="flex h-full w-full items-center justify-center text-sm text-[#00ff41]/35">
-                        {(position.symbol ?? position.name ?? "?").charAt(0)}
-                    </div>
-                )}
+                <RemoteFillImage
+                    src={position.image}
+                    alt={position.symbol ?? position.name ?? position.baseMint}
+                    sizes="40px"
+                    className="object-cover"
+                    fallback={
+                        <div className="absolute inset-0 flex items-center justify-center text-sm text-[#00ff41]/35">
+                            {(position.symbol ?? position.name ?? "?").charAt(0)}
+                        </div>
+                    }
+                />
             </div>
 
             <div className="min-w-0 flex-1">

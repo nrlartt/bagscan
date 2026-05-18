@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { TalkToBagsTerminal } from "@/components/talk/TalkToBagsTerminal";
+import { FeatureRouteDisabled } from "@/components/bagscan/FeatureRouteDisabled";
 
 export const metadata: Metadata = {
     title: "Talk To Bags - BagScan",
     description:
-        "OpenClaw-powered BAGS copilot inside BagScan, reserved for eligible $SCAN holders and grounded only in official BAGS market, creator, fee, claim, launch, and hackathon data.",
+        "Talk To Bags is temporarily disabled while BagScan aligns the product surface with core discovery and launch.",
 };
 
 export default function TalkPage() {
-    return <TalkToBagsTerminal />;
+    return <FeatureRouteDisabled title="TALK TO BAGS" moduleId="TALK_TO_BAGS" />;
 }

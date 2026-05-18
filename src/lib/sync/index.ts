@@ -1,8 +1,9 @@
 /* ──────────────────────────────────────────────
    Sync utilities – Smart homepage strategy
-   • Trending: DexScreener (popular tokens with market data)
+   • Trending (home tab): DexScreener Bags 6h score (bonding)
+   • Explore lane TRENDING: Dex `/solana/bags` 24h score, 100% Bags launchpad (graduated)
    • New Launches: Bags pools (newest) + on-chain Metaplex metadata
-   • Search: All 167K+ pools, enriched cache lookup
+   • Search: unified pool index (Bags pools + launch feed + top-by-fees)
    ────────────────────────────────────────────── */
 
 import { prisma } from "@/lib/db";
@@ -13,12 +14,16 @@ import {
     getLifetimeFees,
     getClaimStatsDetailed,
     getDexScreenerPairs,
-    getDexScreenerSearch,
+    getDexScreenerBagsTrendingPairs,
+    getDexScreenerBagsTrending24hGraduatedPairs,
     getDexScreenerNewBagsPairs,
+    isBagsFamilyTokenMint,
     getHeliusAsset,
     getHeliusHolderCount,
     getSolPriceUsd,
     getHackathonApps,
+    getTokenLaunchFeed,
+    getOfficialTopTokensByLifetimeFees,
 } from "@/lib/bags/client";
 import { getXUserCached, isXquikConfigured } from "@/lib/xquik/client";
 import {
@@ -28,9 +33,11 @@ import {
     mergeClaimStatsV3,
     mergeDexScreenerData,
     mergeHeliusData,
+    pickBestDexPairByActivity,
+    sumDexTxBuysSells,
 } from "@/lib/bags/mappers";
 import { getTokenMetadataBatch, type TokenMetadata } from "@/lib/solana/metadata";
-import type { BagsPool, NormalizedToken } from "@/lib/bags/types";
+import type { BagsPool, NormalizedToken, BagsOfficialTopToken, BagsTokenLaunchFeedItem } from "@/lib/bags/types";
 import type { AlphaToken } from "@/lib/alpha/types";
 
 // ── Caches ───────────────────────────────────
@@ -43,6 +50,9 @@ interface PoolEntry {
     name?: string;
     symbol?: string;
     image?: string;
+    description?: string;
+    website?: string;
+    telegram?: string;
     twitter?: string;
     projectTwitterHandle?: string;
     projectTwitterFollowers?: number;
@@ -53,6 +63,9 @@ interface PoolEntry {
     volume24hUsd?: number;
     creatorWallet?: string;
     creatorDisplay?: string;
+    creatorUsername?: string;
+    creatorPfp?: string;
+    pairCreatedAt?: string;
     provider?: string;
     providerUsername?: string;
 }
@@ -73,8 +86,18 @@ let spotlightRevalidationPromise: Promise<NormalizedToken[]> | null = null;
 const POOLS_TTL = 3 * 60_000;
 const TRENDING_TTL = 60_000;
 const TRENDING_STALE_TTL = 5 * 60_000; // Serve stale for up to 5 min
-const NEW_LAUNCH_TTL = 20_000;
-const NEW_LAUNCH_STALE_TTL = 3 * 60_000;
+const NEW_LAUNCH_TTL = 8_000;
+const NEW_LAUNCH_STALE_TTL = 2 * 60_000;
+/** LATEST: progressively relax max launch age if the feed would be almost empty (never beyond last window). */
+const LATEST_LAUNCH_WINDOWS_MS = [
+    7 * 24 * 60 * 60 * 1000,
+    14 * 24 * 60 * 60 * 1000,
+    30 * 24 * 60 * 60 * 1000,
+    45 * 24 * 60 * 60 * 1000,
+    60 * 24 * 60 * 60 * 1000,
+] as const;
+/** If Bags launch feed omits dates, trust order for the first N mints only (paired with pool merge). */
+const LATEST_FEED_TRUST_NO_DATE_HEAD = 100;
 const SPOTLIGHT_TTL = 2 * 60_000;
 const SPOTLIGHT_STALE_TTL = 12 * 60_000;
 const CURATED_SPOTLIGHT_ORDER = [
@@ -96,54 +119,198 @@ const CURATED_SPOTLIGHT_ORDER = [
 ] as const;
 const CURATED_SPOTLIGHT_SET = new Set<string>(CURATED_SPOTLIGHT_ORDER);
 
+function poolFiniteNumber(v: unknown): number | undefined {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+}
+
+/** Bags pool row may expose pool age under several keys depending on endpoint/version. */
+function bagsPoolCreatedIso(raw: BagsPool): string | undefined {
+    const ext = raw as Record<string, unknown>;
+    const candidates = [
+        raw.createdAt,
+        ext.pairCreatedAt,
+        ext.poolCreatedAt,
+        ext.launchTime,
+        ext.launchDate,
+        ext.created_at,
+    ];
+    for (const c of candidates) {
+        const iso = dexPairCreatedToIso(c);
+        if (iso) return iso;
+    }
+    if (typeof raw.createdAt === "number" && Number.isFinite(raw.createdAt)) {
+        const ms = raw.createdAt < 1e12 ? raw.createdAt * 1000 : raw.createdAt;
+        return new Date(ms).toISOString();
+    }
+    return undefined;
+}
+
+function dexPairCreatedToIso(v: unknown): string | undefined {
+    if (v == null) return undefined;
+    if (typeof v === "string" && v.trim()) {
+        return v;
+    }
+    const n = Number(v);
+    if (!Number.isFinite(n)) return undefined;
+    const ms = n < 1e12 ? n * 1000 : n;
+    return new Date(ms).toISOString();
+}
+
 // ═══════════════════════════════════════════════
 // Pool index (for search)
 // ═══════════════════════════════════════════════
+
+function mergePoolEntryPreferExisting(base: PoolEntry, extra: PoolEntry): PoolEntry {
+    const out: PoolEntry = { ...base };
+    const keys = Object.keys(extra) as (keyof PoolEntry)[];
+    for (const k of keys) {
+        const baseVal = out[k];
+        const extraVal = extra[k];
+        let baseEmpty: boolean;
+        if (typeof baseVal === "number") {
+            baseEmpty = !Number.isFinite(baseVal);
+        } else {
+            baseEmpty =
+                baseVal === undefined ||
+                baseVal === null ||
+                (typeof baseVal === "string" && baseVal === "");
+        }
+        let extraOk: boolean;
+        if (typeof extraVal === "number") {
+            extraOk = Number.isFinite(extraVal);
+        } else {
+            extraOk =
+                extraVal !== undefined &&
+                extraVal !== null &&
+                !(typeof extraVal === "string" && extraVal === "");
+        }
+        if (baseEmpty && extraOk) {
+            (out as unknown as Record<string, unknown>)[k as string] = extraVal as unknown;
+        }
+    }
+    return out;
+}
+
+function upsertPoolMap(map: Map<string, PoolEntry>, entry: PoolEntry) {
+    const existing = map.get(entry.tokenMint);
+    if (!existing) {
+        map.set(entry.tokenMint, entry);
+    } else {
+        map.set(entry.tokenMint, mergePoolEntryPreferExisting(existing, entry));
+    }
+}
+
+function bagsPoolToPoolEntry(p: BagsPool): PoolEntry | null {
+    if (!p.tokenMint) {
+        return null;
+    }
+
+    const extended = p as BagsPool & {
+        dbcConfigKey?: unknown;
+        dbcPoolKey?: unknown;
+        dammV2PoolKey?: unknown;
+    };
+
+    return {
+        tokenMint: p.tokenMint,
+        dbcConfigKey:
+            typeof extended.dbcConfigKey === "string" ? extended.dbcConfigKey : undefined,
+        dbcPoolKey:
+            typeof extended.dbcPoolKey === "string" ? extended.dbcPoolKey : undefined,
+        dammV2PoolKey:
+            typeof extended.dammV2PoolKey === "string" ? extended.dammV2PoolKey : undefined,
+        name: p.name,
+        symbol: p.symbol,
+        image: p.image,
+        description: typeof p.description === "string" ? p.description : undefined,
+        website: typeof p.website === "string" ? p.website : undefined,
+        telegram: typeof p.telegram === "string" ? p.telegram : undefined,
+        twitter: p.twitter,
+        projectTwitterHandle: p.projectTwitterHandle,
+        projectTwitterFollowers: Number(p.projectTwitterFollowers) || undefined,
+        priceUsd: Number(p.tokenPriceUsd) || Number(p.priceUsd) || undefined,
+        marketCap: poolFiniteNumber(p.marketCap),
+        fdvUsd: Number(p.fdvUsd) || Number(p.fdv) || undefined,
+        liquidityUsd: Number(p.liquidityUsd) || Number(p.liquidity) || undefined,
+        volume24hUsd: Number(p.volume24hUsd) || Number(p.volume24h) || undefined,
+        creatorWallet: p.creatorWallet,
+        creatorDisplay: p.creatorDisplayName || p.creatorUsername,
+        creatorUsername: typeof p.creatorUsername === "string" ? p.creatorUsername : undefined,
+        creatorPfp: typeof p.creatorPfp === "string" ? p.creatorPfp : undefined,
+        pairCreatedAt: bagsPoolCreatedIso(p),
+        provider: typeof p.provider === "string" ? p.provider : undefined,
+        providerUsername: typeof p.providerUsername === "string" ? p.providerUsername : undefined,
+    };
+}
 
 async function getAllPools(): Promise<PoolEntry[]> {
     if (allPoolsCache && Date.now() - allPoolsCache.ts < POOLS_TTL) {
         return allPoolsCache.pools;
     }
     try {
-        const raw = await getBagsPools();
-        const pools: PoolEntry[] = raw
-            .map((p: BagsPool): PoolEntry | null => {
-                if (!p.tokenMint) {
-                    return null;
-                }
+        const [raw, feed, official] = await Promise.all([
+            getBagsPools(),
+            getTokenLaunchFeed(),
+            getOfficialTopTokensByLifetimeFees(),
+        ]);
 
-                const extended = p as BagsPool & {
-                    dbcConfigKey?: unknown;
-                    dbcPoolKey?: unknown;
-                    dammV2PoolKey?: unknown;
-                };
+        const map = new Map<string, PoolEntry>();
 
-                return {
-                    tokenMint: p.tokenMint,
-                    dbcConfigKey:
-                        typeof extended.dbcConfigKey === "string" ? extended.dbcConfigKey : undefined,
-                    dbcPoolKey:
-                        typeof extended.dbcPoolKey === "string" ? extended.dbcPoolKey : undefined,
-                    dammV2PoolKey:
-                        typeof extended.dammV2PoolKey === "string" ? extended.dammV2PoolKey : undefined,
-                    name: p.name,
-                    symbol: p.symbol,
-                    image: p.image,
-                    twitter: p.twitter,
-                    projectTwitterHandle: p.projectTwitterHandle,
-                    projectTwitterFollowers: Number(p.projectTwitterFollowers) || undefined,
-                    priceUsd: Number(p.tokenPriceUsd) || Number(p.priceUsd) || undefined,
-                    marketCap: undefined,
-                    fdvUsd: Number(p.fdvUsd) || Number(p.fdv) || undefined,
-                    liquidityUsd: Number(p.liquidityUsd) || Number(p.liquidity) || undefined,
-                    volume24hUsd: Number(p.volume24hUsd) || Number(p.volume24h) || undefined,
-                    creatorWallet: p.creatorWallet,
-                    creatorDisplay: p.creatorDisplayName || p.creatorUsername,
-                    provider: typeof p.provider === "string" ? p.provider : undefined,
-                    providerUsername: typeof p.providerUsername === "string" ? p.providerUsername : undefined,
-                };
-            })
-            .filter((p): p is PoolEntry => p !== null);
+        for (const p of raw) {
+            const entry = bagsPoolToPoolEntry(p);
+            if (entry) {
+                upsertPoolMap(map, entry);
+            }
+        }
+
+        for (const item of feed) {
+            if (!item.tokenMint) continue;
+            const ext = item as BagsTokenLaunchFeedItem & { dammV2PoolKey?: unknown };
+            const entry: PoolEntry = {
+                tokenMint: item.tokenMint,
+                dbcConfigKey: typeof item.dbcConfigKey === "string" ? item.dbcConfigKey : undefined,
+                dbcPoolKey: typeof item.dbcPoolKey === "string" ? item.dbcPoolKey : undefined,
+                dammV2PoolKey: typeof ext.dammV2PoolKey === "string" ? ext.dammV2PoolKey : undefined,
+                name: item.name,
+                symbol: item.symbol,
+                description: typeof item.description === "string" ? item.description : undefined,
+                image: typeof item.image === "string" ? item.image : undefined,
+                website: item.website ?? undefined,
+                telegram: typeof item.telegram === "string" ? item.telegram : undefined,
+                twitter: item.twitter ?? undefined,
+                pairCreatedAt: launchFeedItemCreatedIso(item),
+            };
+            upsertPoolMap(map, entry);
+        }
+
+        for (const t of official) {
+            if (!t.tokenMint) continue;
+            const entry: PoolEntry = {
+                tokenMint: t.tokenMint,
+                name: t.name,
+                symbol: t.symbol,
+                image: t.image,
+                twitter: t.twitter,
+                website: t.website,
+                telegram: t.telegram,
+                marketCap: poolFiniteNumber(t.marketCap),
+                fdvUsd: Number(t.fdvUsd) || undefined,
+                liquidityUsd: Number(t.liquidityUsd) || undefined,
+                priceUsd: Number(t.priceUsd) || undefined,
+                volume24hUsd: Number(t.volume24hUsd) || undefined,
+                creatorWallet: t.creatorWallet,
+                creatorDisplay: t.creatorUsername,
+                creatorUsername: t.creatorUsername,
+                creatorPfp: t.creatorPfp,
+                pairCreatedAt: typeof t.createdAt === "string" ? t.createdAt : undefined,
+                provider: t.creatorProvider ?? undefined,
+                providerUsername: t.creatorProviderUsername ?? undefined,
+            };
+            upsertPoolMap(map, entry);
+        }
+
+        const pools = [...map.values()];
         allPoolsCache = { pools, ts: Date.now() };
         return pools;
     } catch (e) {
@@ -165,6 +332,9 @@ function mergeBagsPoolMarketData(
         name: pool.name ?? token.name,
         symbol: pool.symbol ?? token.symbol,
         image: pool.image ?? token.image,
+        description: pool.description ?? token.description,
+        website: pool.website ?? token.website,
+        telegram: pool.telegram ?? token.telegram,
         twitter: pool.twitter ?? token.twitter,
         projectTwitterHandle: pool.projectTwitterHandle ?? token.projectTwitterHandle,
         projectTwitterFollowers: pool.projectTwitterFollowers ?? token.projectTwitterFollowers,
@@ -175,6 +345,16 @@ function mergeBagsPoolMarketData(
         volume24hUsd: pool.volume24hUsd ?? token.volume24hUsd,
         creatorWallet: pool.creatorWallet ?? token.creatorWallet,
         creatorDisplay: pool.creatorDisplay ?? token.creatorDisplay,
+        creatorUsername: pool.creatorUsername ?? token.creatorUsername,
+        creatorPfp: pool.creatorPfp ?? token.creatorPfp,
+        pairCreatedAt:
+            pool.pairCreatedAt && token.pairCreatedAt
+                ? pickLaterIso(pool.pairCreatedAt, token.pairCreatedAt)
+                : (pool.pairCreatedAt ?? token.pairCreatedAt),
+        dbcConfigKey: pool.dbcConfigKey ?? token.dbcConfigKey,
+        dbcPoolKey: pool.dbcPoolKey ?? token.dbcPoolKey,
+        dammV2PoolKey: pool.dammV2PoolKey ?? token.dammV2PoolKey,
+        isMigrated: pool.dammV2PoolKey ? true : token.isMigrated,
         provider: pool.provider ?? token.provider,
         providerUsername: pool.providerUsername ?? token.providerUsername,
     };
@@ -203,14 +383,11 @@ function mergeHackathonSocialData(
 // TRENDING – DexScreener pairs with real market data
 // ═══════════════════════════════════════════════
 
-async function fetchTrendingFromDex(): Promise<NormalizedToken[]> {
-    const [pairs, pools] = await Promise.all([
-        getDexScreenerSearch("bags"),
-        getAllPools().catch(() => [] as PoolEntry[]),
-    ]);
+async function normalizedTokensFromDexBagsSearchPairs(pairs: DexPair[]): Promise<NormalizedToken[]> {
+    const pools = await getAllPools().catch(() => [] as PoolEntry[]);
     const poolMap = new Map(pools.map((pool) => [pool.tokenMint, pool]));
 
-    const tokens: NormalizedToken[] = pairs
+    return pairs
         .filter(hasDexBaseAddress)
         .map((p): NormalizedToken =>
             mergeBagsPoolMarketData(
@@ -222,9 +399,11 @@ async function fetchTrendingFromDex(): Promise<NormalizedToken[]> {
                     image: p.info?.imageUrl,
                     priceUsd: Number(p.priceUsd) || undefined,
                     fdvUsd: Number(p.fdv) || undefined,
-                    marketCap: undefined,
+                    marketCap: Number(p.marketCap) || undefined,
                     liquidityUsd: Number(p.liquidity?.usd) || undefined,
                     volume24hUsd: Number(p.volume?.h24) || undefined,
+                    volume5mUsd: poolFiniteNumber((p.volume as { m5?: unknown } | undefined)?.m5),
+                    volume1hUsd: poolFiniteNumber((p.volume as { h1?: unknown } | undefined)?.h1),
                     pairAddress: typeof p.pairAddress === "string" ? p.pairAddress : undefined,
                     dexId: typeof p.dexId === "string" ? p.dexId : undefined,
                     priceChange24h: Number(p.priceChange?.h24) || undefined,
@@ -232,25 +411,149 @@ async function fetchTrendingFromDex(): Promise<NormalizedToken[]> {
                         ((Number(p.txns?.h24?.buys) || 0) +
                             (Number(p.txns?.h24?.sells) || 0)) ||
                         undefined,
+                    txCount5m: sumDexTxBuysSells(p.txns, "m5"),
+                    txCount1h: sumDexTxBuysSells(p.txns, "h1"),
                     buyCount24h: Number(p.txns?.h24?.buys) || undefined,
                     sellCount24h: Number(p.txns?.h24?.sells) || undefined,
+                    pairCreatedAt: dexPairCreatedToIso(p.pairCreatedAt),
                     website: getDexWebsite(p),
                 },
                 poolMap.get(p.baseToken.address)
             )
         );
+}
 
-    if (tokens.length === 0) throw new Error("DexScreener returned 0 trending pairs");
+let exploreTrendingCache: { tokens: NormalizedToken[]; ts: number } | null = null;
+const EXPLORE_TRENDING_TTL = 60_000;
 
-    for (const t of tokens) {
+/** Cap extra Dex batch calls on explore trending (30 mints per batch). */
+const AUGMENT_BAGS_FAMILY_MAX = 72;
+const DEX_TOKEN_BATCH = 30;
+
+function tokenExploreRankScore(t: NormalizedToken): number {
+    return Math.max(
+        t.marketCap ?? 0,
+        t.fdvUsd ?? 0,
+        t.volume24hUsd ?? 0,
+        t.liquidityUsd ?? 0
+    );
+}
+
+/**
+ * Public Dex `search?q=bags&…` usually lists only native `dexId=bags` pools. After migration,
+ * liquidity sits on Meteora etc. — those mints still end in `…BAGS`. Append them using live `/tokens` pairs.
+ */
+async function appendMigratedBagsFamilyTokensFromDex(
+    primary: NormalizedToken[],
+    merged: NormalizedToken[]
+): Promise<NormalizedToken[]> {
+    const seen = new Set(primary.map((t) => t.tokenMint));
+    const mergedByMint = new Map(merged.map((t) => [t.tokenMint, t]));
+    const candidates = merged.filter(
+        (t) => t.tokenMint && isBagsFamilyTokenMint(t.tokenMint) && !seen.has(t.tokenMint)
+    );
+    candidates.sort((a, b) => tokenExploreRankScore(b) - tokenExploreRankScore(a));
+    const slice = candidates.slice(0, AUGMENT_BAGS_FAMILY_MAX);
+    if (slice.length === 0) return primary;
+
+    type PairRow = Awaited<ReturnType<typeof getDexScreenerPairs>>[number];
+    const mints = slice.map((t) => t.tokenMint);
+    const batches: string[][] = [];
+    for (let i = 0; i < mints.length; i += DEX_TOKEN_BATCH) {
+        batches.push(mints.slice(i, i + DEX_TOKEN_BATCH));
+    }
+    const pairLists = await Promise.all(
+        batches.map((batch) => getDexScreenerPairs(batch).catch(() => [] as PairRow[]))
+    );
+    const byMint = new Map<string, PairRow[]>();
+    for (const pairs of pairLists) {
+        for (const p of pairs) {
+            if (p.chainId !== "solana") continue;
+            const m = p.baseToken?.address;
+            if (!m) continue;
+            const arr = byMint.get(m) ?? [];
+            arr.push(p);
+            byMint.set(m, arr);
+        }
+    }
+
+    const extras: NormalizedToken[] = [];
+    for (const t of slice) {
+        const list = byMint.get(t.tokenMint);
+        if (!list?.length) continue;
+        const best = pickBestDexPairByActivity(list);
+        if (!best) continue;
+        const base = mergedByMint.get(t.tokenMint) ?? {
+            tokenMint: t.tokenMint,
+            name: best.baseToken?.name,
+            symbol: best.baseToken?.symbol,
+        };
+        extras.push(mergeDexScreenerData(base, [best]));
+    }
+    extras.sort((a, b) => (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0));
+    return [...primary, ...extras];
+}
+
+/** EXPLORE lane: Dex `/solana/bags` trending 24H order, rows enriched like other explore lanes (MCAP universe). */
+export async function syncExploreTrendingTokens(): Promise<NormalizedToken[]> {
+    if (exploreTrendingCache && Date.now() - exploreTrendingCache.ts < EXPLORE_TRENDING_TTL) {
+        return exploreTrendingCache.tokens;
+    }
+    try {
+        const pairs = await getDexScreenerBagsTrending24hGraduatedPairs();
+        const asDex = pairs as DexPair[];
+        const [merged, dexRows] = await Promise.all([
+            buildExploreMergedTokensWithoutHomeTrending(),
+            normalizedTokensFromDexBagsSearchPairs(asDex),
+        ]);
+        const mergedByMint = new Map<string, NormalizedToken>();
+        for (const t of merged) {
+            if (t.tokenMint) mergedByMint.set(t.tokenMint, t);
+        }
+        const dexByMint = new Map(dexRows.map((t) => [t.tokenMint, t]));
+
+        const ordered: NormalizedToken[] = [];
+        for (const p of pairs) {
+            const mint = p.baseToken?.address;
+            if (typeof mint !== "string" || !mint) continue;
+            const dexRow = dexByMint.get(mint);
+            if (!dexRow) continue;
+            const base = mergedByMint.get(mint);
+            ordered.push(base ? mergeDexTrendingOntoExploreBase(base, dexRow) : dexRow);
+        }
+
+        const withMigrated = await appendMigratedBagsFamilyTokensFromDex(ordered, merged);
+
+        if (withMigrated.length > 0) {
+            exploreTrendingCache = { tokens: withMigrated, ts: Date.now() };
+            return withMigrated;
+        }
+    } catch (e) {
+        console.error("[sync] explore trending error:", e);
+    }
+    return exploreTrendingCache?.tokens ?? [];
+}
+
+async function fetchTrendingFromDex(): Promise<NormalizedToken[]> {
+    const pairs = await getDexScreenerBagsTrendingPairs();
+    const asDex = pairs as DexPair[];
+    const [tokens, merged] = await Promise.all([
+        normalizedTokensFromDexBagsSearchPairs(asDex),
+        buildExploreMergedTokensWithoutHomeTrending(),
+    ]);
+    const withMigrated = await appendMigratedBagsFamilyTokensFromDex(tokens, merged);
+
+    if (withMigrated.length === 0) throw new Error("DexScreener returned 0 trending pairs");
+
+    for (const t of withMigrated) {
         metadataCache.set(t.tokenMint, t);
     }
 
-    trendingCache = { tokens, ts: Date.now() };
+    trendingCache = { tokens: withMigrated, ts: Date.now() };
 
     // Fire-and-forget DB upserts
     Promise.resolve().then(async () => {
-        for (const t of tokens.slice(0, 30)) {
+        for (const t of withMigrated.slice(0, 30)) {
             if (!t.tokenMint || !t.name) continue;
             prisma.tokenRegistry
                 .upsert({
@@ -279,7 +582,7 @@ async function fetchTrendingFromDex(): Promise<NormalizedToken[]> {
         }
     }).catch(() => {});
 
-    return tokens;
+    return withMigrated;
 }
 
 export async function syncTrendingTokens(): Promise<NormalizedToken[]> {
@@ -525,10 +828,32 @@ function pickMaxNumber(...values: Array<number | undefined>) {
     return Math.max(...defined);
 }
 
-function pickEarlierIso(a?: string, b?: string) {
+function pickEarlierIso(a?: string, b?: string): string | undefined {
     if (!a) return b;
     if (!b) return a;
-    return new Date(a).getTime() <= new Date(b).getTime() ? a : b;
+    const ma = new Date(a).getTime();
+    const mb = new Date(b).getTime();
+    if (!Number.isFinite(ma)) return b;
+    if (!Number.isFinite(mb)) return a;
+    return ma <= mb ? a : b;
+}
+
+/** For “newest first” feeds: prefer the more recent of two timestamps; ignore wildly future-ish values. */
+function pickLaterIso(a?: string, b?: string): string | undefined {
+    if (!a) return b;
+    if (!b) return a;
+    const ma = new Date(a).getTime();
+    const mb = new Date(b).getTime();
+    const now = Date.now();
+    const maxFutureSkewMs = 48 * 60 * 60 * 1000;
+    const va = Number.isFinite(ma) && ma <= now + maxFutureSkewMs ? ma : NaN;
+    const vb = Number.isFinite(mb) && mb <= now + maxFutureSkewMs ? mb : NaN;
+    if (!Number.isFinite(va) && !Number.isFinite(vb)) {
+        return pickEarlierIso(a, b);
+    }
+    if (!Number.isFinite(va)) return b;
+    if (!Number.isFinite(vb)) return a;
+    return va >= vb ? a : b;
 }
 
 function mergeSpotlightTokens(existing: NormalizedToken, incoming: NormalizedToken): NormalizedToken {
@@ -697,7 +1022,12 @@ function mapPoolEntryToToken(entry: PoolEntry): NormalizedToken {
         name: entry.name,
         symbol: entry.symbol,
         image: entry.image,
+        description: entry.description,
+        website: entry.website,
+        telegram: entry.telegram,
         twitter: entry.twitter,
+        projectTwitterHandle: entry.projectTwitterHandle,
+        projectTwitterFollowers: entry.projectTwitterFollowers,
         priceUsd: entry.priceUsd,
         fdvUsd: entry.fdvUsd,
         marketCap: entry.marketCap,
@@ -705,6 +1035,11 @@ function mapPoolEntryToToken(entry: PoolEntry): NormalizedToken {
         volume24hUsd: entry.volume24hUsd,
         creatorWallet: entry.creatorWallet,
         creatorDisplay: entry.creatorDisplay,
+        creatorUsername: entry.creatorUsername,
+        creatorPfp: entry.creatorPfp,
+        pairCreatedAt: entry.pairCreatedAt,
+        provider: entry.provider,
+        providerUsername: entry.providerUsername,
     };
 }
 
@@ -1238,28 +1573,166 @@ function dexPairToToken(
         buyCount24h: Number(p.txns?.h24?.buys) || undefined,
         sellCount24h: Number(p.txns?.h24?.sells) || undefined,
         website: getDexWebsite(p),
-        pairCreatedAt: p.pairCreatedAt ? new Date(p.pairCreatedAt).toISOString() : undefined,
+        pairCreatedAt: dexPairCreatedToIso(p.pairCreatedAt),
     };
 }
 
-async function fetchNewLaunchesFromDex(): Promise<NormalizedToken[]> {
-    const [dexPairs, pools] = await Promise.all([
-        getDexScreenerNewBagsPairs(),
-        getAllPools().catch(() => [] as PoolEntry[]),
-    ]);
-    if (dexPairs.length === 0) throw new Error("DexScreener returned 0 new launches");
-    const poolMap = new Map(pools.map((pool) => [pool.tokenMint, pool]));
+function poolEntryRecencyTs(entry: PoolEntry): number {
+    if (!entry.pairCreatedAt) {
+        return 0;
+    }
+    const t = new Date(entry.pairCreatedAt).getTime();
+    return Number.isFinite(t) ? t : 0;
+}
 
-    const tokens: NormalizedToken[] = dexPairs
-        .filter(hasDexBaseAddress)
-        .map((pair) => mergeBagsPoolMarketData(dexPairToToken(pair), poolMap.get(pair.baseToken.address)));
+function tokenLaunchRecencyMs(token: NormalizedToken): number {
+    if (!token.pairCreatedAt) return 0;
+    const t = new Date(token.pairCreatedAt).getTime();
+    return Number.isFinite(t) ? t : 0;
+}
 
+/** True chronological latest: one global sort (Dex + pool index interleave correctly). */
+function sortLatestFeedTokens(tokens: NormalizedToken[]): NormalizedToken[] {
+    return [...tokens].sort((a, b) => {
+        const diff = tokenLaunchRecencyMs(b) - tokenLaunchRecencyMs(a);
+        if (diff !== 0) return diff;
+        return a.tokenMint.localeCompare(b.tokenMint);
+    });
+}
+
+/** Pull created time from token-launch feed payloads (field names vary). */
+function launchFeedItemCreatedIso(item: BagsTokenLaunchFeedItem): string | undefined {
+    const r = item as Record<string, unknown>;
+    const candidates = [
+        r.createdAt,
+        r.pairCreatedAt,
+        r.launchedAt,
+        r.launchTime,
+        r.launchDate,
+        r.timestamp,
+        r.created_at,
+    ];
+    for (const c of candidates) {
+        const iso = dexPairCreatedToIso(c);
+        if (iso) return iso;
+    }
+    return undefined;
+}
+
+function mergeLaunchFeedItemToToken(item: BagsTokenLaunchFeedItem, pool?: PoolEntry): NormalizedToken {
+    const ext = item as BagsTokenLaunchFeedItem & { dammV2PoolKey?: string | null };
+    const base: NormalizedToken = {
+        tokenMint: item.tokenMint,
+        dbcConfigKey: typeof item.dbcConfigKey === "string" ? item.dbcConfigKey : undefined,
+        dbcPoolKey: typeof item.dbcPoolKey === "string" ? item.dbcPoolKey : undefined,
+        dammV2PoolKey: typeof ext.dammV2PoolKey === "string" ? ext.dammV2PoolKey : undefined,
+        isMigrated: Boolean(ext.dammV2PoolKey),
+        name: item.name,
+        symbol: item.symbol,
+        image: typeof item.image === "string" ? item.image : undefined,
+        description: typeof item.description === "string" ? item.description : undefined,
+        website: item.website ?? undefined,
+        telegram: typeof item.telegram === "string" ? item.telegram : undefined,
+        twitter: item.twitter ?? undefined,
+        pairCreatedAt: launchFeedItemCreatedIso(item),
+    };
+    return pool ? mergeBagsPoolMarketData(base, pool) : base;
+}
+
+function dedupeTokensPreferFirst(tokens: NormalizedToken[]): NormalizedToken[] {
+    const seen = new Set<string>();
+    const out: NormalizedToken[] = [];
     for (const t of tokens) {
-        if (t.name) metadataCache.set(t.tokenMint, t);
+        if (!t.tokenMint || seen.has(t.tokenMint)) {
+            continue;
+        }
+        seen.add(t.tokenMint);
+        out.push(t);
+    }
+    return out;
+}
+
+function filterLatestByMaxAgeWindows(
+    ordered: NormalizedToken[],
+    trustNoDateMints: Set<string>,
+    minKeep: number
+): NormalizedToken[] {
+    const lastWindow = LATEST_LAUNCH_WINDOWS_MS[LATEST_LAUNCH_WINDOWS_MS.length - 1];
+    const lastCutoff = Date.now() - lastWindow;
+
+    for (let w = 0; w < LATEST_LAUNCH_WINDOWS_MS.length; w++) {
+        const cutoff = Date.now() - LATEST_LAUNCH_WINDOWS_MS[w];
+        const filtered = ordered.filter((t) => {
+            const ms = tokenLaunchRecencyMs(t);
+            if (ms <= 0) return trustNoDateMints.has(t.tokenMint);
+            return ms >= cutoff;
+        });
+        if (filtered.length >= minKeep) return filtered;
     }
 
-    newLaunchCache = { tokens, ts: Date.now() };
-    return tokens;
+    return ordered.filter((t) => {
+        const ms = tokenLaunchRecencyMs(t);
+        if (ms <= 0) return trustNoDateMints.has(t.tokenMint);
+        return ms >= lastCutoff;
+    });
+}
+
+/** Full latest feed: Bags token-launch feed first, Dex + pool tail; drop stale launches outside rolling window. */
+async function fetchLatestIndexedFeed(): Promise<NormalizedToken[]> {
+    const [pools, launchFeed, dexPairs] = await Promise.all([
+        getAllPools(),
+        getTokenLaunchFeed().catch((err) => {
+            console.error("[sync] token-launch feed (latest tab):", err);
+            return [] as BagsTokenLaunchFeedItem[];
+        }),
+        getDexScreenerNewBagsPairs().catch((err) => {
+            console.error("[sync] dex new bags pairs:", err);
+            return [] as DexPair[];
+        }),
+    ]);
+
+    const poolMap = new Map(pools.map((pool) => [pool.tokenMint, pool]));
+
+    const feedMintOrder: string[] = [];
+    const feedSeen = new Set<string>();
+    const feedTokens: NormalizedToken[] = [];
+    for (const item of launchFeed) {
+        if (!item.tokenMint || feedSeen.has(item.tokenMint)) continue;
+        feedSeen.add(item.tokenMint);
+        feedMintOrder.push(item.tokenMint);
+        feedTokens.push(mergeLaunchFeedItemToToken(item, poolMap.get(item.tokenMint)));
+    }
+
+    const trustNoDateHead = new Set(feedMintOrder.slice(0, LATEST_FEED_TRUST_NO_DATE_HEAD));
+    const feedMintSet = new Set(feedMintOrder);
+
+    const dexTokens: NormalizedToken[] = dexPairs
+        .filter(hasDexBaseAddress)
+        .map((pair) =>
+            mergeBagsPoolMarketData(dexPairToToken(pair), poolMap.get(pair.baseToken.address))
+        );
+
+    const sortedPools = [...pools].sort((a, b) => poolEntryRecencyTs(b) - poolEntryRecencyTs(a));
+    const indexTokens = sortedPools.map(mapPoolEntryToToken);
+
+    const bulkSorted = sortLatestFeedTokens(
+        dedupeTokensPreferFirst([...dexTokens, ...indexTokens])
+    );
+    const bulkTail = bulkSorted.filter((t) => !feedMintSet.has(t.tokenMint));
+
+    // One global recency sort: launch-feed and Dex/index tails must interleave by real time
+    // (previously all feed items were pinned ahead of bulk-only tokens, so newer Dex listings could rank too low).
+    const combined = sortLatestFeedTokens(dedupeTokensPreferFirst([...feedTokens, ...bulkTail]));
+    const narrowed = filterLatestByMaxAgeWindows(combined, trustNoDateHead, 10);
+
+    for (const t of narrowed) {
+        if (t.name) {
+            metadataCache.set(t.tokenMint, t);
+        }
+    }
+
+    newLaunchCache = { tokens: narrowed, ts: Date.now() };
+    return narrowed;
 }
 
 export async function syncNewLaunches(): Promise<NormalizedToken[]> {
@@ -1272,7 +1745,7 @@ export async function syncNewLaunches(): Promise<NormalizedToken[]> {
     if (age < NEW_LAUNCH_STALE_TTL && newLaunchCache && newLaunchCache.tokens.length > 0) {
         if (!newLaunchRevalidating) {
             newLaunchRevalidating = true;
-            fetchNewLaunchesFromDex()
+            fetchLatestIndexedFeed()
                 .catch((e) => console.error("[sync] new launches bg-revalidate error:", e))
                 .finally(() => { newLaunchRevalidating = false; });
         }
@@ -1280,10 +1753,287 @@ export async function syncNewLaunches(): Promise<NormalizedToken[]> {
     }
 
     try {
-        return await fetchNewLaunchesFromDex();
+        return await fetchLatestIndexedFeed();
     } catch (e) {
         console.error("[sync] new launches error:", e);
         return newLaunchCache?.tokens ?? [];
+    }
+}
+
+/** Explore “Trending 24H” on DexScreener — graduated Bags, `trendingScoreH24` order. */
+export type ExploreLane =
+    | "trending"
+    | "movers"
+    | "new"
+    | "mcap"
+    | "agents"
+    | "oldest"
+    | "last_trade"
+    | "watchlist";
+
+const AGENT_TEXT_RE =
+    /\b(ai|agent|gpt|bot|llm|neural|autom(at|e)|deep\s*seek|claude|openai|grok)\b/i;
+
+function exploreMoverScore(t: NormalizedToken): number {
+    const ch = Math.abs(t.priceChange24h ?? 0);
+    const vol = Math.max(0, t.volume24hUsd ?? 0);
+    return ch * Math.sqrt(vol + 1);
+}
+
+function exploreLastActivityScore(t: NormalizedToken): number {
+    const vol = Math.max(0, t.volume24hUsd ?? 0);
+    const tx = Math.max(0, t.txCount24h ?? 0);
+    return vol * Math.log1p(tx);
+}
+
+/** Batched Dex token refresh for short-window tx counts (5m / 1h). */
+const DEX_SHORT_WINDOW_CHUNK = 20;
+const LAST_TRADE_ENRICH_HEAD = 140;
+
+async function enrichTokensDexShortWindows(tokens: NormalizedToken[]): Promise<NormalizedToken[]> {
+    if (tokens.length === 0) return tokens;
+    const mints = [...new Set(tokens.map((t) => t.tokenMint))];
+    type PairRow = Awaited<ReturnType<typeof getDexScreenerPairs>>[number];
+    const allPairs: PairRow[] = [];
+    const chunks: string[][] = [];
+    for (let i = 0; i < mints.length; i += DEX_SHORT_WINDOW_CHUNK) {
+        chunks.push(mints.slice(i, i + DEX_SHORT_WINDOW_CHUNK));
+    }
+    const results = await Promise.all(
+        chunks.map((chunk) =>
+            getDexScreenerPairs(chunk).catch(() => [] as PairRow[])
+        )
+    );
+    for (const pairs of results) {
+        for (const p of pairs) {
+            if (p.chainId === "solana") allPairs.push(p);
+        }
+    }
+    const byMint = new Map<string, PairRow[]>();
+    for (const p of allPairs) {
+        const mint = p.baseToken?.address;
+        if (!mint) continue;
+        const arr = byMint.get(mint) ?? [];
+        arr.push(p);
+        byMint.set(mint, arr);
+    }
+    return tokens.map((t) => {
+        const list = byMint.get(t.tokenMint);
+        if (!list?.length) return t;
+        const best = pickBestDexPairByActivity(list) ?? list[0];
+        return mergeDexScreenerData(t, [best]);
+    });
+}
+
+function tokenPairMs(t: NormalizedToken): number {
+    if (!t.pairCreatedAt) return 0;
+    const ms = new Date(t.pairCreatedAt).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+}
+
+/** Rank pools for explore union: Dex search alone misses many high-MCAP Bags-indexed tokens. */
+const EXPLORE_POOL_RANK_CAP = 4_000;
+
+function poolExploreRankScore(p: PoolEntry): number {
+    return Math.max(
+        p.marketCap ?? 0,
+        p.fdvUsd ?? 0,
+        p.volume24hUsd ?? 0,
+        p.liquidityUsd ?? 0
+    );
+}
+
+function maxDefinedNumber(a?: number, b?: number): number | undefined {
+    if (a == null || !Number.isFinite(a)) return b;
+    if (b == null || !Number.isFinite(b)) return a;
+    return Math.max(a, b);
+}
+
+function mergeExploreTokenRow(a: NormalizedToken, b: NormalizedToken): NormalizedToken {
+    return {
+        ...a,
+        ...b,
+        name: a.name ?? b.name,
+        symbol: a.symbol ?? b.symbol,
+        image: a.image ?? b.image,
+        description: a.description ?? b.description,
+        website: a.website ?? b.website,
+        telegram: a.telegram ?? b.telegram,
+        twitter: a.twitter ?? b.twitter,
+        marketCap: maxDefinedNumber(a.marketCap, b.marketCap),
+        fdvUsd: maxDefinedNumber(a.fdvUsd, b.fdvUsd),
+        volume24hUsd: maxDefinedNumber(a.volume24hUsd, b.volume24hUsd),
+        liquidityUsd: maxDefinedNumber(a.liquidityUsd, b.liquidityUsd),
+        priceUsd: a.priceUsd ?? b.priceUsd,
+        priceChange24h: a.priceChange24h ?? b.priceChange24h,
+        txCount24h: maxDefinedNumber(a.txCount24h, b.txCount24h),
+        txCount5m: maxDefinedNumber(a.txCount5m, b.txCount5m),
+        txCount1h: maxDefinedNumber(a.txCount1h, b.txCount1h),
+        volume5mUsd: maxDefinedNumber(a.volume5mUsd, b.volume5mUsd),
+        volume1hUsd: maxDefinedNumber(a.volume1hUsd, b.volume1hUsd),
+        pairCreatedAt: a.pairCreatedAt ?? b.pairCreatedAt,
+        poolAddress: a.poolAddress ?? b.poolAddress,
+        pairAddress: a.pairAddress ?? b.pairAddress,
+        dexId: a.dexId ?? b.dexId,
+        creatorWallet: a.creatorWallet ?? b.creatorWallet,
+        creatorDisplay: a.creatorDisplay ?? b.creatorDisplay,
+        creatorUsername: a.creatorUsername ?? b.creatorUsername,
+        creatorPfp: a.creatorPfp ?? b.creatorPfp,
+    };
+}
+
+function dedupeExploreMerged(tokens: NormalizedToken[]): NormalizedToken[] {
+    const map = new Map<string, NormalizedToken>();
+    for (const t of tokens) {
+        if (!t.tokenMint) continue;
+        const prev = map.get(t.tokenMint);
+        map.set(t.tokenMint, prev ? mergeExploreTokenRow(prev, t) : { ...t });
+    }
+    return [...map.values()];
+}
+
+/**
+ * Explore TRENDING lane: keep Bags-index / MCAP-style metadata but overlay DexScreener pair stats
+ * so ordering and numbers track the Dex `/solana/bags` trending board.
+ */
+function mergeDexTrendingOntoExploreBase(base: NormalizedToken, dex: NormalizedToken): NormalizedToken {
+    const merged = mergeExploreTokenRow(base, dex);
+    const num = (d?: number, f?: number) =>
+        d !== undefined && Number.isFinite(d) ? d : f;
+    const nInt = (d?: number, f?: number) =>
+        d !== undefined && Number.isFinite(d) ? Math.trunc(d) : f;
+
+    return {
+        ...merged,
+        priceUsd: num(dex.priceUsd, merged.priceUsd),
+        priceChange24h: num(dex.priceChange24h, merged.priceChange24h),
+        volume24hUsd: num(dex.volume24hUsd, merged.volume24hUsd),
+        volume1hUsd: num(dex.volume1hUsd, merged.volume1hUsd),
+        volume5mUsd: num(dex.volume5mUsd, merged.volume5mUsd),
+        txCount24h: nInt(dex.txCount24h, merged.txCount24h),
+        txCount1h: nInt(dex.txCount1h, merged.txCount1h),
+        txCount5m: nInt(dex.txCount5m, merged.txCount5m),
+        buyCount24h: nInt(dex.buyCount24h, merged.buyCount24h),
+        sellCount24h: nInt(dex.sellCount24h, merged.sellCount24h),
+        liquidityUsd: num(dex.liquidityUsd, merged.liquidityUsd),
+        marketCap: num(dex.marketCap, merged.marketCap),
+        fdvUsd: num(dex.fdvUsd, merged.fdvUsd),
+        pairAddress: dex.pairAddress ?? merged.pairAddress,
+        dexId: dex.dexId ?? merged.dexId,
+        pairCreatedAt: dex.pairCreatedAt ?? merged.pairCreatedAt,
+        poolAddress: merged.poolAddress ?? dex.poolAddress,
+    };
+}
+
+/**
+ * Unified universe for MOVERS / MCAP / AGENTS / LAST TRADE: Dex "bags" search + NEW feed slice +
+ * top of the Bags pool index (official + pools + feed) so large caps still indexed on Bags are visible.
+ */
+async function buildExploreMergedTokensWithoutHomeTrending(): Promise<NormalizedToken[]> {
+    const [fresh, pools] = await Promise.all([
+        syncNewLaunches(),
+        getAllPools().catch(() => [] as PoolEntry[]),
+    ]);
+
+    const poolRankedTokens = pools
+        .filter((p) => poolExploreRankScore(p) > 0)
+        .sort((a, b) => poolExploreRankScore(b) - poolExploreRankScore(a))
+        .slice(0, EXPLORE_POOL_RANK_CAP)
+        .map(mapPoolEntryToToken);
+
+    return dedupeExploreMerged([...fresh, ...poolRankedTokens]);
+}
+
+async function buildExploreMergedTokens(): Promise<NormalizedToken[]> {
+    const [trending, base] = await Promise.all([
+        syncTrendingTokens(),
+        buildExploreMergedTokensWithoutHomeTrending(),
+    ]);
+    return dedupeExploreMerged([...trending, ...base]);
+}
+
+export async function syncExploreFeed(
+    lane: ExploreLane,
+    opts?: { watchlistMints?: string[] }
+): Promise<NormalizedToken[]> {
+    const watchOrder = (opts?.watchlistMints ?? [])
+        .map((m) => m.trim())
+        .filter(Boolean);
+    const watch = new Set(watchOrder);
+
+    if (lane === "new") {
+        return syncNewLaunches();
+    }
+
+    if (lane === "trending") {
+        return syncExploreTrendingTokens();
+    }
+
+    if (lane === "watchlist") {
+        if (watch.size === 0) return [];
+        const merged = await buildExploreMergedTokens();
+        const map = new Map<string, NormalizedToken>();
+        for (const t of merged) {
+            if (!map.has(t.tokenMint)) map.set(t.tokenMint, t);
+        }
+        return watchOrder
+            .map((m) => map.get(m))
+            .filter((t): t is NormalizedToken => t != null);
+    }
+
+    if (lane === "oldest") {
+        const pools = await getAllPools();
+        const withDates = pools
+            .map(mapPoolEntryToToken)
+            .filter((t) => tokenPairMs(t) > 0);
+        return withDates.sort((a, b) => tokenPairMs(a) - tokenPairMs(b));
+    }
+
+    const merged = await buildExploreMergedTokens();
+
+    const textBlob = (t: NormalizedToken) =>
+        `${t.name ?? ""} ${t.symbol ?? ""} ${t.description ?? ""}`;
+
+    switch (lane) {
+        case "agents":
+            return merged
+                .filter((t) => AGENT_TEXT_RE.test(textBlob(t)))
+                .sort((a, b) => (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0));
+        case "mcap":
+            return [...merged].sort(
+                (a, b) =>
+                    (b.marketCap ?? b.fdvUsd ?? 0) - (a.marketCap ?? a.fdvUsd ?? 0)
+            );
+        case "last_trade": {
+            const rankable = [...merged].sort(
+                (a, b) => exploreLastActivityScore(b) - exploreLastActivityScore(a)
+            );
+            const head = rankable.slice(0, LAST_TRADE_ENRICH_HEAD);
+            const tail = rankable.slice(LAST_TRADE_ENRICH_HEAD);
+            const enrichedHead = await enrichTokensDexShortWindows(head);
+            const sortedHead = [...enrichedHead].sort((a, b) => {
+                const d5 = (b.txCount5m ?? 0) - (a.txCount5m ?? 0);
+                if (d5 !== 0) return d5;
+                const d1 = (b.txCount1h ?? 0) - (a.txCount1h ?? 0);
+                if (d1 !== 0) return d1;
+                const dV5 = (b.volume5mUsd ?? 0) - (a.volume5mUsd ?? 0);
+                if (dV5 !== 0) return dV5;
+                return exploreLastActivityScore(b) - exploreLastActivityScore(a);
+            });
+            return [...sortedHead, ...tail];
+        }
+        case "movers": {
+            const movers = merged.filter(
+                (t) =>
+                    t.priceChange24h !== undefined && Math.abs(t.priceChange24h) >= 0.25
+            );
+            const scored = (arr: NormalizedToken[]) =>
+                [...arr].sort((a, b) => exploreMoverScore(b) - exploreMoverScore(a));
+            if (movers.length >= 10) return scored(movers);
+            return scored(merged);
+        }
+        default:
+            return merged;
     }
 }
 

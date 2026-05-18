@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+/** Non-negative USD amount from query string (invalid → omitted). */
+const optionalExploreUsdParam = z.preprocess((val) => {
+    if (val === undefined || val === null || val === "") return undefined;
+    const n = Number(val);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+}, z.number().optional());
+
 export const feeShareWalletProviderSchema = z.enum([
     "twitter",
     "x",
@@ -29,9 +36,27 @@ export const bagsConfigTypeSchema = z.enum([
 export const tokensQuerySchema = z.object({
     search: z.string().optional().default(""),
     tab: z
-        .enum(["trending", "spotlight", "new", "hackathon", "leaderboard"])
+        .enum(["trending", "spotlight", "new", "explore", "hackathon", "leaderboard"])
         .optional()
         .default("trending"),
+    /** Explore lane when tab=explore (server applies filter + sort). Legacy `live` remapped to last_trade. */
+    lane: z.preprocess(
+        (val) => (val === "live" ? "last_trade" : val),
+        z
+            .enum([
+                "trending",
+                "movers",
+                "new",
+                "mcap",
+                "agents",
+                "oldest",
+                "last_trade",
+                "watchlist",
+            ])
+            .optional()
+            .default("new")
+    ),
+    watchlist: z.string().optional().default(""),
     scope: z
         .enum(["platform", "hackathon"])
         .optional()
@@ -55,7 +80,12 @@ export const tokensQuerySchema = z.object({
         .optional()
         .default("newest"),
     page: z.coerce.number().int().min(1).optional().default(1),
-    pageSize: z.coerce.number().int().min(1).max(100).optional().default(24),
+    pageSize: z.coerce.number().int().min(1).max(200).optional().default(24),
+    /** Explore tab only: market cap / 24h volume bounds (USD). */
+    mcapMin: optionalExploreUsdParam,
+    mcapMax: optionalExploreUsdParam,
+    volMin: optionalExploreUsdParam,
+    volMax: optionalExploreUsdParam,
 });
 
 export type TokensQuery = z.infer<typeof tokensQuerySchema>;

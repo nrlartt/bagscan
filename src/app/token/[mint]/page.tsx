@@ -321,8 +321,8 @@ export default function TokenDetailPage() {
 
                 </div>
 
-                {/* Right column */}
-                <div className="space-y-6">
+                {/* Right column — sticky trade panel */}
+                <div className="space-y-6 xl:sticky xl:top-[4.5rem] xl:self-start">
                     <div className="animate-slide-in-right" style={{ animationDelay: "100ms" }}>
                         <BuyWidget tokenMint={token.tokenMint} tokenSymbol={token.symbol} />
                     </div>

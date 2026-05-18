@@ -4,6 +4,104 @@
    BAGSCAN TERMINAL â€“ NOSTROMO CRT INTERFACE
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
+/* Bonding curve strip shimmer (no numeric curve % — motion only) */
+@keyframes bonding-curve-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.bonding-curve-shimmer {
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 184, 0, 0.45), transparent);
+  animation: bonding-curve-shimmer 2.4s ease-in-out infinite;
+}
+
+/* Single-line live ticker (duplicate track for seamless loop) */
+@keyframes bagscan-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.bagscan-marquee-outer {
+  overflow: hidden;
+  position: relative;
+}
+
+.bagscan-marquee-outer:hover .bagscan-marquee-track {
+  animation-play-state: paused;
+}
+
+.bagscan-marquee-track {
+  display: flex;
+  width: max-content;
+  gap: 0;
+  animation: bagscan-marquee 55s linear infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bagscan-marquee-track {
+    animation: none;
+    flex-wrap: wrap;
+    width: 100%;
+    row-gap: 0.35rem;
+  }
+
+  .bagscan-marquee-track > div:last-child {
+    display: none;
+  }
+}
+
+/* Explore grid: card entry + MC badge glow (honors reduced motion) */
+@keyframes explore-card-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes explore-mc-shine {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 255, 65, 0);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(0, 255, 65, 0.14);
+    border-color: rgba(0, 255, 65, 0.28);
+  }
+}
+
+.animate-explore-card-in {
+  animation: explore-card-pop-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.explore-mc-pill {
+  animation: explore-mc-shine 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-explore-card-in,
+  .explore-mc-pill {
+    animation: none !important;
+    box-shadow: none;
+  }
+}
+
 :root {
   --crt-green: #00ff41;
   --crt-green-dim: #00cc33;
@@ -22,6 +120,9 @@
 
 html {
   color-scheme: dark;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {

@@ -1,218 +1,163 @@
 "use client";
 
-import { ExternalLink, Radio, Rocket, AppWindow, Copy, Check } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
-import Image from "next/image";
-import { formatCurrency, shortenAddress } from "@/lib/utils";
+import Link from "next/link";
+import { useMemo } from "react";
+import { RemoteFillImage } from "./RemoteFillImage";
+import { Radio } from "lucide-react";
+import { formatCurrency, shortenAddress, getValuationMetric, cn } from "@/lib/utils";
 import type { NormalizedToken } from "@/lib/bags/types";
 
 interface LiveTickerProps {
     tokens: NormalizedToken[];
+    /** What the marquee highlights (label only). */
+    mode?: "trending" | "latest";
 }
 
 const SCAN_MINT = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
-const SCAN_LINKS = {
-    bags: "https://bags.fm/BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS",
-    dexscreener: "https://dexscreener.com/solana/gcnkpzr8rjnsv973cnk81dx58yudedjtatwt2lu8lclt",
-    hackathon: "https://bags.fm/apps/e982488c-b22c-42f6-ad86-d41e5d4aaa6b",
-};
-const SCAN_IMAGE_FALLBACK = "https://ipfs.io/ipfs/QmTGhFhBXSaRApTMwTuoX1uswHAbw4Br6kCfSTAMtt6Mta";
+const SCAN_LINK = "https://bags.fm/BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
+const MAX_STRIP_TOKENS_TRENDING = 28;
+const MAX_STRIP_TOKENS_LATEST = 48;
 
-export function LiveTicker({ tokens }: LiveTickerProps) {
-    const scanToken = useMemo(
-        () =>
-            tokens.find((token) => token.tokenMint === SCAN_MINT) ??
-            tokens.find((token) => token.symbol?.toUpperCase() === "SCAN") ??
-            null,
+export function LiveTicker({ tokens, mode = "trending" }: LiveTickerProps) {
+    const stripTokens = useMemo(() => {
+        const withoutScan = tokens.filter((t) => t.tokenMint !== SCAN_MINT);
+        const cap = mode === "latest" ? MAX_STRIP_TOKENS_LATEST : MAX_STRIP_TOKENS_TRENDING;
+        return withoutScan.slice(0, cap);
+    }, [tokens, mode]);
+
+    const scanFromFeed = useMemo(
+        () => tokens.find((t) => t.tokenMint === SCAN_MINT) ?? null,
         [tokens]
     );
 
-    const changePositive = (scanToken?.priceChange24h ?? 0) >= 0;
-
     return (
-        <div className="mb-6 overflow-hidden border-2 border-[#00ff41]/20 bg-black/80">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#00ff41]/15 px-4 py-2.5">
-                <div className="flex items-center gap-2">
-                    <Radio className="h-3.5 w-3.5 animate-pulse text-[#00ff41]" />
-                    <span className="text-[10px] tracking-[0.15em] text-[#00ff41]/60">
-                        LIVE FEED
+        <div className="mb-5 overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0a0a0c] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-[box-shadow,border-color] duration-500 motion-safe:animate-[border-glow_5s_ease-in-out_infinite]">
+            <div className="flex min-h-[44px] items-stretch">
+                <div className="flex shrink-0 items-center gap-2 border-r border-white/[0.06] bg-[#121214] px-3 py-2">
+                    <Radio className="h-3.5 w-3.5 shrink-0 animate-pulse text-emerald-400" />
+                    <span className="hidden flex-col text-[9px] font-medium leading-tight tracking-wide text-white/45 sm:flex">
+                        <span className="text-white/70">MARKET</span>
+                        {mode === "latest" ? (
+                            <span className="text-emerald-400/90">Fresh tape</span>
+                        ) : (
+                            <span className="text-white/35">Flow tape</span>
+                        )}
                     </span>
-                    <span className="text-[9px] tracking-wider text-[#00ff41]/25">
-                        $SCAN ECOSYSTEM PANEL
-                    </span>
                 </div>
-                <div className="text-[9px] tracking-[0.15em] text-[#00ff41]/28">
-                    BAGSCAN NATIVE TOKEN PROFILE
-                </div>
-            </div>
-
-            <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)] lg:items-start">
-                <div className="space-y-4">
-                    <div className="flex flex-wrap items-start gap-3">
-                        <div className="relative h-12 w-12 overflow-hidden border border-[#00ff41]/25 bg-[#00ff41]/[0.04] shadow-[0_0_18px_rgba(0,255,65,0.08)]">
-                            <Image
-                                src={scanToken?.image || SCAN_IMAGE_FALLBACK}
-                                alt="$SCAN"
-                                fill
-                                className="object-cover"
-                                unoptimized
-                            />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span
-                                    className="text-sm tracking-[0.16em] text-[#00ff41]"
-                                    style={{ textShadow: "0 0 8px rgba(0,255,65,0.25)" }}
-                                >
-                                    $SCAN
-                                </span>
-                                <span className="border border-[#00ff41]/18 bg-[#00ff41]/8 px-2 py-1 text-[9px] tracking-[0.16em] text-[#9dffb8]">
-                                    BAGSCAN NATIVE
-                                </span>
-                            </div>
-                        </div>
+                <div className="bagscan-marquee-outer min-w-0 flex-1 py-2 pr-1">
+                    <div
+                        className="bagscan-marquee-track"
+                        role="presentation"
+                        aria-label={mode === "latest" ? "Market tape — latest launches" : "Market tape — trending"}
+                    >
+                        <MarqueeSegment stripTokens={stripTokens} scanFromFeed={scanFromFeed} idPrefix="a" mode={mode} />
+                        <MarqueeSegment
+                            stripTokens={stripTokens}
+                            scanFromFeed={scanFromFeed}
+                            idPrefix="b"
+                            ariaHidden
+                            mode={mode}
+                        />
                     </div>
-
-                    <div className="border border-[#00ff41]/12 bg-[#00ff41]/[0.03] p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="min-w-0">
-                                <p className="text-[9px] tracking-[0.18em] text-[#00ff41]/34">CONTRACT ADDRESS</p>
-                                <p className="mt-1 break-all text-[11px] tracking-[0.12em] text-[#d8ffe6]/78">
-                                    {SCAN_MINT}
-                                </p>
-                            </div>
-                            <CopyAddressButton value={SCAN_MINT} />
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                        <ExternalChip href={SCAN_LINKS.bags} label="TRADE ON BAGS" icon={<Rocket className="h-3 w-3" />} />
-                        <ExternalChip href={SCAN_LINKS.dexscreener} label="VIEW DEXSCREENER" icon={<ExternalLink className="h-3 w-3" />} />
-                        <ExternalChip href={SCAN_LINKS.hackathon} label="BAGS HACKATHON APP" icon={<AppWindow className="h-3 w-3" />} />
-                    </div>
-                </div>
-
-                <div className="grid gap-2.5 sm:grid-cols-2">
-                    <MetricCard
-                        label="Ticker"
-                        value="$SCAN"
-                        hint={shortenAddress(SCAN_MINT, 6)}
-                    />
-                    <MetricCard
-                        label="Bags Listing"
-                        value="LIVE"
-                        hint="bags.fm token page"
-                    />
-                    <MetricCard
-                        label="Price"
-                        value={
-                            scanToken?.priceUsd !== undefined
-                                ? formatCurrency(scanToken.priceUsd, {
-                                    compact: false,
-                                    decimals: scanToken.priceUsd < 0.01 ? 6 : 4,
-                                })
-                                : "TRACK ON DEX"
-                        }
-                        hint="live when indexed"
-                    />
-                    <MetricCard
-                        label="24H Move"
-                        value={
-                            scanToken?.priceChange24h !== undefined
-                                ? `${changePositive ? "+" : ""}${scanToken.priceChange24h.toFixed(1)}%`
-                                : "LIVE"
-                        }
-                        hint={
-                            scanToken?.volume24hUsd !== undefined
-                                ? `VOL ${formatCurrency(scanToken.volume24hUsd)}`
-                                : "dexscreener linked"
-                        }
-                        tone={
-                            scanToken?.priceChange24h === undefined
-                                ? "neutral"
-                                : changePositive
-                                    ? "positive"
-                                    : "negative"
-                        }
-                    />
                 </div>
             </div>
         </div>
     );
 }
 
-function ExternalChip({
-    href,
-    label,
-    icon,
+function MarqueeSegment({
+    stripTokens,
+    scanFromFeed,
+    idPrefix,
+    ariaHidden = false,
+    mode = "trending",
 }: {
-    href: string;
-    label: string;
-    icon: ReactNode;
+    stripTokens: NormalizedToken[];
+    scanFromFeed: NormalizedToken | null;
+    idPrefix: string;
+    ariaHidden?: boolean;
+    mode?: "trending" | "latest";
 }) {
     return (
-        <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 border border-[#00ff41]/18 bg-[#00ff41]/[0.03] px-3 py-2 text-[10px] tracking-[0.15em] text-[#9dffb8] transition-all hover:border-[#00ff41]/36 hover:bg-[#00ff41]/[0.08] hover:text-[#d8ffe6]"
-        >
-            {icon}
-            {label}
-        </a>
-    );
-}
+        <div className="flex items-center gap-0 px-2" aria-hidden={ariaHidden ? true : undefined}>
+            <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 text-[10px] tracking-wide text-white/55">
+                {mode === "latest" ? (
+                    <span className="font-medium text-emerald-400/90">NEW</span>
+                ) : null}
+                <span className="font-semibold text-[#c4f59c]/90">$SCAN</span>
+                <a
+                    href={SCAN_LINK}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-white/50 underline-offset-2 transition-colors hover:text-white/80"
+                >
+                    Trade
+                </a>
+                {scanFromFeed?.priceChange24h !== undefined ? (
+                    <span
+                        className={
+                            scanFromFeed.priceChange24h >= 0 ? "font-medium text-emerald-400" : "font-medium text-red-400"
+                        }
+                    >
+                        {scanFromFeed.priceChange24h >= 0 ? "+" : ""}
+                        {scanFromFeed.priceChange24h.toFixed(1)}%
+                    </span>
+                ) : null}
+                <span className="text-white/20">·</span>
+            </span>
 
-function MetricCard({
-    label,
-    value,
-    hint,
-    tone = "neutral",
-}: {
-    label: string;
-    value: string;
-    hint: string;
-    tone?: "neutral" | "positive" | "negative";
-}) {
-    return (
-        <div className="border border-[#00ff41]/10 bg-black/45 p-3">
-            <p className="text-[9px] tracking-[0.18em] text-[#00ff41]/34">{label}</p>
-            <p
-                className={[
-                    "mt-2 text-sm tracking-[0.1em]",
-                    tone === "positive"
-                        ? "text-[#9dffb8]"
-                        : tone === "negative"
-                            ? "text-[#ff8f70]"
-                            : "text-[#d8ffe6]",
-                ].join(" ")}
-            >
-                {value}
-            </p>
-            <p className="mt-1 text-[10px] tracking-[0.16em] text-[#00ff41]/28">{hint}</p>
+            {stripTokens.map((token) => (
+                <TickerTokenItem key={`${idPrefix}-${token.tokenMint}`} token={token} />
+            ))}
         </div>
     );
 }
 
-function CopyAddressButton({ value }: { value: string }) {
-    const [copied, setCopied] = useState(false);
+function TickerTokenItem({ token }: { token: NormalizedToken }) {
+    const valuation = getValuationMetric(token);
+    const change = token.priceChange24h;
+    const changePositive = (change ?? 0) >= 0;
 
     return (
-        <button
-            type="button"
-            onClick={async () => {
-                try {
-                    await navigator.clipboard.writeText(value);
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1400);
-                } catch {
-                    setCopied(false);
-                }
-            }}
-            className="inline-flex items-center gap-1.5 border border-[#00ff41]/15 px-2.5 py-1.5 text-[10px] tracking-[0.15em] text-[#00ff41]/55 transition-colors hover:border-[#00ff41]/35 hover:text-[#00ff41]"
+        <Link
+            href={`/token/${token.tokenMint}`}
+            className="inline-flex items-center gap-2 whitespace-nowrap border-l border-white/[0.06] px-3 text-[10px] tracking-wide text-white/55 transition-colors hover:bg-white/[0.04] hover:text-white/85"
         >
-            {copied ? <Check className="h-3 w-3 text-[#00ff41]" /> : <Copy className="h-3 w-3" />}
-            {copied ? "COPIED" : "COPY CA"}
-        </button>
+            <span className="relative block h-5 w-5 shrink-0 overflow-hidden rounded-full border border-white/[0.08]">
+                <RemoteFillImage
+                    src={token.image}
+                    alt=""
+                    sizes="32px"
+                    className="object-cover"
+                    fallback={
+                        <span className="absolute inset-0 flex items-center justify-center text-[8px] text-white/35">
+                            {token.symbol?.charAt(0) ?? "?"}
+                        </span>
+                    }
+                />
+            </span>
+            <span className="max-w-[100px] truncate font-semibold text-white/88">
+                {token.symbol ? `$${token.symbol}` : shortenAddress(token.tokenMint)}
+            </span>
+            {valuation.value !== undefined && valuation.value > 0 ? (
+                <span className="hidden text-white/40 sm:inline">{formatCurrency(valuation.value)}</span>
+            ) : null}
+            <span className="hidden text-white/25 sm:inline">/</span>
+            {token.volume24hUsd !== undefined && token.volume24hUsd > 0 ? (
+                <span className="hidden text-white/40 md:inline">{formatCurrency(token.volume24hUsd)} vol</span>
+            ) : null}
+            {change !== undefined ? (
+                <span
+                    className={cn(
+                        "font-semibold tabular-nums",
+                        changePositive ? "text-emerald-400" : "text-red-400"
+                    )}
+                >
+                    {changePositive ? "+" : ""}
+                    {change.toFixed(1)}%
+                </span>
+            ) : null}
+            <span className="text-white/15">·</span>
+        </Link>
     );
 }

@@ -18,6 +18,17 @@ const nextConfig: NextConfig = {
     // instead, so type safety is still enforced without blocking production builds.
     ignoreBuildErrors: true,
   },
+  images: {
+    formats: ["image/avif", "image/webp"],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    /** CDN & IPFS token art — optimize + cache instead of shipping full-size originals to the client. */
+    minimumCacheTTL: 60 * 60 * 24,
+    remotePatterns: [
+      { protocol: "https", hostname: "**", pathname: "**" },
+      { protocol: "http", hostname: "**", pathname: "**" },
+    ],
+  },
 };
 
 export default nextConfig;

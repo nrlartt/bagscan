@@ -5,7 +5,7 @@
 
 export type AlphaSignalType =
     | "volume_spike"
-    | "price_pump"
+    | "price_surge"
     | "price_dump"
     | "crowd_activity"
     | "buy_pressure"

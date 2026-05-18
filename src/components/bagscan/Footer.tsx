@@ -5,15 +5,15 @@ const SCAN_CA = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
 
 export function Footer() {
     return (
-        <footer className="border-t-2 border-[#00ff41]/20 mt-auto bg-black/80 relative z-10">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-5">
+        <footer className="relative z-10 mt-auto border-t-2 border-[#00ff41]/20 bg-black/80 pb-[env(safe-area-inset-bottom)]">
+            <div className="w-full px-4 py-5 sm:px-6 lg:px-8 xl:px-12 2xl:px-16">
                 {/* Token banner */}
-                <div className="flex items-center justify-center gap-3 mb-4 pb-4 border-b border-[#00ff41]/10">
+                <div className="mb-4 flex flex-col items-center justify-center gap-2 border-b border-[#00ff41]/10 pb-4 sm:flex-row sm:gap-3">
                     <a
                         href={`https://bags.fm/${SCAN_CA}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group flex items-center gap-2.5 px-4 py-2 border border-[#00ff41]/15 hover:border-[#00ff41]/40 bg-[#00ff41]/[0.02] hover:bg-[#00ff41]/[0.05] transition-all"
+                        className="group flex max-w-full flex-col items-center gap-2 border border-[#00ff41]/15 bg-[#00ff41]/[0.02] px-3 py-2.5 text-center transition-all hover:border-[#00ff41]/40 hover:bg-[#00ff41]/[0.05] sm:flex-row sm:gap-2.5 sm:px-4 sm:py-2 sm:text-left"
                     >
                         <span className="relative flex h-2 w-2">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00ff41] opacity-30" />
@@ -31,12 +31,12 @@ export function Footer() {
                     </a>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-2.5 text-[10px] text-[#00ff41]/50 tracking-[0.15em]">
-                        <BagLogo size={16} className="opacity-40" />
-                        <span>BAGSCAN BETA — TOKEN DISCOVERY SYSTEM</span>
+                <div className="flex w-full flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex shrink-0 items-center gap-2.5 text-[10px] text-[#00ff41]/50 tracking-[0.15em]">
+                        <BagLogo size={16} className="opacity-40 shrink-0" />
+                        <span className="text-left">BAGSCAN BETA — TOKEN DISCOVERY SYSTEM</span>
                     </div>
-                    <div className="flex items-center gap-4 text-[10px] text-[#00ff41]/30 tracking-wider">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-[#00ff41]/30 tracking-wider sm:justify-end">
                         <Link href="/about" className="hover:text-[#00ff41]/70 transition-colors">
                             ABOUT
                         </Link>

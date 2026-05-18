@@ -1,19 +1,12 @@
 import type { Metadata } from "next";
-import { PredictionEventTerminal } from "@/components/prediction/PredictionEventTerminal";
+import { FeatureRouteDisabled } from "@/components/bagscan/FeatureRouteDisabled";
 
 export const metadata: Metadata = {
     title: "Prediction Event - BagScan",
     description:
-        "Inspect a live Jupiter prediction event inside BagScan and enter YES / NO positions funded with $SCAN.",
+        "Prediction event pages are temporarily disabled while BagScan focuses on core product surfaces.",
 };
 
-interface PredictionEventPageProps {
-    params: Promise<{
-        eventId: string;
-    }>;
-}
-
-export default async function PredictionEventPage({ params }: PredictionEventPageProps) {
-    const { eventId } = await params;
-    return <PredictionEventTerminal eventId={eventId} />;
+export default function PredictionEventPage() {
+    return <FeatureRouteDisabled title="PREDICTION" moduleId="PREDICTION_EVENT" />;
 }

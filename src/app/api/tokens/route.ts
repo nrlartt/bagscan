@@ -1,20 +1,50 @@
 export const dynamic = "force-dynamic";
-export const maxDuration = 25;
+/** Explore trending + merged feeds can exceed 25s when cold (Dex + pool index + augment). */
+export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import {
     syncSpotlightTokens,
     syncTrendingTokens,
     syncNewLaunches,
+    syncExploreFeed,
     syncLeaderboard,
     syncHackathonApps,
     syncHackathonLeaderboard,
     getHackathonFeedMeta,
     searchAllTokens,
     getPlatformStats,
+    getTotalPoolCount,
 } from "@/lib/sync";
-import { tokensQuerySchema } from "@/lib/validators";
+import { tokensQuerySchema, type TokensQuery } from "@/lib/validators";
 import type { NormalizedToken } from "@/lib/bags/types";
+
+function tokenMcapUsd(t: NormalizedToken): number {
+    return t.marketCap ?? t.fdvUsd ?? 0;
+}
+
+function applyExploreMarketFilters(
+    tokens: NormalizedToken[],
+    q: Pick<TokensQuery, "mcapMin" | "mcapMax" | "volMin" | "volMax">
+): NormalizedToken[] {
+    if (
+        q.mcapMin === undefined &&
+        q.mcapMax === undefined &&
+        q.volMin === undefined &&
+        q.volMax === undefined
+    ) {
+        return tokens;
+    }
+    return tokens.filter((t) => {
+        const m = tokenMcapUsd(t);
+        const v = t.volume24hUsd ?? 0;
+        if (q.mcapMin !== undefined && m < q.mcapMin) return false;
+        if (q.mcapMax !== undefined && m > q.mcapMax) return false;
+        if (q.volMin !== undefined && v < q.volMin) return false;
+        if (q.volMax !== undefined && v > q.volMax) return false;
+        return true;
+    });
+}
 
 function jsonOk(data: unknown, cacheControl = "public, s-maxage=10, stale-while-revalidate=30") {
     return NextResponse.json(data, {
@@ -29,7 +59,10 @@ export async function GET(req: NextRequest) {
         const query = tokensQuerySchema.parse(params);
 
         if (query.search) {
-            const results = await searchAllTokens(query.search, 50);
+            const [results, totalPoolsIndexed] = await Promise.all([
+                searchAllTokens(query.search, 50),
+                getTotalPoolCount(),
+            ]);
             return jsonOk({
                 success: true,
                 data: results,
@@ -39,6 +72,7 @@ export async function GET(req: NextRequest) {
                     pageSize: results.length,
                     totalPages: 1,
                     tab: "search",
+                    totalPools: totalPoolsIndexed,
                 },
             });
         }
@@ -111,36 +145,62 @@ export async function GET(req: NextRequest) {
             });
         }
 
-        let tokens: NormalizedToken[];
+        const [sortedTokens, totalPoolsIndexed] = await Promise.all([
+            (async () => {
+                let t: NormalizedToken[];
+                if (query.tab === "spotlight") {
+                    t = await syncSpotlightTokens();
+                } else if (query.tab === "explore") {
+                    const mints = query.watchlist
+                        ? query.watchlist.split(",").map((m) => m.trim()).filter(Boolean)
+                        : [];
+                    t = await syncExploreFeed(query.lane, { watchlistMints: mints });
+                    return t;
+                } else if (query.tab === "new") {
+                    t = await syncNewLaunches();
+                    return t;
+                } else {
+                    t = await syncTrendingTokens();
+                }
+                return sortTokens(t, query.sort);
+            })(),
+            getTotalPoolCount(),
+        ]);
 
-        if (query.tab === "spotlight") {
-            tokens = await syncSpotlightTokens();
-        } else if (query.tab === "new") {
-            tokens = await syncNewLaunches();
-        } else {
-            tokens = await syncTrendingTokens();
-        }
-
-        tokens = sortTokens(tokens, query.sort);
-
-        const total = tokens.length;
+        const afterMarketFilters =
+            query.tab === "explore"
+                ? applyExploreMarketFilters(sortedTokens, query)
+                : sortedTokens;
+        const totalFeed = afterMarketFilters.length;
         const start = (query.page - 1) * query.pageSize;
-        const paged = tokens.slice(start, start + query.pageSize);
+        const paged = afterMarketFilters.slice(start, start + query.pageSize);
+
+        const cacheControl =
+            query.tab === "spotlight"
+                ? "public, s-maxage=30, stale-while-revalidate=240"
+                : query.tab === "new" || (query.tab === "explore" && query.lane === "new")
+                    ? "public, s-maxage=8, stale-while-revalidate=45"
+                    : query.tab === "explore" && query.lane === "last_trade"
+                        ? "public, s-maxage=5, stale-while-revalidate=20"
+                    : query.tab === "explore" && query.lane === "trending"
+                        ? "public, s-maxage=30, stale-while-revalidate=120"
+                    : query.tab === "explore"
+                        ? "public, s-maxage=12, stale-while-revalidate=40"
+                        : "public, s-maxage=10, stale-while-revalidate=30";
 
         return jsonOk({
             success: true,
             data: paged,
             meta: {
-                total,
+                total: totalFeed,
                 page: query.page,
                 pageSize: query.pageSize,
-                totalPages: Math.ceil(total / query.pageSize),
+                totalPages: Math.max(1, Math.ceil(totalFeed / query.pageSize)),
                 tab: query.tab,
-                totalPools: total,
+                lane: query.tab === "explore" ? query.lane : undefined,
+                totalPools: totalPoolsIndexed,
             },
-        }, query.tab === "spotlight"
-            ? "public, s-maxage=30, stale-while-revalidate=240"
-            : "public, s-maxage=10, stale-while-revalidate=30");
+        }, cacheControl);
     } catch (e) {
         console.error("[api/tokens] error:", e);
         return NextResponse.json(

@@ -8,8 +8,8 @@ import bs58 from "bs58";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import Image from "next/image";
 import Link from "next/link";
+import { normalizeRemoteImageUrl } from "@/lib/media/normalizeRemoteImageUrl";
 import {
     AlertCircle,
     ArrowLeft,
@@ -897,8 +897,15 @@ export default function LaunchPage() {
                         </label>
                         {imagePreview ? (
                             <div className="flex flex-col gap-4 border border-[#2dff79]/24 bg-[#04120b]/84 p-4 shadow-[0_0_18px_rgba(0,255,65,0.04)] sm:flex-row sm:items-center">
-                                <div className="relative h-20 w-20 overflow-hidden border border-[#3eff82]/25">
-                                    <Image src={imagePreview} alt="Preview" fill className="object-cover" unoptimized />
+                                <div className="relative h-20 w-20 shrink-0 overflow-hidden border border-[#3eff82]/25">
+                                    {/* eslint-disable-next-line @next/next/no-img-element -- blob: URLs and Turboport need native img */}
+                                    <img
+                                        src={normalizeRemoteImageUrl(imagePreview) ?? imagePreview}
+                                        alt="Token preview"
+                                        className="h-full w-full object-cover"
+                                        loading="eager"
+                                        decoding="async"
+                                    />
                                 </div>
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-[10px] tracking-wider text-[#dfffe8]">
@@ -1398,16 +1405,31 @@ export default function LaunchPage() {
                         <ReviewRow label="NAME" value={metadata.name} />
                         <ReviewRow label="TICKER" value={metadata.symbol} />
                         <ReviewRow label="DESCRIPTION" value={metadata.description} />
-                        {imagePreview || metadata.imageUrl ? (
-                            <div className="flex flex-col gap-2 border-b border-[#00ff41]/5 py-1.5 sm:flex-row sm:items-start sm:justify-between">
-                                <span className="text-[9px] tracking-[0.15em] text-[#00ff41]/25">IMAGE</span>
-                                <div className="relative h-16 w-16 overflow-hidden border border-[#00ff41]/20">
-                                    <Image src={imagePreview || metadata.imageUrl || ""} alt="Token" fill className="object-cover" unoptimized />
+                        {(() => {
+                            const reviewImageSrc = normalizeRemoteImageUrl(
+                                imagePreview || metadata.imageUrl
+                            );
+                            return reviewImageSrc ? (
+                                <div className="flex flex-col gap-2 border-b border-[#00ff41]/5 py-1.5 sm:flex-row sm:items-start sm:justify-between">
+                                    <span className="text-[9px] tracking-[0.15em] text-[#00ff41]/25">
+                                        IMAGE
+                                    </span>
+                                    <div className="relative h-16 w-16 shrink-0 overflow-hidden border border-[#00ff41]/20">
+                                        {/* eslint-disable-next-line @next/next/no-img-element -- blob / IPFS / Arweave; avoid next/image edge cases */}
+                                        <img
+                                            src={reviewImageSrc}
+                                            alt="Token"
+                                            className="h-full w-full object-cover"
+                                            loading="eager"
+                                            decoding="async"
+                                            referrerPolicy="no-referrer"
+                                        />
+                                    </div>
                                 </div>
-                            </div>
-                        ) : (
-                            <ReviewRow label="IMAGE" value="PROVIDED VIA METADATA URL" />
-                        )}
+                            ) : (
+                                <ReviewRow label="IMAGE" value="PROVIDED VIA METADATA URL" />
+                            );
+                        })()}
                         <ReviewRow label="WEBSITE" value={metadata.website || "-"} />
                         <ReviewRow label="TWITTER / X" value={metadata.twitter || "-"} />
                         <ReviewRow label="TELEGRAM" value={metadata.telegram || "-"} />

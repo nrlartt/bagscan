@@ -54,10 +54,21 @@ export function normalizePool(raw: BagsPool): NormalizedToken {
         liquidityUsd: safeNum(raw.liquidityUsd ?? raw.liquidity),
         volume24hUsd: safeNum(raw.volume24hUsd ?? raw.volume24h),
         totalSupply,
-        pairCreatedAt: typeof raw.createdAt === "string" ? raw.createdAt : undefined,
+        pairCreatedAt: normalizeBagsCreatedAt(raw.createdAt),
 
         raw,
     };
+}
+
+function normalizeBagsCreatedAt(v: unknown): string | undefined {
+    if (typeof v === "string" && v.trim()) {
+        return v;
+    }
+    if (typeof v === "number" && Number.isFinite(v)) {
+        const ms = v < 1e12 ? v * 1000 : v;
+        return new Date(ms).toISOString();
+    }
+    return undefined;
 }
 
 /**
@@ -214,6 +225,33 @@ export function mergeClaimStats(
     };
 }
 
+/** Prefer the live pool (e.g. Meteora after migration) by 24h volume, then liquidity. */
+export function pickBestDexPairByActivity<T extends { volume?: { h24?: unknown }; liquidity?: { usd?: unknown } }>(
+    pairs: T[]
+): T | undefined {
+    if (!pairs?.length) return undefined;
+    const score = (p: T) => ({
+        v: Number(p.volume?.h24) || 0,
+        l: Number(p.liquidity?.usd) || 0,
+    });
+    return pairs.reduce((best, p) => {
+        const b = score(best);
+        const c = score(p);
+        if (c.v !== b.v) return c.v > b.v ? p : best;
+        return c.l > b.l ? p : best;
+    });
+}
+
+export function sumDexTxBuysSells(txns: unknown, window: "m5" | "h1" | "h24"): number | undefined {
+    if (!txns || typeof txns !== "object") return undefined;
+    const w = (txns as Record<string, { buys?: unknown; sells?: unknown } | undefined>)[window];
+    if (!w || typeof w !== "object") return undefined;
+    const buys = Number((w as { buys?: unknown }).buys) || 0;
+    const sells = Number((w as { sells?: unknown }).sells) || 0;
+    const sum = buys + sells;
+    return sum;
+}
+
 /**
  * Merge DexScreener pair data – now also captures 24h stats.
  */
@@ -223,8 +261,20 @@ export function mergeDexScreenerData(
 ): NormalizedToken {
     if (!pairs || pairs.length === 0) return token;
 
-    const pair = pairs.find((p: any) => p.baseToken?.address === token.tokenMint) || pairs[0];
+    const forMint = pairs.filter((p: any) => p.baseToken?.address === token.tokenMint);
+    const candidates = forMint.length > 0 ? forMint : pairs;
+    const pair = pickBestDexPairByActivity(candidates) ?? candidates[0];
     if (!pair) return token;
+
+    const mergedPairCreated = pair.pairCreatedAt ?? token.pairCreatedAt;
+
+    const h24b = safeNum(pair.txns?.h24?.buys) ?? 0;
+    const h24s = safeNum(pair.txns?.h24?.sells) ?? 0;
+    const h24Total = h24b + h24s;
+    const txCount24hMerged = h24Total > 0 ? h24Total : token.txCount24h;
+
+    const tx5 = sumDexTxBuysSells(pair.txns, "m5");
+    const tx1 = sumDexTxBuysSells(pair.txns, "h1");
 
     return {
         ...token,
@@ -235,16 +285,20 @@ export function mergeDexScreenerData(
         website: pair.info?.websites?.[0]?.url ?? token.website,
         priceUsd: safeNum(pair.priceUsd) ?? token.priceUsd,
         fdvUsd: safeNum(pair.fdv) ?? token.fdvUsd,
-        marketCap: token.marketCap,
+        marketCap: safeNum(pair.marketCap) ?? token.marketCap,
         liquidityUsd: safeNum(pair.liquidity?.usd) ?? token.liquidityUsd,
         volume24hUsd: safeNum(pair.volume?.h24) ?? token.volume24hUsd,
+        volume5mUsd: safeNum((pair.volume as { m5?: unknown } | undefined)?.m5) ?? token.volume5mUsd,
+        volume1hUsd: safeNum((pair.volume as { h1?: unknown } | undefined)?.h1) ?? token.volume1hUsd,
         pairAddress: pair.pairAddress ?? token.pairAddress,
         dexId: pair.dexId ?? token.dexId,
         priceChange24h: safeNum(pair.priceChange?.h24) ?? token.priceChange24h,
-        txCount24h: (safeNum(pair.txns?.h24?.buys) ?? 0) + (safeNum(pair.txns?.h24?.sells) ?? 0) || token.txCount24h,
+        txCount24h: txCount24hMerged,
+        txCount5m: tx5 ?? token.txCount5m,
+        txCount1h: tx1 ?? token.txCount1h,
         buyCount24h: safeNum(pair.txns?.h24?.buys) ?? token.buyCount24h,
         sellCount24h: safeNum(pair.txns?.h24?.sells) ?? token.sellCount24h,
-        pairCreatedAt: pair.pairCreatedAt ?? token.pairCreatedAt,
+        pairCreatedAt: normalizeBagsCreatedAt(mergedPairCreated),
     };
 }
 

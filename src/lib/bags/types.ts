@@ -58,6 +58,24 @@ export interface BagsPoolsResponse {
     [key: string]: unknown;
 }
 
+/** GET /token-launch/feed — recent / active launches (merged into pool index). */
+export interface BagsTokenLaunchFeedItem {
+    name: string;
+    symbol: string;
+    description: string;
+    image: string;
+    tokenMint: string;
+    status?: string;
+    twitter?: string | null;
+    website?: string | null;
+    telegram?: string | null;
+    launchSignature?: string | null;
+    dbcPoolKey?: string | null;
+    dbcConfigKey?: string | null;
+    dammV2PoolKey?: string | null;
+    [key: string]: unknown;
+}
+
 // ── Creator v3 (Analytics) ───────────────────
 export type SocialProvider =
     | "apple" | "google" | "email" | "solana"
@@ -522,6 +540,11 @@ export interface NormalizedToken {
     dexId?: string;
     priceChange24h?: number;
     txCount24h?: number;
+    /** Short-window DexScreener stats (when fetched — used for “last trade” style rails). */
+    txCount5m?: number;
+    txCount1h?: number;
+    volume5mUsd?: number;
+    volume1hUsd?: number;
     buyCount24h?: number;
     sellCount24h?: number;
     pairCreatedAt?: string;

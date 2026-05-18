@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { PredictionBrowse } from "@/components/prediction/PredictionBrowse";
+import { FeatureRouteDisabled } from "@/components/bagscan/FeatureRouteDisabled";
 
 export const metadata: Metadata = {
     title: "Prediction - BagScan",
     description:
-        "Open Jupiter Prediction positions through BagScan with $SCAN-funded routing, live event discovery, and wallet-linked position tracking.",
+        "Prediction markets UI is temporarily disabled while BagScan focuses on discovery and launch parity.",
 };
 
 export default function PredictionPage() {
-    return <PredictionBrowse />;
+    return <FeatureRouteDisabled title="PREDICTION" moduleId="PREDICTION" />;
 }

@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Share_Tech_Mono } from "next/font/google";
 import { Providers } from "@/components/Providers";
-import { TopNav } from "@/components/bagscan/TopNav";
-import { Footer } from "@/components/bagscan/Footer";
+import { DiscoverySearchProvider } from "@/components/bagscan/DiscoverySearchContext";
+import { BagScanShell } from "@/components/bagscan/BagScanShell";
 import "./globals.css";
 
 const shareTechMono = Share_Tech_Mono({
@@ -18,6 +18,12 @@ export const metadata: Metadata = {
   icons: { icon: "/favicon.svg" },
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0b0e11",
+};
+
 export default function RootLayout({
   children,
 }: {
@@ -25,14 +31,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${shareTechMono.className} min-h-screen flex flex-col antialiased`}>
+      <body className={`${shareTechMono.className} min-h-screen antialiased`}>
         <Providers>
-          <div className="crt-scanlines" />
-          <div className="crt-flicker" />
+          <DiscoverySearchProvider>
+            <div className="crt-scanlines" />
+            <div className="crt-flicker" />
 
-          <TopNav />
-          <main className="flex-1 relative z-10">{children}</main>
-          <Footer />
+            <BagScanShell>{children}</BagScanShell>
+          </DiscoverySearchProvider>
         </Providers>
       </body>
     </html>

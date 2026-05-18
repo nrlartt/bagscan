@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import { ShieldCheck, ExternalLink, BadgeCheck } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import type { JupiterTokenDetail } from "@/lib/jupiter/types";
+import { RemoteFillImage } from "./RemoteFillImage";
 
 interface JupiterTokenPanelProps {
     data: JupiterTokenDetail;
@@ -62,7 +62,17 @@ export function JupiterTokenPanel({ data }: JupiterTokenPanelProps) {
                 <div className="flex items-start gap-3">
                     {data.icon ? (
                         <div className="relative h-11 w-11 overflow-hidden border border-[#8dd8ff]/18 bg-[#8dd8ff]/[0.04]">
-                            <Image src={data.icon} alt={data.name ?? data.symbol ?? "Jupiter token"} fill className="object-cover" unoptimized />
+                            <RemoteFillImage
+                                src={data.icon}
+                                alt={data.name ?? data.symbol ?? "Jupiter token"}
+                                sizes="44px"
+                                className="object-cover"
+                                fallback={
+                                    <span className="absolute inset-0 flex items-center justify-center text-[10px] text-[#8dd8ff]/40">
+                                        ?
+                                    </span>
+                                }
+                            />
                         </div>
                     ) : null}
                     <div className="min-w-0 flex-1">
