@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Heart } from "lucide-react";
 import { cn, formatCurrency, shortenAddress, getValuationMetric } from "@/lib/utils";
 import type { NormalizedToken } from "@/lib/bags/types";
-import { RemoteFillImage, REMOTE_IMAGE_SIZES_GRID } from "./RemoteFillImage";
+import { RemoteFillImage, REMOTE_IMAGE_SIZES_GRID_2COL } from "./RemoteFillImage";
 
 function timeAgoHeroStrip(dateStr?: string): string | null {
     if (!dateStr) return null;
@@ -88,7 +88,7 @@ export function ExploreCharityStrip({
     if (tokens.length === 0) return null;
 
     return (
-        <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 mb-5">
+        <div className="sticky top-[calc(6.75rem+env(safe-area-inset-top))] z-20 mb-5 sm:top-[calc(3.5rem+env(safe-area-inset-top))]">
             <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-gradient-to-b from-[#121214]/95 to-[#0a0a0c] shadow-[0_8px_40px_rgba(0,0,0,0.5)] backdrop-blur-md supports-[backdrop-filter]:bg-[#121214]/90">
                 <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3">
                     <Heart className="h-4 w-4 shrink-0 fill-[#ff6b9d]/30 text-[#ff6b9d]" />
@@ -133,7 +133,7 @@ function FeaturedLaunchCard({
                 <RemoteFillImage
                     src={token.image}
                     alt={token.name ?? ""}
-                    sizes={REMOTE_IMAGE_SIZES_GRID}
+                    sizes={REMOTE_IMAGE_SIZES_GRID_2COL}
                     priority={rank <= 4}
                     className="object-cover transition duration-500 group-hover:scale-[1.04]"
                     fallback={

@@ -5,9 +5,15 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { normalizeRemoteImageUrl } from "@/lib/media/normalizeRemoteImageUrl";
 import { cn } from "@/lib/utils";
 
-/** Default for 1–4 column responsive token grids on the home feed. */
+/**
+ * Home explore feed cards: `grid-cols-1` below `sm`, then 2–4 columns.
+ */
 export const REMOTE_IMAGE_SIZES_GRID =
-    "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 25vw";
+    "(max-width: 639px) 100vw, (max-width: 1023px) 50vw, (max-width: 1535px) 33vw, 25vw";
+
+/** 2-column grids (e.g. featured hero on Bags) through `lg`. */
+export const REMOTE_IMAGE_SIZES_GRID_2COL =
+    "(max-width: 1023px) 50vw, (max-width: 1535px) 33vw, 25vw";
 
 type LoadMode = "optimized" | "direct" | "failed";
 
@@ -35,7 +41,7 @@ export function RemoteFillImage({
     className,
     sizes,
     priority = false,
-    quality = 82,
+    quality = 72,
     fallback,
 }: RemoteFillImageProps) {
     const normalized = normalizeRemoteImageUrl(src);
@@ -67,6 +73,7 @@ export function RemoteFillImage({
                 className={cn(imgFillClass, className)}
                 loading={priority ? "eager" : "lazy"}
                 decoding="async"
+                fetchPriority={priority ? "high" : "auto"}
                 referrerPolicy="no-referrer"
                 onError={onDirectError}
             />
@@ -82,6 +89,7 @@ export function RemoteFillImage({
             className={cn("object-cover", className)}
             priority={priority}
             quality={quality}
+            fetchPriority={priority ? "high" : "low"}
             onError={onOptimizedError}
         />
     );

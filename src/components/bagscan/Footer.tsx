@@ -32,9 +32,11 @@ export function Footer() {
                 </div>
 
                 <div className="flex w-full flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex shrink-0 items-center gap-2.5 text-[10px] text-[#00ff41]/50 tracking-[0.15em]">
-                        <BagLogo size={16} className="opacity-40 shrink-0" />
-                        <span className="text-left">BAGSCAN BETA — TOKEN DISCOVERY SYSTEM</span>
+                    <div className="flex min-w-0 items-start gap-2.5 text-[10px] text-[#00ff41]/50 tracking-[0.12em] sm:items-center">
+                        <BagLogo size={16} className="shrink-0 opacity-40" />
+                        <span className="min-w-0 break-words text-left leading-snug">
+                            BAGSCAN BETA — TOKEN DISCOVERY SYSTEM
+                        </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-[#00ff41]/30 tracking-wider sm:justify-end">
                         <Link href="/about" className="hover:text-[#00ff41]/70 transition-colors">

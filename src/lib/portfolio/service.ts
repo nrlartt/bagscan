@@ -243,6 +243,7 @@ export async function getPortfolioForWallet(wallet: string): Promise<PortfolioRe
                 pnl24hUsd,
                 liquidityUsd: normalizeUsd(toNumber(pair?.liquidity?.usd)),
                 volume24hUsd: normalizeUsd(toNumber(pair?.volume?.h24)),
+                marketCapUsd: normalizeUsd(toNumber(pair?.marketCap)),
             };
         })
         .filter((holding): holding is PortfolioHolding => holding !== null)

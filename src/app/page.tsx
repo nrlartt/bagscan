@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TokenCard } from "@/components/bagscan/TokenCard";
 import { TokenTable } from "@/components/bagscan/TokenTable";
 import { LiveTicker } from "@/components/bagscan/LiveTicker";
@@ -12,6 +12,7 @@ import { ExploreCharityStrip, FeaturedLaunchesGrid } from "@/components/bagscan/
 import { ExploreFiltersPopover } from "@/components/bagscan/ExploreFiltersPopover";
 import { cn } from "@/lib/utils";
 import type { ExploreMarketFilters } from "@/lib/explore-filters";
+import { hasActiveMarketFilters } from "@/lib/explore-filters";
 import type { NormalizedToken } from "@/lib/bags/types";
 import type { ExploreLane } from "@/lib/sync";
 import { useWatchlist } from "@/hooks/useWatchlist";
@@ -58,6 +59,40 @@ const EXPLORE_LANES: { id: ExploreLane; label: string; icon: LucideIcon }[] = [
     { id: "watchlist", label: "WATCHLIST", icon: Star },
 ];
 
+function buildExploreParams(
+  lane: ExploreLane,
+  feedPage: number,
+  watchlistParam: string,
+  marketFilters: ExploreMarketFilters
+): string {
+  const p = new URLSearchParams();
+  p.set("tab", "explore");
+  p.set("lane", lane);
+  p.set("page", String(feedPage));
+  p.set("pageSize", "48");
+  if (watchlistParam) p.set("watchlist", watchlistParam);
+  if (marketFilters.mcapMin !== undefined) {
+    p.set("mcapMin", String(Math.round(marketFilters.mcapMin)));
+  }
+  if (marketFilters.mcapMax !== undefined) {
+    p.set("mcapMax", String(Math.round(marketFilters.mcapMax)));
+  }
+  if (marketFilters.volMin !== undefined) {
+    p.set("volMin", String(Math.round(marketFilters.volMin)));
+  }
+  if (marketFilters.volMax !== undefined) {
+    p.set("volMax", String(Math.round(marketFilters.volMax)));
+  }
+  return p.toString();
+}
+
+function exploreLaneStaleMs(lane: ExploreLane): number {
+  if (lane === "last_trade") return 4_000;
+  if (lane === "new") return 5_000;
+  if (lane === "trending") return 30_000;
+  return 8_000;
+}
+
 async function fetchTokensResponse(params: string): Promise<TokensResponse> {
   const controller = new AbortController();
   const timeoutMs = (() => {
@@ -93,27 +128,48 @@ export default function HomePage() {
     setFeedPage(1);
   }, [lane, isSearching, marketFilters]);
 
-  const exploreParams = useMemo(() => {
-    const p = new URLSearchParams();
-    p.set("tab", "explore");
-    p.set("lane", lane);
-    p.set("page", String(feedPage));
-    p.set("pageSize", "48");
-    if (watchlistParam) p.set("watchlist", watchlistParam);
-    if (marketFilters.mcapMin !== undefined) {
-      p.set("mcapMin", String(Math.round(marketFilters.mcapMin)));
+  const queryClient = useQueryClient();
+
+  const prefetchExploreLane = useCallback(
+    (targetLane: ExploreLane) => {
+      if (isSearching) return;
+      if (hasActiveMarketFilters(marketFilters)) return;
+      if (targetLane === "watchlist" && !watchlistParam) return;
+      const p = buildExploreParams(targetLane, 1, watchlistParam, marketFilters);
+      void queryClient.prefetchQuery({
+        queryKey: ["tokens", p],
+        queryFn: () => fetchTokensResponse(p),
+        staleTime: exploreLaneStaleMs(targetLane),
+        gcTime: 10 * 60 * 1000,
+      });
+    },
+    [isSearching, marketFilters, queryClient, watchlistParam]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isSearching || hasActiveMarketFilters(marketFilters)) return;
+    if (feedPage !== 1) return;
+
+    const run = () => {
+      for (const { id } of EXPLORE_LANES) {
+        if (id === "watchlist" && !watchlistParam) continue;
+        prefetchExploreLane(id);
+      }
+    };
+
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(run, { timeout: 1200 });
+      return () => window.cancelIdleCallback(idleId);
     }
-    if (marketFilters.mcapMax !== undefined) {
-      p.set("mcapMax", String(Math.round(marketFilters.mcapMax)));
-    }
-    if (marketFilters.volMin !== undefined) {
-      p.set("volMin", String(Math.round(marketFilters.volMin)));
-    }
-    if (marketFilters.volMax !== undefined) {
-      p.set("volMax", String(Math.round(marketFilters.volMax)));
-    }
-    return p.toString();
-  }, [lane, feedPage, watchlistParam, marketFilters]);
+    const t = setTimeout(run, 100);
+    return () => clearTimeout(t);
+  }, [isSearching, marketFilters, watchlistParam, feedPage, prefetchExploreLane]);
+
+  const exploreParams = useMemo(
+    () => buildExploreParams(lane, feedPage, watchlistParam, marketFilters),
+    [lane, feedPage, watchlistParam, marketFilters]
+  );
 
   const searchParams = useMemo(() => {
     const p = new URLSearchParams();
@@ -146,6 +202,7 @@ export default function HomePage() {
           : lane === "trending"
             ? 30_000
             : 8_000,
+    gcTime: 10 * 60 * 1000,
     retry: 3,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     refetchOnWindowFocus: true,
@@ -229,8 +286,8 @@ export default function HomePage() {
 
   const emptyWatchlist = !isSearching && lane === "watchlist" && tokens.length === 0;
 
-  return (
-    <div className="mx-auto max-w-[90rem] px-3 py-4 sm:px-6 sm:py-5 lg:px-8">
+    return (
+    <div className="mx-auto w-full min-w-0 max-w-[90rem] px-3 py-4 sm:px-6 sm:py-5 lg:px-8">
       <div className="mb-5 flex flex-col gap-3 border-b border-[#00ff41]/15 pb-5 animate-fade-in sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-[15px] tracking-[0.14em] text-[#00ff41] sm:text-base" style={{ textShadow: "0 0 10px rgba(0,255,65,0.28)" }}>
@@ -269,11 +326,18 @@ export default function HomePage() {
             <p className="mb-2 px-0.5 text-[10px] tracking-[0.22em] text-[#00ff41]/40">EXPLORE COINS</p>
             <div className="-mx-1 flex max-w-full flex-nowrap gap-1 overflow-x-auto overscroll-x-contain px-1 pb-1 [-webkit-overflow-scrolling:touch] scrollbar-thin">
               {EXPLORE_LANES.map(({ id, label, icon }) => (
-                <ExploreLanePill key={id} active={lane === id} label={label} icon={icon} onClick={() => setLane(id)} />
+                <ExploreLanePill
+                  key={id}
+                  active={lane === id}
+                  label={label}
+                  icon={icon}
+                  onClick={() => setLane(id)}
+                  onWarm={() => prefetchExploreLane(id)}
+                />
               ))}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5 self-start sm:mt-6">
+          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 self-start sm:mt-6 lg:w-auto lg:flex-nowrap">
             <ExploreFiltersPopover applied={marketFilters} onApply={setMarketFilters} />
             <div className="flex overflow-hidden rounded-lg border border-[#00ff41]/15">
               <button
@@ -411,16 +475,20 @@ function ExploreLanePill({
     label,
     icon: Icon,
     onClick,
+    onWarm,
 }: {
     active: boolean;
     label: string;
     icon: LucideIcon;
     onClick: () => void;
+    onWarm?: () => void;
 }) {
     return (
         <button
             type="button"
             onClick={onClick}
+            onMouseEnter={onWarm}
+            onFocus={onWarm}
             className={cn(
                 "inline-flex shrink-0 items-center gap-1.5 border px-2 py-1.5 text-[8px] tracking-[0.14em] transition-all duration-200 sm:px-2.5 sm:text-[9px]",
                 active

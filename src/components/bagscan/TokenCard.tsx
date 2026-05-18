@@ -247,7 +247,8 @@ function ExploreFeedTokenCard({
                     src={token.image}
                     alt={token.name ?? "Token"}
                     sizes={REMOTE_IMAGE_SIZES_GRID}
-                    priority={index < 12}
+                    priority={index < 20}
+                    quality={index < 20 ? 68 : 58}
                     className="transition-transform duration-500 group-hover:scale-[1.03]"
                     fallback={
                     <div className="absolute inset-0 flex items-center justify-center text-3xl text-[#00ff41]/25">

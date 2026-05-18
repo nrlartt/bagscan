@@ -179,7 +179,10 @@ export function ExploreFiltersPopover({ applied, onApply, className }: ExploreFi
                     ref={panelRef}
                     role="dialog"
                     aria-label="Market filters"
-                    className="absolute right-0 top-full z-[80] mt-2 w-[min(100vw-2rem,20rem)] rounded-xl border border-white/[0.1] bg-[#141416] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.65)]"
+                    className={cn(
+                        "z-[80] rounded-xl border border-white/[0.1] bg-[#141416] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.65)] sm:absolute sm:right-0 sm:top-full sm:mt-2 sm:w-[min(100vw-2rem,20rem)]",
+                        "max-sm:fixed max-sm:left-3 max-sm:right-3 max-sm:top-[50%] max-sm:z-[100] max-sm:max-h-[min(85dvh,28rem)] max-sm:-translate-y-1/2 max-sm:overflow-y-auto max-sm:overscroll-contain"
+                    )}
                 >
                     <div className="mb-4">
                         <div className="mb-2 flex items-center justify-between text-[11px] text-white/80">

@@ -131,7 +131,7 @@ export function WalletPortfolioButton() {
                         onClick={() => setOpen(false)}
                     />
 
-                    <div className="fixed inset-x-3 top-[4.5rem] z-50 max-h-[calc(100vh-6rem)] overflow-y-auto border border-[#00ff41]/20 bg-[#03140b]/95 shadow-[0_30px_90px_rgba(0,0,0,0.55),0_0_40px_rgba(0,255,65,0.08)] backdrop-blur-xl sm:absolute sm:right-0 sm:left-auto sm:top-[calc(100%+14px)] sm:w-[680px] sm:max-w-[92vw] sm:max-h-[80vh]">
+                    <div className="fixed inset-x-3 top-[calc(6.25rem+env(safe-area-inset-top))] z-50 max-h-[min(85dvh,calc(100dvh-7rem))] overflow-y-auto overscroll-contain border border-[#00ff41]/20 bg-[#03140b]/95 shadow-[0_30px_90px_rgba(0,0,0,0.55),0_0_40px_rgba(0,255,65,0.08)] backdrop-blur-xl sm:absolute sm:right-0 sm:left-auto sm:top-[calc(100%+14px)] sm:max-h-[80vh] sm:w-[680px] sm:max-w-[92vw]">
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,255,65,0.12),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(0,170,255,0.12),transparent_38%)]" />
                         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_24%),repeating-linear-gradient(180deg,rgba(0,255,65,0.05)_0,rgba(0,255,65,0.05)_1px,transparent_1px,transparent_4px)] opacity-40" />
 

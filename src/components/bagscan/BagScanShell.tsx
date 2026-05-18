@@ -38,7 +38,7 @@ function HeaderSearch() {
 
     if (!onHome) {
         return (
-            <div className="mx-1 flex min-w-0 max-w-xl flex-1 items-center justify-center sm:mx-4 lg:mx-8">
+            <div className="mx-0 flex min-w-0 max-w-xl flex-1 items-center justify-center sm:mx-4 lg:mx-8">
                 <Link
                     href="/"
                     className="w-full rounded-lg border border-[#00ff41]/15 bg-[#1a1d21]/90 py-2.5 text-center text-[10px] tracking-[0.12em] text-[#00ff41]/35 transition-colors hover:border-[#00ff41]/25 hover:text-[#00ff41]/55"
@@ -50,7 +50,7 @@ function HeaderSearch() {
     }
 
     return (
-        <div className="relative mx-1 min-w-0 max-w-xl flex-1 sm:mx-4 lg:mx-8">
+        <div className="relative mx-0 w-full min-w-0 max-w-none sm:mx-4 sm:max-w-xl lg:mx-8">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#00ff41]/25" />
             <input
                 type="search"
@@ -58,7 +58,7 @@ function HeaderSearch() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search for coins..."
                 autoComplete="off"
-                className="w-full rounded-lg border border-[#2a2f36] bg-[#1a1d21] py-2.5 pl-10 pr-10 text-[12px] text-white/90 placeholder:text-white/25 focus:border-[#20e3b2]/50 focus:outline-none focus:ring-1 focus:ring-[#20e3b2]/30"
+                className="w-full rounded-lg border border-[#2a2f36] bg-[#1a1d21] py-2 pl-10 pr-10 text-[11px] text-white/90 placeholder:text-white/25 focus:border-[#20e3b2]/50 focus:outline-none focus:ring-1 focus:ring-[#20e3b2]/30 sm:py-2.5 sm:text-[12px]"
             />
             {search ? (
                 <button
@@ -185,7 +185,7 @@ export function BagScanShell({ children }: { children: ReactNode }) {
     }, [mobileMenu]);
 
     return (
-        <div className="flex min-h-screen bg-[#0b0e11] text-white/90">
+        <div className="flex min-h-screen min-w-0 overflow-x-clip bg-[#0b0e11] text-white/90">
             {/* Desktop sidebar */}
             <aside className="fixed inset-y-0 left-0 z-40 hidden w-[240px] flex-col border-r border-white/[0.08] bg-[#0b0e11] px-4 pb-6 pt-[max(1.25rem,env(safe-area-inset-top))] lg:flex">
                 <SidebarNavBody />
@@ -230,27 +230,29 @@ export function BagScanShell({ children }: { children: ReactNode }) {
                 </aside>
             </div>
 
-            <div className="flex min-h-screen flex-1 flex-col lg:pl-[240px]">
+            <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-[240px]">
                 <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0b0e11]/95 pt-[env(safe-area-inset-top)] backdrop-blur-md">
-                    <div className="flex min-h-14 items-center gap-1.5 px-2 sm:gap-2 sm:px-4">
+                    <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2 px-2 py-2 sm:flex-nowrap sm:gap-2 sm:px-4 sm:py-2">
                         <button
                             type="button"
-                            className="rounded-lg p-2 text-white/60 hover:bg-white/5 lg:hidden"
+                            className="order-1 shrink-0 rounded-lg p-2 text-white/60 hover:bg-white/5 lg:hidden"
                             onClick={() => setMobileMenu(true)}
                             aria-label="Open menu"
                         >
                             <Menu className="h-5 w-5" />
                         </button>
 
-                        <HeaderSearch />
-
-                        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+                        <div className="order-2 ml-auto shrink-0 sm:order-3 sm:ml-0">
                             <WalletPortfolioButton key={pathname} />
+                        </div>
+
+                        <div className="order-3 w-full min-w-0 basis-full sm:order-2 sm:basis-auto sm:flex-1 sm:px-0">
+                            <HeaderSearch />
                         </div>
                     </div>
                 </header>
 
-                <main className="relative z-10 flex-1">{children}</main>
+                <main className="relative z-10 min-w-0 flex-1 overflow-x-clip">{children}</main>
                 <Footer />
             </div>
         </div>

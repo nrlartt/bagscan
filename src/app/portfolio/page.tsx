@@ -3,680 +3,737 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { PublicKey } from "@solana/web3.js";
 import {
     ArrowUpRight,
+    Check,
     Coins,
+    Copy,
     DollarSign,
-    Layers,
     RefreshCw,
     Search,
-    Sparkles,
-    Target,
-    TrendingDown,
+    Share2,
     TrendingUp,
     Wallet,
 } from "lucide-react";
-import { cn, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
+import { cn, copyToClipboard, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
 import { fetchPortfolio } from "@/lib/portfolio/client";
 import type { PortfolioResponse } from "@/lib/portfolio/types";
-import type { JupiterPredictionPosition } from "@/lib/jupiter/types";
+import { SOL_MINT } from "@/lib/solana";
+
+/** Pump-style accent — high-contrast mint on dark. */
+const ACCENT = "#53ffb2";
+const ACCENT_MUTED = "rgba(83,255,178,0.45)";
+
+type PortfolioTab = "balances" | "rewards";
 
 export default function PortfolioPage() {
     const { publicKey, connected } = useWallet();
     const { setVisible } = useWalletModal();
     const [walletInput, setWalletInput] = useState("");
+    const [tab, setTab] = useState<PortfolioTab>("balances");
+    const [holdingSearch, setHoldingSearch] = useState("");
+    const [hideDust, setHideDust] = useState(true);
+    const [copiedAddr, setCopiedAddr] = useState(false);
+    const [copiedShare, setCopiedShare] = useState(false);
 
     const connectedWallet = publicKey?.toBase58() ?? "";
     const trackedWallet = walletInput.trim() || connectedWallet;
     const deferredWallet = useDeferredValue(trackedWallet);
 
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const q = new URLSearchParams(window.location.search).get("wallet");
+        if (q?.trim()) setWalletInput(q.trim());
+    }, []);
+
     const walletError = useMemo(() => {
         if (!deferredWallet) return null;
         try {
-            return new PublicKey(deferredWallet).toBase58() ? null : "Invalid wallet";
+            new PublicKey(deferredWallet);
+            return null;
         } catch {
             return "INVALID SOLANA WALLET ADDRESS";
         }
     }, [deferredWallet]);
 
-    const portfolioQuery = useQuery<PortfolioResponse>({
+    const portfolioQuery = useQuery({
         queryKey: ["portfolio", deferredWallet],
         enabled: Boolean(deferredWallet) && !walletError,
         queryFn: () => fetchPortfolio(deferredWallet),
         staleTime: 20_000,
         refetchInterval: 45_000,
     });
-    const predictionPositionsQuery = useQuery<JupiterPredictionPosition[]>({
-        queryKey: ["portfolio-prediction-positions", deferredWallet],
-        enabled: Boolean(deferredWallet) && !walletError,
-        queryFn: async () => {
-            const res = await fetch(`/api/prediction/positions?ownerPubkey=${encodeURIComponent(deferredWallet)}`);
-            const json = await res.json();
-            if (!json.success) throw new Error(json.error || "Prediction positions could not be loaded.");
-            return json.data as JupiterPredictionPosition[];
-        },
-        staleTime: 20_000,
-        refetchInterval: 45_000,
-    });
 
     const portfolio = portfolioQuery.data;
     const summary = portfolio?.summary;
-    const predictionPositions = useMemo(
-        () => predictionPositionsQuery.data ?? [],
-        [predictionPositionsQuery.data]
-    );
-    const predictionSummary = useMemo(() => {
-        const totalUnrealizedPnlUsd = predictionPositions.reduce(
-            (sum, position) => sum + (position.unrealizedPnlUsd ?? 0),
-            0
-        );
-        const totalClaimablePayoutUsd = predictionPositions.reduce(
-            (sum, position) => sum + (position.claimablePayoutUsd ?? 0),
-            0
-        );
-        const claimableCount = predictionPositions.filter(
-            (position) => (position.status ?? "").toLowerCase() === "claimable"
-        ).length;
 
-        return {
-            count: predictionPositions.length,
-            totalUnrealizedPnlUsd,
-            totalClaimablePayoutUsd,
-            claimableCount,
-        };
-    }, [predictionPositions]);
+    const topHolding = useMemo(() => {
+        if (!portfolio?.holdings.length || !summary?.totalValueUsd) return null;
+        const h = portfolio.holdings[0];
+        const v = h.valueUsd ?? 0;
+        if (v <= 0) return null;
+        const pct = (v / summary.totalValueUsd) * 100;
+        return { holding: h, pct };
+    }, [portfolio, summary]);
+
+    const dataSinceLabel = useMemo(() => formatDataSince(portfolio?.costBasis.oldestTimestamp), [portfolio]);
+
+    const visibleHoldings = useMemo(() => {
+        let list = portfolio?.holdings ?? [];
+        if (hideDust) list = list.filter((h) => (h.valueUsd ?? 0) >= 0.01);
+        const q = holdingSearch.trim().toLowerCase();
+        if (q) {
+            list = list.filter(
+                (h) =>
+                    h.mint.toLowerCase().includes(q) ||
+                    (h.symbol?.toLowerCase().includes(q) ?? false) ||
+                    (h.name?.toLowerCase().includes(q) ?? false)
+            );
+        }
+        return list;
+    }, [portfolio, hideDust, holdingSearch]);
+
+    async function handleCopyAddress() {
+        if (!deferredWallet) return;
+        const ok = await copyToClipboard(deferredWallet);
+        if (ok) {
+            setCopiedAddr(true);
+            window.setTimeout(() => setCopiedAddr(false), 1500);
+        }
+    }
+
+    async function handleShare() {
+        if (!deferredWallet || typeof window === "undefined") return;
+        const url = `${window.location.origin}/portfolio?wallet=${encodeURIComponent(deferredWallet)}`;
+        const ok = await copyToClipboard(url);
+        if (ok) {
+            setCopiedShare(true);
+            window.setTimeout(() => setCopiedShare(false), 1500);
+        }
+    }
+
+    const displayName = deferredWallet ? shortenAddress(deferredWallet, 5) : "WALLET";
 
     return (
-        <div className="mx-auto max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">
-            <section className="crt-panel relative overflow-hidden p-6 sm:p-8">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,255,65,0.15),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(0,170,255,0.14),transparent_34%)]" />
-                <div className="relative z-[1] grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.95fr)] xl:items-end">
-                    <div className="space-y-5">
-                        <div className="flex flex-wrap items-start gap-4">
-                            <div className="flex h-14 w-14 items-center justify-center border border-[#00ff41]/25 bg-[#00ff41]/10 shadow-[0_0_24px_rgba(0,255,65,0.14)]">
-                                <Wallet className="h-7 w-7 text-[#00ff41]" />
+        <div className="mx-auto w-full min-w-0 max-w-[1200px] px-2 py-4 sm:px-5 lg:px-8">
+            <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#12141a] shadow-[0_20px_60px_rgba(0,0,0,0.45)] sm:rounded-2xl">
+                <div className="border-b border-white/[0.06] p-4 sm:p-7">
+                    <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="flex min-w-0 flex-1 gap-3 sm:gap-4">
+                            <div
+                                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#1a2030] to-[#0e1014] text-xl font-semibold text-white/80"
+                                style={{ boxShadow: `0 0 0 2px ${ACCENT}33` }}
+                            >
+                                {deferredWallet ? deferredWallet.slice(-2).toUpperCase() : "?"}
                             </div>
                             <div className="min-w-0 flex-1">
-                                <p className="text-[11px] uppercase tracking-[0.34em] text-[#00ff41]/55">Phase 2 In Development</p>
-                                <h1
-                                    className="mt-2 text-3xl tracking-[0.16em] text-[#d8ffe6] sm:text-5xl"
-                                    style={{ textShadow: "0 0 16px rgba(0,255,65,0.18)" }}
-                                >
-                                    PORTFOLIO TRACKER
+                                <h1 className="truncate text-xl font-semibold tracking-tight text-white sm:text-2xl">
+                                    {displayName}
                                 </h1>
-                                <p className="mt-4 max-w-3xl text-sm leading-7 text-[#d8ffe6]/70 sm:text-[15px]">
-                                    Track live wallet value, actual average-cost basis, unrealized PnL, and Bags fee-share claimables in one terminal.
-                                </p>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    {deferredWallet ? (
+                                        <>
+                                            <span className="truncate font-mono text-[11px] text-white/40 sm:text-xs">
+                                                {shortenAddress(deferredWallet, 8)}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => void handleCopyAddress()}
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-white/45 transition-colors hover:border-white/20 hover:text-white"
+                                                aria-label="Copy address"
+                                                style={{ color: ACCENT_MUTED }}
+                                            >
+                                                {copiedAddr ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <span className="text-xs text-white/35">Connect or paste a wallet to load balances</span>
+                                    )}
+                                </div>
+                                <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleShare()}
+                                        disabled={!deferredWallet}
+                                        className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-3 py-2 text-[11px] font-medium text-white/80 transition-colors hover:bg-white/[0.08] disabled:opacity-35 sm:min-h-0 sm:px-4 sm:text-xs"
+                                    >
+                                        <Share2 className="h-3.5 w-3.5 shrink-0" />
+                                        <span className="truncate">{copiedShare ? "LINK COPIED" : "SHARE"}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => portfolioQuery.refetch()}
+                                        disabled={!deferredWallet || Boolean(walletError) || portfolioQuery.isFetching}
+                                        className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full px-3 py-2 text-[11px] font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-40 sm:min-h-0 sm:px-4 sm:text-xs"
+                                        style={{ backgroundColor: ACCENT }}
+                                    >
+                                        <RefreshCw className={cn("h-3.5 w-3.5 shrink-0", portfolioQuery.isFetching && "animate-spin")} />
+                                        REFRESH
+                                    </button>
+                                    {!connected ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setVisible(true)}
+                                            className="col-span-2 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-white/15 px-3 py-2 text-[11px] font-medium text-white/70 hover:bg-white/[0.05] sm:col-span-1 sm:min-h-0 sm:px-4 sm:text-xs"
+                                        >
+                                            <Wallet className="h-3.5 w-3.5 shrink-0" />
+                                            CONNECT
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => setWalletInput("")}
+                                            className="col-span-2 inline-flex min-h-[44px] items-center justify-center rounded-full border border-white/10 px-3 py-2 text-[11px] text-white/50 hover:text-white/75 sm:col-span-1 sm:min-h-0 sm:px-4 sm:text-xs"
+                                        >
+                                            USE CONNECTED
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-2.5">
-                            <div className="inline-flex items-center gap-2 border border-[#00ff41]/20 bg-[#00ff41]/10 px-3 py-2 text-[11px] tracking-[0.18em] text-[#9dffb8]">
-                                <span className="h-2 w-2 rounded-full bg-[#00ff41] shadow-[0_0_10px_rgba(0,255,65,0.75)]" />
-                                LIVE WALLET SCAN
-                            </div>
-                            <div className="inline-flex items-center gap-2 border border-[#00aaff]/20 bg-[#00aaff]/10 px-3 py-2 text-[11px] tracking-[0.18em] text-[#8dd8ff]">
-                                <Sparkles className="h-3.5 w-3.5" />
-                                TRUE COST BASIS
-                            </div>
-                            <div className="inline-flex items-center gap-2 border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] tracking-[0.18em] text-white/65">
-                                Bags claimable fees included
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="border border-white/10 bg-black/45 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-                        <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-white/48">
-                            <Search className="h-3.5 w-3.5" />
-                            Track Wallet
-                        </div>
-                        <div className="mt-4 flex flex-col gap-3">
+                        <div className="w-full shrink-0 lg:max-w-sm">
+                            <label className="text-[10px] font-medium uppercase tracking-wider text-white/35">Track wallet</label>
                             <input
                                 value={walletInput}
-                                onChange={(event) => setWalletInput(event.target.value)}
-                                placeholder={connectedWallet || "Paste any Solana wallet address"}
-                                className="w-full border border-[#00ff41]/15 bg-black/60 px-3 py-3 text-xs tracking-wider text-[#00ff41] placeholder-[#00ff41]/15 transition-all focus:border-[#00ff41]/40 focus:outline-none focus:shadow-[0_0_10px_rgba(0,255,65,0.08)]"
+                                onChange={(e) => setWalletInput(e.target.value)}
+                                placeholder={connectedWallet || "Paste Solana address"}
+                                className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-[#53ffb2]/40 focus:outline-none focus:ring-1 focus:ring-[#53ffb2]/25"
                             />
-
-                            <div className="flex flex-wrap gap-2">
-                                <button
-                                    onClick={() => portfolioQuery.refetch()}
-                                    disabled={!deferredWallet || Boolean(walletError) || portfolioQuery.isFetching}
-                                    className="inline-flex items-center gap-2 border border-[#00ff41]/20 bg-[#00ff41]/10 px-3 py-2 text-[11px] tracking-[0.18em] text-[#9dffb8] transition-all hover:bg-[#00ff41]/16 disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                    <RefreshCw className={cn("h-3.5 w-3.5", portfolioQuery.isFetching && "animate-spin")} />
-                                    REFRESH
-                                </button>
-                                {connected ? (
-                                    <button
-                                        onClick={() => setWalletInput("")}
-                                        className="inline-flex items-center gap-2 border border-[#00aaff]/20 bg-[#00aaff]/10 px-3 py-2 text-[11px] tracking-[0.18em] text-[#8dd8ff] transition-all hover:bg-[#00aaff]/16"
-                                    >
-                                        USE CONNECTED WALLET
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => setVisible(true)}
-                                        className="inline-flex items-center gap-2 border border-[#ffaa00]/20 bg-[#ffaa00]/10 px-3 py-2 text-[11px] tracking-[0.18em] text-[#ffd37a] transition-all hover:bg-[#ffaa00]/16"
-                                    >
-                                        CONNECT WALLET
-                                    </button>
-                                )}
-                            </div>
-
-                            <p className="text-[11px] leading-5 text-white/45">
-                                Cost basis uses wallet transaction history with an <span className="text-[#9dffb8]">average-cost</span> model. Daily movement is still shown separately as a live market signal.
-                            </p>
                             {walletError ? (
-                                <p className="text-[11px] tracking-[0.16em] text-[#ff8f70]">{walletError}</p>
+                                <p className="mt-2 text-xs text-red-400/90">{walletError}</p>
                             ) : deferredWallet ? (
-                                <p className="text-[11px] tracking-[0.16em] text-[#00ff41]/45">
-                                    TRACKING {shortenAddress(deferredWallet, 6)}
-                                </p>
-                            ) : (
-                                <p className="text-[11px] tracking-[0.16em] text-[#00ff41]/35">
-                                    CONNECT A WALLET OR PASTE ANY PUBLIC ADDRESS TO START.
-                                </p>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <StatCard
-                    label="Total Value"
-                    value={summary ? formatCurrency(summary.totalValueUsd) : "—"}
-                    hint={summary ? `${formatNumber(summary.holdingsCount, false)} holdings tracked` : "Waiting for wallet scan"}
-                    accent="text-[#d8ffe6]"
-                    icon={<DollarSign className="h-4 w-4" />}
-                />
-                <StatCard
-                    label="Cost Basis"
-                    value={summary ? formatCurrency(summary.totalCostBasisUsd) : "—"}
-                    hint={
-                        summary
-                            ? `${formatNumber(summary.costBasisCompleteHoldingsCount, false)}/${formatNumber(summary.costBasisHoldingsCount, false)} holdings fully covered`
-                            : "Built from wallet transaction history"
-                    }
-                    accent="text-[#8dd8ff]"
-                    icon={<Coins className="h-4 w-4" />}
-                />
-                <StatCard
-                    label="Unrealized PnL"
-                    value={summary ? formatSignedCurrency(summary.totalUnrealizedPnlUsd) : "—"}
-                    hint={
-                        summary
-                            ? `${formatSignedPercent(summary.totalUnrealizedPnlPercent)} vs total basis`
-                            : "Current value minus tracked cost basis"
-                    }
-                    accent={summary && summary.totalUnrealizedPnlUsd < 0 ? "text-[#ff8f70]" : "text-[#9dffb8]"}
-                    icon={summary && summary.totalUnrealizedPnlUsd < 0 ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
-                />
-                <StatCard
-                    label="Claimable Fees"
-                    value={summary ? `${summary.claimableFeesSol.toFixed(4)} SOL` : "—"}
-                    hint={summary ? `${formatCurrency(summary.claimableFeesUsd)} across ${summary.claimablePositionsCount} positions` : "Bags fee-share positions"}
-                    accent="text-[#ffd37a]"
-                    icon={<Layers className="h-4 w-4" />}
-                />
-            </section>
-
-            <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(340px,0.9fr)]">
-                <section className="crt-panel p-4 sm:p-5">
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#00ff41]/12 pb-4">
-                        <div>
-                            <p className="text-[11px] uppercase tracking-[0.28em] text-[#00ff41]/55">Live Holdings</p>
-                            <h2 className="mt-1 text-lg tracking-[0.16em] text-[#d8ffe6] sm:text-xl">CURRENT PORTFOLIO</h2>
-                        </div>
-                        <p className="text-[11px] uppercase tracking-[0.22em] text-[#00ff41]/45">
-                            Average-cost basis and unrealized PnL
-                        </p>
-                    </div>
-
-                    {portfolio?.costBasis ? (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                            <span className="inline-flex items-center gap-2 border border-[#00ff41]/16 bg-[#00ff41]/8 px-2.5 py-1 text-[10px] tracking-[0.18em] text-[#9dffb8]">
-                                METHOD {portfolio.costBasis.method.toUpperCase()}
-                            </span>
-                            <span
-                                className={cn(
-                                    "inline-flex items-center gap-2 border px-2.5 py-1 text-[10px] tracking-[0.18em]",
-                                    portfolio.costBasis.historyComplete
-                                        ? "border-[#00ff41]/16 bg-[#00ff41]/8 text-[#9dffb8]"
-                                        : "border-[#ffaa00]/20 bg-[#ffaa00]/10 text-[#ffd37a]"
-                                )}
-                            >
-                                {portfolio.costBasis.historyComplete ? "FULL HISTORY COVERAGE" : "PARTIAL HISTORY COVERAGE"}
-                            </span>
-                            <span className="inline-flex items-center gap-2 border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] tracking-[0.18em] text-white/60">
-                                {portfolio.costBasis.transactionsScanned} TX SCANNED
-                            </span>
-                        </div>
-                    ) : null}
-
-                    {!deferredWallet ? (
-                        <EmptyPanel message="Connect a wallet or paste an address to load portfolio holdings." />
-                    ) : portfolioQuery.isLoading ? (
-                        <LoadingPanel rows={6} />
-                    ) : portfolioQuery.isError ? (
-                        <EmptyPanel message={portfolioQuery.error instanceof Error ? portfolioQuery.error.message : "Portfolio scan failed."} tone="error" />
-                    ) : portfolio && portfolio.holdings.length === 0 ? (
-                        <EmptyPanel message="No fungible token holdings found for this wallet." />
-                    ) : (
-                        <div className="mt-5 space-y-3">
-                            {portfolio?.holdings.map((holding) => (
-                                <HoldingRow key={`${holding.mint}-${holding.tokenAccount}`} holding={holding} />
-                            ))}
-                        </div>
-                    )}
-                </section>
-
-                <section className="space-y-6">
-                    <div className="crt-panel p-4 sm:p-5">
-                        <div className="border-b border-[#00ff41]/12 pb-4">
-                            <p className="text-[11px] uppercase tracking-[0.28em] text-[#00ff41]/55">Bags Monetization</p>
-                            <h2 className="mt-1 text-lg tracking-[0.16em] text-[#d8ffe6] sm:text-xl">CLAIMABLE FEES</h2>
-                        </div>
-
-                        {!deferredWallet ? (
-                            <EmptyPanel message="Claimable Bags fee-share positions will appear here after wallet scan." compact />
-                        ) : portfolioQuery.isLoading ? (
-                            <LoadingPanel rows={3} compact />
-                        ) : portfolioQuery.isError ? (
-                            <EmptyPanel message="Unable to load Bags claimable positions." tone="error" compact />
-                        ) : portfolio && portfolio.claimablePositions.length === 0 ? (
-                            <EmptyPanel message="No claimable Bags fee-share positions found." compact />
-                        ) : (
-                            <div className="mt-5 space-y-3">
-                                {portfolio?.claimablePositions.map((position) => (
-                                    <ClaimableRow key={`${position.baseMint}-${position.userBps ?? "claim"}`} position={position} />
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="crt-panel p-4 sm:p-5">
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#00ff41]/12 pb-4">
-                            <div>
-                                <p className="text-[11px] uppercase tracking-[0.28em] text-[#00ff41]/55">Prediction Desk</p>
-                                <h2 className="mt-1 text-lg tracking-[0.16em] text-[#d8ffe6] sm:text-xl">YOUR PREDICTION POSITIONS</h2>
-                            </div>
-                            {deferredWallet && !predictionPositionsQuery.isLoading && !predictionPositionsQuery.isError ? (
-                                <div className="flex flex-wrap gap-2">
-                                    <span className="inline-flex items-center gap-2 border border-[#00aaff]/20 bg-[#00aaff]/10 px-2.5 py-1 text-[10px] tracking-[0.18em] text-[#8dd8ff]">
-                                        <Target className="h-3.5 w-3.5" />
-                                        {formatNumber(predictionSummary.count, false)} POSITIONS
-                                    </span>
-                                    <span className="inline-flex items-center gap-2 border border-[#ffaa00]/20 bg-[#ffaa00]/10 px-2.5 py-1 text-[10px] tracking-[0.18em] text-[#ffd37a]">
-                                        {formatCurrency(predictionSummary.totalClaimablePayoutUsd)} CLAIMABLE
-                                    </span>
-                                </div>
+                                <p className="mt-2 text-[10px] text-white/30">Indexing Bags-relevant pairs and cost basis…</p>
                             ) : null}
                         </div>
+                    </div>
 
-                        {!deferredWallet ? (
-                            <EmptyPanel message="Prediction positions will appear here after wallet scan." compact />
-                        ) : predictionPositionsQuery.isLoading ? (
-                            <LoadingPanel rows={4} compact />
-                        ) : predictionPositionsQuery.isError ? (
-                            <EmptyPanel
-                                message={
-                                    predictionPositionsQuery.error instanceof Error
-                                        ? predictionPositionsQuery.error.message
-                                        : "Prediction positions could not be loaded."
+                    <div className="mt-6 flex gap-1 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+                        {(
+                            [
+                                { id: "balances" as const, label: "Wallet" },
+                                { id: "rewards" as const, label: "Creator rewards" },
+                            ] as const
+                        ).map(({ id, label }) => (
+                            <button
+                                key={id}
+                                type="button"
+                                onClick={() => setTab(id)}
+                                className={cn(
+                                    "shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition-colors",
+                                    tab === id ? "text-black" : "text-white/45 hover:text-white/70"
+                                )}
+                                style={
+                                    tab === id
+                                        ? { backgroundColor: ACCENT }
+                                        : { backgroundColor: "rgba(255,255,255,0.06)" }
                                 }
-                                tone="error"
-                                compact
-                            />
-                        ) : predictionPositions.length === 0 ? (
-                            <EmptyPanel message="No Jupiter prediction positions are visible for this wallet yet." compact />
-                        ) : (
-                            <div className="mt-5 space-y-3 max-h-[540px] overflow-y-auto pr-1">
-                                {predictionPositions.map((position) => (
-                                    <PredictionPositionRow key={position.positionPubkey} position={position} />
-                                ))}
-                            </div>
-                        )}
+                            >
+                                {label}
+                            </button>
+                        ))}
                     </div>
+                </div>
 
-                    <div className="crt-panel p-4 sm:p-5">
-                        <div className="border-b border-[#00ff41]/12 pb-4">
-                            <p className="text-[11px] uppercase tracking-[0.28em] text-[#00ff41]/55">Release Notes</p>
-                            <h2 className="mt-1 text-lg tracking-[0.16em] text-[#d8ffe6] sm:text-xl">MVP SCOPE</h2>
-                        </div>
-                        <ul className="mt-5 space-y-3 text-sm leading-6 text-[#d8ffe6]/62">
-                            <li>Live holdings are fetched directly from the selected Solana wallet.</li>
-                            <li>Average-cost basis is reconstructed from wallet transaction history when coverage is available.</li>
-                            <li>Token pricing and 24h movement are enriched from live market data when available.</li>
-                            <li>Wallets with missing older history or transfer-only inflows are marked as partial cost-basis coverage.</li>
-                            <li>Bags fee-share claimables are surfaced separately so creator-side revenue is visible next to portfolio exposure.</li>
-                        </ul>
-                    </div>
-                </section>
+                <div className="p-4 sm:p-7">
+                    {!deferredWallet ? (
+                        <EmptyState message="Connect a wallet or paste a public address to see your portfolio." />
+                    ) : tab === "rewards" ? (
+                        <CreatorRewardsPanel portfolio={portfolio} portfolioQuery={portfolioQuery} />
+                    ) : (
+                        <>
+                            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <PumpStatCard
+                                    label="Total value"
+                                    value={summary ? formatCurrency(summary.totalValueUsd) : "—"}
+                                    sub={summary ? `${formatNumber(summary.pricedHoldingsCount, false)} priced · SOL incl.` : "Live scan"}
+                                    icon={<DollarSign className="h-4 w-4" />}
+                                />
+                                <PumpStatCard
+                                    label="Top holding"
+                                    value={
+                                        topHolding
+                                            ? topHolding.holding.symbol
+                                                ? `$${topHolding.holding.symbol}`
+                                                : shortenAddress(topHolding.holding.mint, 4)
+                                            : "—"
+                                    }
+                                    sub={
+                                        topHolding
+                                            ? `${topHolding.pct.toFixed(1)}% of wallet · ${formatCurrency(topHolding.holding.valueUsd ?? 0)}`
+                                            : "No positions yet"
+                                    }
+                                    icon={<TrendingUp className="h-4 w-4" />}
+                                />
+                                <PumpStatCard
+                                    label="Coins"
+                                    value={summary ? String(summary.holdingsCount) : "—"}
+                                    sub={summary ? `${formatNumber(summary.costBasisCompleteHoldingsCount, false)} full basis` : "—"}
+                                    icon={<Coins className="h-4 w-4" />}
+                                />
+                                <PumpStatCard
+                                    label="On-chain data"
+                                    value={dataSinceLabel}
+                                    sub="Oldest tx in basis window"
+                                    icon={<Wallet className="h-4 w-4" />}
+                                />
+                            </div>
+
+                            <div className="mt-8 grid min-w-0 gap-6 xl:grid-cols-[1fr_minmax(260px,320px)] xl:items-start">
+                                <div className="min-w-0">
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <h2 className="text-base font-semibold text-white">Balances</h2>
+                                                {summary ? (
+                                                    <span
+                                                        className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-black"
+                                                        style={{ backgroundColor: ACCENT }}
+                                                    >
+                                                        {holdingSearch.trim() || hideDust
+                                                            ? `${visibleHoldings.length}/${portfolio?.holdings.length ?? 0}`
+                                                            : visibleHoldings.length}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            <p className="mt-0.5 text-xs text-white/40">Coin balances on this wallet</p>
+                                        </div>
+                                        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                                            <div className="relative min-h-[44px] w-full sm:min-h-0 sm:max-w-[220px]">
+                                                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/25" />
+                                                <input
+                                                    value={holdingSearch}
+                                                    onChange={(e) => setHoldingSearch(e.target.value)}
+                                                    placeholder="Search holdings…"
+                                                    className="w-full rounded-full border border-white/10 bg-black/35 py-2.5 pl-8 pr-3 text-xs text-white placeholder:text-white/25 focus:border-[#53ffb2]/35 focus:outline-none"
+                                                />
+                                            </div>
+                                            <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-[11px] text-white/45">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={hideDust}
+                                                    onChange={(e) => setHideDust(e.target.checked)}
+                                                    className="rounded border-white/20 bg-black/40"
+                                                />
+                                                Hide &lt; $0.01
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4">
+                                    {!deferredWallet ? null : portfolioQuery.isLoading ? (
+                                        <LoadingTable />
+                                    ) : portfolioQuery.isError ? (
+                                        <EmptyState
+                                            tone="error"
+                                            message={
+                                                portfolioQuery.error instanceof Error
+                                                    ? portfolioQuery.error.message
+                                                    : "Portfolio failed to load."
+                                            }
+                                        />
+                                    ) : portfolio && portfolio.holdings.length === 0 ? (
+                                        <EmptyState message="No fungible token holdings found for this wallet." />
+                                    ) : (
+                                        <>
+                                            <div className="space-y-2 sm:hidden">
+                                                {summary && summary.solBalance > 0 ? (
+                                                    <SolMobileCard solBalance={summary.solBalance} solValueUsd={summary.solValueUsd} />
+                                                ) : null}
+                                                {visibleHoldings.map((holding) => (
+                                                    <HoldingMobileCard key={`m-${holding.mint}-${holding.tokenAccount}`} holding={holding} />
+                                                ))}
+                                            </div>
+                                            <div className="hidden overflow-hidden rounded-xl border border-white/[0.06] bg-[#0c0e12] sm:block">
+                                            <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+                                                <table className="w-full min-w-[520px] text-left text-xs lg:min-w-[640px]">
+                                                    <thead>
+                                                        <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/35">
+                                                            <th className="px-4 py-3 font-medium">Coin</th>
+                                                            <th className="px-4 py-3 font-medium text-right">Value</th>
+                                                            <th className="px-4 py-3 text-right font-medium">MC</th>
+                                                            <th className="px-4 py-3 font-medium text-right">PnL</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-white/[0.04]">
+                                                        {summary && summary.solBalance > 0 ? (
+                                                            <SolBalanceRow solBalance={summary.solBalance} solValueUsd={summary.solValueUsd} />
+                                                        ) : null}
+                                                        {visibleHoldings.map((holding) => (
+                                                            <HoldingTableRow key={`${holding.mint}-${holding.tokenAccount}`} holding={holding} />
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        </>
+                                    )}
+                                    </div>
+                                </div>
+
+                                <aside className="min-w-0 space-y-3 rounded-xl border border-white/[0.06] bg-[#141820] p-3 sm:p-4">
+                                    <h3 className="text-sm font-semibold text-white">Creator rewards</h3>
+                                    <p className="text-[11px] leading-relaxed text-white/40">
+                                        Bags fee-share positions for this wallet (claim on Bags).
+                                    </p>
+                                    {!deferredWallet || portfolioQuery.isLoading ? (
+                                        <div className="space-y-2 pt-2">
+                                            {Array.from({ length: 3 }).map((_, i) => (
+                                                <div key={i} className="h-14 animate-pulse rounded-lg bg-white/[0.04]" />
+                                            ))}
+                                        </div>
+                                    ) : portfolioQuery.isError ? (
+                                        <p className="text-xs text-red-400/80">Could not load rewards.</p>
+                                    ) : !portfolio?.claimablePositions.length ? (
+                                        <p className="text-xs text-white/35">No claimable fee positions found.</p>
+                                    ) : (
+                                        <ul className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                                            {portfolio.claimablePositions.map((position) => (
+                                                <li key={`${position.baseMint}-${position.userBps ?? "c"}`}>
+                                                    <Link
+                                                        href={`/token/${position.baseMint}`}
+                                                        className="flex items-center gap-3 rounded-xl border border-transparent bg-black/25 p-2.5 transition-colors hover:border-[#53ffb2]/25 hover:bg-black/40"
+                                                    >
+                                                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-white/10 bg-black/50">
+                                                            {position.image ? (
+                                                                <Image
+                                                                    src={position.image}
+                                                                    alt=""
+                                                                    fill
+                                                                    className="object-cover"
+                                                                    unoptimized
+                                                                />
+                                                            ) : (
+                                                                <span className="flex h-full w-full items-center justify-center text-xs text-white/30">
+                                                                    {(position.symbol ?? "?").charAt(0)}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="truncate text-xs font-medium text-white">
+                                                                {position.name ?? position.symbol ?? shortenAddress(position.baseMint, 4)}
+                                                            </p>
+                                                            <p className="text-[10px] text-[#53ffb2]/70">
+                                                                {formatCurrency(position.claimableUsd)}
+                                                            </p>
+                                                        </div>
+                                                        <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-white/20" />
+                                                    </Link>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </aside>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
     );
 }
 
-function HoldingRow({ holding }: { holding: PortfolioResponse["holdings"][number] }) {
-    const unrealizedPositive = (holding.unrealizedPnlUsd ?? 0) >= 0;
-    const dailyPositive = (holding.pnl24hUsd ?? 0) >= 0;
+function formatDataSince(iso?: string): string {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    const diff = Date.now() - d.getTime();
+    if (diff < 0) return "—";
+    const day = 86400000;
+    const days = Math.floor(diff / day);
+    if (days < 1) return "24h";
+    if (days < 30) return `${days}d`;
+    const mo = Math.floor(days / 30);
+    if (mo < 12) return `${mo}mo`;
+    return `${Math.floor(days / 365)}y`;
+}
+
+function SolMobileCard({ solBalance, solValueUsd }: { solBalance: number; solValueUsd: number }) {
+    return (
+        <Link
+            href={`/token/${SOL_MINT}`}
+            className="flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-black/25 p-3 active:bg-black/40"
+        >
+            <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500/30 to-indigo-600/30 text-sm font-bold text-white/90">
+                    ◎
+                </div>
+                <div className="min-w-0 flex-1">
+                    <p className="font-medium text-white">Solana</p>
+                    <p className="text-[10px] text-white/40">SOL</p>
+                </div>
+                <ArrowUpRight className="h-4 w-4 shrink-0 text-white/25" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 border-t border-white/[0.06] pt-3 text-[10px]">
+                <div>
+                    <p className="text-white/35">Value</p>
+                    <p className="mt-0.5 font-medium tabular-nums text-white">{formatCurrency(solValueUsd)}</p>
+                </div>
+                <div className="text-right">
+                    <p className="text-white/35">Balance</p>
+                    <p className="mt-0.5 font-medium tabular-nums text-white/85">{solBalance.toFixed(4)} SOL</p>
+                </div>
+            </div>
+        </Link>
+    );
+}
+
+function HoldingMobileCard({ holding }: { holding: PortfolioResponse["holdings"][number] }) {
+    const pnl = holding.unrealizedPnlUsd;
+    const pnlOk = pnl !== undefined && Number.isFinite(pnl);
+    const pnlPositive = (pnl ?? 0) >= 0;
 
     return (
         <Link
             href={`/token/${holding.mint}`}
-            className="group flex flex-col gap-4 border border-[#00ff41]/10 bg-black/60 p-4 transition-all hover:border-[#00ff41]/28 hover:bg-[#00ff41]/[0.02] md:flex-row md:items-center"
+            className="flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-black/25 p-3 active:bg-black/40"
         >
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-                <div className="relative h-11 w-11 flex-shrink-0 overflow-hidden border border-[#00ff41]/15 bg-black/40">
+            <div className="flex items-center gap-3">
+                <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full border border-white/10 bg-black/50">
                     {holding.image ? (
-                        <Image src={holding.image} alt={holding.symbol ?? holding.name ?? holding.mint} fill className="object-cover" unoptimized />
+                        <Image src={holding.image} alt="" fill className="object-cover" unoptimized />
                     ) : (
-                        <div className="flex h-full w-full items-center justify-center text-sm text-[#00ff41]/35">
-                            {(holding.symbol ?? holding.name ?? "?").charAt(0)}
-                        </div>
+                        <span className="flex h-full w-full items-center justify-center text-sm text-white/30">
+                            {(holding.symbol ?? "?").charAt(0)}
+                        </span>
                     )}
                 </div>
-                <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="truncate text-sm tracking-[0.1em] text-[#d8ffe6]">
-                            {holding.symbol ? `$${holding.symbol}` : shortenAddress(holding.mint)}
-                        </h3>
-                        <span
-                            className={cn(
-                                "border px-1.5 py-0.5 text-[10px] tracking-[0.18em]",
-                                holding.costBasisStatus === "complete" && "border-[#00ff41]/18 bg-[#00ff41]/8 text-[#9dffb8]",
-                                holding.costBasisStatus === "partial" && "border-[#ffaa00]/20 bg-[#ffaa00]/10 text-[#ffd37a]",
-                                holding.costBasisStatus === "unknown" && "border-white/10 bg-white/[0.03] text-white/55"
-                            )}
-                        >
-                            {holding.costBasisStatus.toUpperCase()}
-                        </span>
-                        <span className="text-[10px] uppercase tracking-[0.2em] text-[#00ff41]/35">
-                            {holding.name ?? "Unknown Token"}
-                        </span>
-                    </div>
-                    <p className="mt-1 text-[11px] tracking-[0.16em] text-[#00ff41]/40">
-                        {formatTokenAmount(holding.amount)} tokens
+                <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-white">
+                        {holding.name ?? shortenAddress(holding.mint, 4)}
                     </p>
-                    {holding.averageCostUsd !== undefined ? (
-                        <p className="mt-1 text-[11px] tracking-[0.16em] text-[#8dd8ff]/55">
-                            AVG COST {formatCurrency(holding.averageCostUsd, { compact: false, decimals: 4 })}
-                        </p>
-                    ) : null}
+                    <p className="text-[10px] text-white/40">
+                        {holding.symbol ? `$${holding.symbol}` : shortenAddress(holding.mint, 4)}
+                    </p>
+                </div>
+                <ArrowUpRight className="h-4 w-4 shrink-0 text-white/25" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 border-t border-white/[0.06] pt-3 text-[10px]">
+                <div>
+                    <p className="text-white/35">Value</p>
+                    <p className="mt-0.5 font-medium tabular-nums text-white">
+                        {holding.valueUsd !== undefined ? formatCurrency(holding.valueUsd) : "—"}
+                    </p>
+                    <p className="mt-0.5 text-[9px] tabular-nums text-white/30">{formatTokenAmount(holding.amount)}</p>
+                </div>
+                <div className="text-right">
+                    <p className="text-white/35">PnL</p>
+                    <p
+                        className={cn(
+                            "mt-0.5 font-medium tabular-nums",
+                            !pnlOk && "text-white/25",
+                            pnlOk && pnlPositive && "text-[#53ffb2]",
+                            pnlOk && !pnlPositive && "text-[#ff6b6b]"
+                        )}
+                    >
+                        {pnlOk ? formatSignedCurrency(pnl) : "—"}
+                    </p>
+                </div>
+                <div className="col-span-2 border-t border-white/[0.04] pt-3">
+                    <p className="text-white/35">MC</p>
+                    <p className="mt-0.5 tabular-nums text-white/75">
+                        {holding.marketCapUsd !== undefined ? formatCurrency(holding.marketCapUsd) : "—"}
+                    </p>
                 </div>
             </div>
-
-            <div className="grid grid-cols-2 gap-2 md:w-[420px] md:grid-cols-4">
-                <MetricTile label="Price" value={holding.priceUsd !== undefined ? formatCurrency(holding.priceUsd, { compact: false, decimals: 4 }) : "—"} />
-                <MetricTile
-                    label="Basis"
-                    value={holding.costBasisUsd !== undefined ? formatCurrency(holding.costBasisUsd) : "—"}
-                    tone={holding.costBasisStatus === "complete" ? "neutral" : holding.costBasisStatus === "partial" ? "positive" : "neutral"}
-                />
-                <MetricTile
-                    label="PnL"
-                    value={holding.unrealizedPnlUsd !== undefined ? formatSignedCurrency(holding.unrealizedPnlUsd) : "—"}
-                    tone={
-                        holding.unrealizedPnlUsd === undefined ? "neutral" : unrealizedPositive ? "positive" : "negative"
-                    }
-                />
-                <MetricTile
-                    label="24H"
-                    value={holding.pnl24hUsd !== undefined ? formatSignedCurrency(holding.pnl24hUsd) : "—"}
-                    tone={holding.pnl24hUsd === undefined ? "neutral" : dailyPositive ? "positive" : "negative"}
-                />
-            </div>
-
-            <ArrowUpRight className="hidden h-4 w-4 text-[#00ff41]/28 transition-colors group-hover:text-[#00ff41]/72 md:block" />
         </Link>
     );
 }
 
-function PredictionPositionRow({ position }: { position: JupiterPredictionPosition }) {
-    const href = position.eventId
-        ? `/prediction/${encodeURIComponent(position.eventId)}${position.marketId ? `?market=${encodeURIComponent(position.marketId)}` : ""}`
-        : null;
-    const pnlPositive = (position.unrealizedPnlUsd ?? 0) >= 0;
-    const claimable = (position.status ?? "").toLowerCase() === "claimable";
-    const body = (
-        <>
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span
-                            className={cn(
-                                "border px-1.5 py-0.5 text-[10px] tracking-[0.18em]",
-                                position.side === "YES"
-                                    ? "border-[#adcc60]/24 bg-[#adcc60]/10 text-[#dff7ae]"
-                                    : "border-[#00aaff]/24 bg-[#00aaff]/10 text-[#b8ecff]"
-                            )}
-                        >
-                            {position.side ?? "POSITION"}
-                        </span>
-                        <span className="border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-[10px] tracking-[0.18em] text-white/60">
-                            {(position.status ?? "open").toUpperCase()}
-                        </span>
-                        {claimable ? (
-                            <span className="border border-[#ffaa00]/20 bg-[#ffaa00]/10 px-1.5 py-0.5 text-[10px] tracking-[0.18em] text-[#ffd37a]">
-                                READY TO CLAIM
-                            </span>
-                        ) : null}
+function SolBalanceRow({ solBalance, solValueUsd }: { solBalance: number; solValueUsd: number }) {
+    return (
+        <tr className="transition-colors hover:bg-white/[0.02]">
+            <td className="px-4 py-3">
+                <Link href={`/token/${SOL_MINT}`} className="group flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500/30 to-indigo-600/30 text-xs font-bold text-white/90">
+                        ◎
                     </div>
-                    <h3 className="mt-3 text-sm tracking-[0.12em] text-[#d8ffe6]">
-                        {position.marketTitle ?? "Prediction Market"}
-                    </h3>
-                    <p className="mt-1 text-[11px] tracking-[0.16em] text-[#00ff41]/46">
-                        {position.eventTitle ?? "Jupiter prediction event"}
-                    </p>
-                </div>
-
-                {href ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.18em] text-[#8dd8ff] transition group-hover:text-[#b8ecff]">
-                        Open Event
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                    </span>
-                ) : null}
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <MetricTile
-                    label="Contracts"
-                    value={
-                        position.quantity !== null && position.quantity !== undefined
-                            ? formatNumber(position.quantity, false)
-                            : "—"
-                    }
-                />
-                <MetricTile
-                    label="Avg Price"
-                    value={
-                        position.averagePrice !== null && position.averagePrice !== undefined
-                            ? formatCurrency(position.averagePrice, { compact: false, decimals: 2 })
-                            : "—"
-                    }
-                />
-                <MetricTile
-                    label="Mark Price"
-                    value={
-                        position.currentPrice !== null && position.currentPrice !== undefined
-                            ? formatCurrency(position.currentPrice, { compact: false, decimals: 2 })
-                            : "—"
-                    }
-                />
-                <MetricTile
-                    label="PnL"
-                    value={
-                        position.unrealizedPnlUsd !== null && position.unrealizedPnlUsd !== undefined
-                            ? formatSignedCurrency(position.unrealizedPnlUsd)
-                            : "—"
-                    }
-                    tone={pnlPositive ? "positive" : "negative"}
-                />
-            </div>
-
-            {position.claimablePayoutUsd !== null && position.claimablePayoutUsd !== undefined ? (
-                <div className="flex items-center justify-between gap-3 border border-[#ffaa00]/12 bg-[#ffaa00]/[0.04] px-3 py-3 text-[10px] uppercase tracking-[0.18em] text-[#ffd37a]">
-                    <span>Claimable Payout</span>
-                    <span>{formatCurrency(position.claimablePayoutUsd, { compact: false, decimals: 2 })}</span>
-                </div>
-            ) : null}
-        </>
+                    <div className="min-w-0">
+                        <p className="font-medium text-white group-hover:text-[#53ffb2]">Solana</p>
+                        <p className="text-[10px] text-white/35">SOL</p>
+                    </div>
+                </Link>
+            </td>
+            <td className="px-4 py-3 text-right">
+                <p className="font-medium tabular-nums text-white">{formatCurrency(solValueUsd)}</p>
+                <p className="text-[10px] tabular-nums text-white/35">{solBalance.toFixed(4)} SOL</p>
+            </td>
+            <td className="px-4 py-3 text-right text-white/25">—</td>
+            <td className="px-4 py-3 text-right text-white/25">—</td>
+        </tr>
     );
+}
 
-    const className = cn(
-        "group flex flex-col gap-4 border border-[#00ff41]/10 bg-black/60 p-4 transition-all",
-        href && "hover:border-[#00ff41]/28 hover:bg-[#00ff41]/[0.02]"
-    );
-
-    if (href) {
-        return (
-            <Link
-                href={href}
-                className={className}
-            >
-                {body}
-            </Link>
-        );
-    }
+function HoldingTableRow({ holding }: { holding: PortfolioResponse["holdings"][number] }) {
+    const pnl = holding.unrealizedPnlUsd;
+    const pnlOk = pnl !== undefined && Number.isFinite(pnl);
+    const pnlPositive = (pnl ?? 0) >= 0;
 
     return (
-        <div
-            className={cn(
-                "group flex flex-col gap-4 border border-[#00ff41]/10 bg-black/60 p-4 transition-all"
-            )}
-        >
-            {body}
+        <tr className="transition-colors hover:bg-white/[0.02]">
+            <td className="px-4 py-3">
+                <Link href={`/token/${holding.mint}`} className="group flex items-center gap-3">
+                    <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full border border-white/10 bg-black/50">
+                        {holding.image ? (
+                            <Image src={holding.image} alt="" fill className="object-cover" unoptimized />
+                        ) : (
+                            <span className="flex h-full w-full items-center justify-center text-xs text-white/30">
+                                {(holding.symbol ?? "?").charAt(0)}
+                            </span>
+                        )}
+                    </div>
+                    <div className="min-w-0">
+                        <p className="truncate font-medium text-white group-hover:text-[#53ffb2]">
+                            {holding.name ?? shortenAddress(holding.mint, 4)}
+                        </p>
+                        <p className="text-[10px] text-white/40">
+                            {holding.symbol ? `$${holding.symbol}` : shortenAddress(holding.mint, 4)}
+                        </p>
+                    </div>
+                </Link>
+            </td>
+            <td className="px-4 py-3 text-right">
+                <p className="font-medium tabular-nums text-white">
+                    {holding.valueUsd !== undefined ? formatCurrency(holding.valueUsd) : "—"}
+                </p>
+                <p className="text-[10px] tabular-nums text-white/35">{formatTokenAmount(holding.amount)}</p>
+            </td>
+            <td className="px-4 py-3 text-right tabular-nums text-white/60">
+                {holding.marketCapUsd !== undefined ? formatCurrency(holding.marketCapUsd) : "—"}
+            </td>
+            <td
+                className={cn(
+                    "px-4 py-3 text-right font-medium tabular-nums",
+                    !pnlOk && "text-white/25",
+                    pnlOk && pnlPositive && "text-[#53ffb2]",
+                    pnlOk && !pnlPositive && "text-[#ff6b6b]"
+                )}
+            >
+                {pnlOk ? formatSignedCurrency(pnl) : "—"}
+            </td>
+        </tr>
+    );
+}
+
+function CreatorRewardsPanel({
+    portfolio,
+    portfolioQuery,
+}: {
+    portfolio: PortfolioResponse | undefined;
+    portfolioQuery: {
+        isLoading: boolean;
+        isError: boolean;
+        error: unknown;
+    };
+}) {
+    if (portfolioQuery.isLoading) {
+        return (
+            <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="h-16 animate-pulse rounded-xl bg-white/[0.04]" />
+                ))}
+            </div>
+
+        );
+    }
+    if (portfolioQuery.isError) {
+        return (
+            <EmptyState
+                tone="error"
+                message={portfolioQuery.error instanceof Error ? portfolioQuery.error.message : "Failed to load."}
+            />
+        );
+    }
+    if (!portfolio?.claimablePositions.length) {
+        return <EmptyState message="No Bags creator reward positions for this wallet." />;
+    }
+    return (
+        <div className="grid gap-3 sm:grid-cols-2">
+            {portfolio.claimablePositions.map((position) => (
+                <Link
+                    key={`${position.baseMint}-${position.userBps}`}
+                    href={`/token/${position.baseMint}`}
+                    className="flex items-center gap-4 rounded-xl border border-white/[0.06] bg-[#0c0e12] p-4 transition-colors hover:border-[#53ffb2]/30"
+                >
+                    <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full border border-white/10">
+                        {position.image ? (
+                            <Image src={position.image} alt="" fill className="object-cover" unoptimized />
+                        ) : (
+                            <div className="flex h-full w-full items-center justify-center text-sm text-white/30">
+                                {(position.symbol ?? "?").charAt(0)}
+                            </div>
+                        )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-white">
+                            {position.symbol ? `$${position.symbol}` : shortenAddress(position.baseMint, 4)}
+                        </p>
+                        <p className="text-xs text-white/40">
+                            {position.userBps ? `${(position.userBps / 100).toFixed(2)}% share` : "Fee share"}
+                        </p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-sm font-semibold text-[#53ffb2]">{position.claimableSol.toFixed(4)} SOL</p>
+                        <p className="text-[11px] text-white/45">{formatCurrency(position.claimableUsd)}</p>
+                    </div>
+                    <ArrowUpRight className="h-4 w-4 shrink-0 text-white/25" />
+                </Link>
+            ))}
         </div>
     );
 }
 
-function ClaimableRow({ position }: { position: PortfolioResponse["claimablePositions"][number] }) {
-    return (
-        <Link
-            href={`/token/${position.baseMint}`}
-            className="group flex items-center gap-3 border border-[#00ff41]/10 bg-black/60 p-4 transition-all hover:border-[#00ff41]/28 hover:bg-[#00ff41]/[0.02]"
-        >
-            <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden border border-[#00ff41]/15 bg-black/40">
-                {position.image ? (
-                    <Image src={position.image} alt={position.symbol ?? position.name ?? position.baseMint} fill className="object-cover" unoptimized />
-                ) : (
-                    <div className="flex h-full w-full items-center justify-center text-sm text-[#00ff41]/35">
-                        {(position.symbol ?? position.name ?? "?").charAt(0)}
-                    </div>
-                )}
-            </div>
-
-            <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate text-sm tracking-[0.1em] text-[#d8ffe6]">
-                        {position.symbol ? `$${position.symbol}` : shortenAddress(position.baseMint)}
-                    </h3>
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-[#00ff41]/35">
-                        {position.isMigrated ? "Migrated" : "Active"}
-                    </span>
-                </div>
-                <p className="mt-1 text-[11px] tracking-[0.16em] text-[#00ff41]/40">
-                    {position.userBps ? `${(position.userBps / 100).toFixed(2)}% share` : "Fee-share position"}
-                </p>
-            </div>
-
-            <div className="text-right">
-                <p className="text-sm tracking-[0.08em] text-[#ffd37a]">{position.claimableSol.toFixed(4)} SOL</p>
-                <p className="mt-1 text-[11px] tracking-[0.16em] text-[#ffd37a]/60">{formatCurrency(position.claimableUsd)}</p>
-            </div>
-        </Link>
-    );
-}
-
-function StatCard({
+function PumpStatCard({
     label,
     value,
-    hint,
-    accent,
+    sub,
     icon,
 }: {
     label: string;
     value: string;
-    hint: string;
-    accent: string;
+    sub: string;
     icon: ReactNode;
 }) {
     return (
-        <div className="border border-white/10 bg-black/45 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] uppercase tracking-[0.24em] text-white/48">{label}</span>
-                <span className={cn("flex h-8 w-8 items-center justify-center border border-white/10 bg-white/[0.03]", accent)}>
-                    {icon}
-                </span>
+        <div className="rounded-xl border border-white/[0.06] bg-[#141820] p-4">
+            <div className="flex items-start justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">{label}</span>
+                <span className="text-white/30">{icon}</span>
             </div>
-            <p className={cn("mt-4 text-2xl tracking-[0.08em] sm:text-3xl", accent)}>{value}</p>
-            <p className="mt-2 text-xs leading-5 text-white/44">{hint}</p>
+            <p className="mt-3 text-lg font-semibold tracking-tight text-white sm:text-xl">{value}</p>
+            <p className="mt-1 text-[11px] leading-snug text-white/38">{sub}</p>
         </div>
     );
 }
 
-function MetricTile({
-    label,
-    value,
-    tone = "neutral",
-}: {
-    label: string;
-    value: string;
-    tone?: "neutral" | "positive" | "negative";
-}) {
-    return (
-        <div className="border border-[#00ff41]/10 bg-black/40 px-3 py-2">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[#00ff41]/32">{label}</p>
-            <p
-                className={cn(
-                    "mt-1 text-sm tracking-[0.08em]",
-                    tone === "positive" && "text-[#9dffb8]",
-                    tone === "negative" && "text-[#ff8f70]",
-                    tone === "neutral" && "text-[#d8ffe6]/82"
-                )}
-            >
-                {value}
-            </p>
-        </div>
-    );
-}
-
-function EmptyPanel({
-    message,
-    tone = "default",
-    compact = false,
-}: {
-    message: string;
-    tone?: "default" | "error";
-    compact?: boolean;
-}) {
+function EmptyState({ message, tone = "default" }: { message: string; tone?: "default" | "error" }) {
     return (
         <div
             className={cn(
-                "flex items-center justify-center text-center text-sm leading-6",
-                compact ? "py-10" : "py-16",
-                tone === "error" ? "text-[#ff8f70]" : "text-[#00ff41]/40"
+                "flex min-h-[200px] items-center justify-center rounded-xl border border-white/[0.06] bg-[#0c0e12] px-6 py-12 text-center text-sm",
+                tone === "error" ? "text-red-400/90" : "text-white/40"
             )}
         >
-            <p className="max-w-md">{message}</p>
+            {message}
         </div>
     );
 }
 
-function LoadingPanel({ rows, compact = false }: { rows: number; compact?: boolean }) {
+function LoadingTable() {
     return (
-        <div className={cn("space-y-3", compact ? "mt-5" : "mt-5")}>
-            {Array.from({ length: rows }).map((_, index) => (
-                <div key={index} className="border border-[#00ff41]/10 bg-black/50 p-4 animate-pulse">
-                    <div className="h-3 w-28 bg-[#00ff41]/8" />
-                    <div className="mt-3 h-3 w-48 bg-[#00ff41]/6" />
+        <div className="space-y-2 rounded-xl border border-white/[0.06] bg-[#0c0e12] p-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex gap-4 py-3">
+                    <div className="h-9 w-9 animate-pulse rounded-full bg-white/[0.06]" />
+                    <div className="flex-1 space-y-2">
+                        <div className="h-3 w-24 animate-pulse rounded bg-white/[0.06]" />
+                        <div className="h-2 w-16 animate-pulse rounded bg-white/[0.04]" />
+                    </div>
                 </div>
             ))}
         </div>
@@ -686,11 +743,6 @@ function LoadingPanel({ rows, compact = false }: { rows: number; compact?: boole
 function formatSignedCurrency(value: number) {
     const sign = value > 0 ? "+" : "";
     return `${sign}${formatCurrency(value)}`;
-}
-
-function formatSignedPercent(value: number) {
-    const sign = value > 0 ? "+" : "";
-    return `${sign}${value.toFixed(2)}%`;
 }
 
 function formatTokenAmount(value: number) {

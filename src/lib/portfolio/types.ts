@@ -18,6 +18,8 @@ export interface PortfolioHolding {
     pnl24hUsd?: number;
     liquidityUsd?: number;
     volume24hUsd?: number;
+    /** Best DexScreener pair market cap (USD), when available. */
+    marketCapUsd?: number;
 }
 
 export interface PortfolioClaimablePosition {
