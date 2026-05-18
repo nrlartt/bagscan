@@ -1048,6 +1048,11 @@ interface DexScreenerPair {
         name?: string;
         symbol?: string;
     };
+    quoteToken?: {
+        address?: string;
+        symbol?: string;
+    };
+    pairAddress?: string;
     info?: {
         imageUrl?: string;
     };

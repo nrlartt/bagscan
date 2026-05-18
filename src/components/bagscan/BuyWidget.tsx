@@ -13,14 +13,16 @@ interface BuyWidgetProps {
     tokenMint: string;
     tokenSymbol?: string;
     className?: string;
+    variant?: "default" | "pump";
 }
 
 type Step = "input" | "quoting" | "quoted" | "signing" | "success" | "error";
 
-export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps) {
+export function BuyWidget({ tokenMint, tokenSymbol, className, variant = "default" }: BuyWidgetProps) {
     const { connected, publicKey, signTransaction } = useWallet();
     const { setVisible } = useWalletModal();
     const isBagsMint = tokenMint.endsWith("BAGS");
+    const isPump = variant === "pump";
 
     const [step, setStep] = useState<Step>("input");
     const [amount, setAmount] = useState("0.1");
@@ -120,78 +122,181 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
     }, [quote, tokenMint, amount, publicKey, signTransaction]);
 
     return (
-        <div className={cn("crt-panel p-5", className)}>
-            <div className="panel-header flex items-center gap-2">
-                <Zap className="w-4 h-4 text-[#ffaa00]/50" />
-                ╔══ QUICK BUY {tokenSymbol ? `$${tokenSymbol}` : ""} ══╗
-            </div>
+        <div
+            className={cn(
+                isPump
+                    ? "rounded-2xl border border-white/[0.08] bg-[#14181c] p-4"
+                    : "crt-panel p-5",
+                className
+            )}
+        >
+            {isPump ? (
+                <div className="mb-4 flex rounded-xl bg-black/35 p-0.5">
+                    <span className="flex flex-1 items-center justify-center rounded-lg bg-[#53ffb2] py-2.5 text-xs font-semibold text-black">
+                        Buy
+                    </span>
+                    <button
+                        type="button"
+                        disabled
+                        title="Sell routing is not available in BagScan yet"
+                        className="flex flex-1 items-center justify-center rounded-lg py-2.5 text-xs font-medium text-white/25"
+                    >
+                        Sell
+                    </button>
+                </div>
+            ) : (
+                <div className="panel-header flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-[#ffaa00]/50" />
+                    ╔══ QUICK BUY {tokenSymbol ? `$${tokenSymbol}` : ""} ══╗
+                </div>
+            )}
 
             {!isBagsMint ? (
-                <div className="border border-[#ffaa00]/25 bg-[#ffaa00]/5 px-4 py-4">
-                    <p className="text-[10px] tracking-wider text-[#ffaa00]/75">
+                <div
+                    className={cn(
+                        "px-4 py-4",
+                        isPump
+                            ? "rounded-xl border border-amber-500/30 bg-amber-500/10"
+                            : "border border-[#ffaa00]/25 bg-[#ffaa00]/5"
+                    )}
+                >
+                    <p
+                        className={cn(
+                            "text-[10px] tracking-wider",
+                            isPump ? "text-amber-200/90" : "text-[#ffaa00]/75"
+                        )}
+                    >
                         QUICK BUY IS ENABLED ONLY FOR ...BAGS TOKENS.
                     </p>
                 </div>
             ) : !connected ? (
                 <button
                     onClick={() => setVisible(true)}
-                    className="w-full py-3 border-2 border-[#00ff41]/40 bg-[#00ff41]/10 text-[#00ff41] text-xs tracking-wider
-                     hover:bg-[#00ff41]/20 hover:border-[#00ff41]/60
-                     transition-all duration-300 flex items-center justify-center gap-2"
-                    style={{ textShadow: '0 0 6px rgba(0,255,65,0.3)' }}
+                    className={cn(
+                        "flex w-full items-center justify-center gap-2 py-3.5 text-sm font-semibold transition-all duration-300",
+                        isPump
+                            ? "rounded-xl bg-[#53ffb2] text-black hover:brightness-110"
+                            : "border-2 border-[#00ff41]/40 bg-[#00ff41]/10 text-[#00ff41] text-xs tracking-wider hover:border-[#00ff41]/60 hover:bg-[#00ff41]/20"
+                    )}
+                    style={isPump ? undefined : { textShadow: "0 0 6px rgba(0,255,65,0.3)" }}
                 >
-                    <Wallet className="w-4 h-4" />
+                    <Wallet className="h-4 w-4" />
                     CONNECT WALLET TO BUY
                 </button>
             ) : (
                 <div className="space-y-3">
                     <div>
-                        <label className="text-[9px] text-[#00ff41]/30 uppercase tracking-[0.2em] mb-1 block">AMOUNT (SOL)</label>
+                        <label
+                            className={cn(
+                                "mb-1 block text-[10px] font-medium uppercase tracking-widest",
+                                isPump ? "text-white/40" : "text-[9px] text-[#00ff41]/30 tracking-[0.2em]"
+                            )}
+                        >
+                            Amount (SOL)
+                        </label>
                         <input
                             type="number"
                             step="0.01"
                             min="0"
                             value={amount}
-                            onChange={(e) => { setAmount(e.target.value); setStep("input"); }}
-                            className="w-full px-3 py-2.5 bg-black/60 border border-[#00ff41]/20 text-xs text-[#00ff41] tracking-wider focus:outline-none focus:border-[#00ff41]/50 focus:shadow-[0_0_10px_rgba(0,255,65,0.1)]"
+                            onChange={(e) => {
+                                setAmount(e.target.value);
+                                setStep("input");
+                            }}
+                            className={cn(
+                                "w-full px-3 py-3 text-sm focus:outline-none disabled:opacity-50",
+                                isPump
+                                    ? "rounded-xl border border-white/[0.1] bg-black/40 text-white placeholder:text-white/25 focus:border-[#53ffb2]/50"
+                                    : "border border-[#00ff41]/20 bg-black/60 text-xs tracking-wider text-[#00ff41] focus:border-[#00ff41]/50 focus:shadow-[0_0_10px_rgba(0,255,65,0.1)]"
+                            )}
                             disabled={step === "quoting" || step === "signing"}
                         />
                     </div>
 
                     <div>
-                        <label className="text-[9px] text-[#00ff41]/30 uppercase tracking-[0.2em] mb-1 block">SLIPPAGE (BPS)</label>
+                        <label
+                            className={cn(
+                                "mb-1 block text-[10px] font-medium uppercase tracking-widest",
+                                isPump ? "text-white/40" : "text-[9px] text-[#00ff41]/30 tracking-[0.2em]"
+                            )}
+                        >
+                            Slippage (bps)
+                        </label>
                         <input
                             type="number"
                             min="0"
                             max="10000"
                             value={slippage}
-                            onChange={(e) => { setSlippage(e.target.value); setStep("input"); }}
-                            className="w-full px-3 py-2.5 bg-black/60 border border-[#00ff41]/20 text-xs text-[#00ff41] tracking-wider focus:outline-none focus:border-[#00ff41]/50 focus:shadow-[0_0_10px_rgba(0,255,65,0.1)]"
+                            onChange={(e) => {
+                                setSlippage(e.target.value);
+                                setStep("input");
+                            }}
+                            className={cn(
+                                "w-full px-3 py-2.5 text-sm focus:outline-none disabled:opacity-50",
+                                isPump
+                                    ? "rounded-xl border border-white/[0.1] bg-black/40 text-white focus:border-[#53ffb2]/50"
+                                    : "border border-[#00ff41]/20 bg-black/60 text-xs tracking-wider text-[#00ff41] focus:border-[#00ff41]/50 focus:shadow-[0_0_10px_rgba(0,255,65,0.1)]"
+                            )}
                             disabled={step === "quoting" || step === "signing"}
                         />
-                        <p className="text-[8px] text-[#00ff41]/15 mt-0.5 tracking-wider">100 BPS = 1% SLIPPAGE</p>
+                        <p
+                            className={cn(
+                                "mt-1 text-[10px]",
+                                isPump ? "text-white/30" : "text-[8px] tracking-wider text-[#00ff41]/15"
+                            )}
+                        >
+                            100 bps = 1% slippage
+                        </p>
                     </div>
 
                     {quote && step === "quoted" && (
-                        <div className="p-3 border border-[#00ff41]/15 bg-black/40 space-y-1.5">
+                        <div
+                            className={cn(
+                                "space-y-1.5 p-3",
+                                isPump
+                                    ? "rounded-xl border border-white/[0.08] bg-black/30"
+                                    : "border border-[#00ff41]/15 bg-black/40"
+                            )}
+                        >
                             {outputAmount !== null && (
-                                <div className="flex justify-between text-[10px] tracking-wider">
-                                    <span className="text-[#00ff41]/30">YOU RECEIVE</span>
-                                    <span className="text-[#00ff41]/70">{formatNumber(outputAmount, false)} {tokenSymbol ?? "TOKENS"}</span>
+                                <div
+                                    className={cn(
+                                        "flex justify-between text-[11px]",
+                                        isPump ? "text-white/80" : "text-[10px] tracking-wider"
+                                    )}
+                                >
+                                    <span className={isPump ? "text-white/45" : "text-[#00ff41]/30"}>You receive</span>
+                                    <span className={isPump ? "font-medium text-[#53ffb2]" : "text-[#00ff41]/70"}>
+                                        {formatNumber(outputAmount, false)} {tokenSymbol ?? "tokens"}
+                                    </span>
                                 </div>
                             )}
                             {priceImpact !== null && (
-                                <div className="flex justify-between text-[10px] tracking-wider">
-                                    <span className="text-[#00ff41]/30">PRICE IMPACT</span>
-                                    <span className={cn(priceImpact > 5 ? "text-[#ff4400]" : "text-[#00ff41]/60")}>
+                                <div
+                                    className={cn(
+                                        "flex justify-between text-[11px]",
+                                        isPump ? "" : "text-[10px] tracking-wider"
+                                    )}
+                                >
+                                    <span className={isPump ? "text-white/45" : "text-[#00ff41]/30"}>Price impact</span>
+                                    <span
+                                        className={cn(
+                                            priceImpact > 5 ? "text-[#ff6b4a]" : isPump ? "text-white/70" : "text-[#00ff41]/60"
+                                        )}
+                                    >
                                         {priceImpact.toFixed(2)}%
                                     </span>
                                 </div>
                             )}
                             {fee !== null && (
-                                <div className="flex justify-between text-[10px] tracking-wider">
-                                    <span className="text-[#00ff41]/30">FEE</span>
-                                    <span className="text-[#00ff41]/50">{formatCurrency(fee)}</span>
+                                <div
+                                    className={cn(
+                                        "flex justify-between text-[11px]",
+                                        isPump ? "" : "text-[10px] tracking-wider"
+                                    )}
+                                >
+                                    <span className={isPump ? "text-white/45" : "text-[#00ff41]/30"}>Fee</span>
+                                    <span className={isPump ? "text-white/60" : "text-[#00ff41]/50"}>{formatCurrency(fee)}</span>
                                 </div>
                             )}
                         </div>
@@ -202,67 +307,137 @@ export function BuyWidget({ tokenMint, tokenSymbol, className }: BuyWidgetProps)
                             <button
                                 onClick={fetchQuote}
                                 disabled={!amount || parseFloat(amount) <= 0}
-                                className="w-full py-2.5 border border-[#00ff41]/30 bg-[#00ff41]/5 text-[#00ff41]/70 text-[10px] tracking-wider
-                                 hover:bg-[#00ff41]/10 hover:text-[#00ff41] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                className={cn(
+                                    "w-full py-2.5 text-[11px] font-medium transition-all disabled:cursor-not-allowed disabled:opacity-30",
+                                    isPump
+                                        ? "rounded-xl border border-white/15 bg-white/[0.06] text-white hover:bg-white/[0.1]"
+                                        : "border border-[#00ff41]/30 bg-[#00ff41]/5 text-[10px] tracking-wider text-[#00ff41]/70 hover:bg-[#00ff41]/10 hover:text-[#00ff41]"
+                                )}
                             >
-                                GET QUOTE
+                                Get quote
                             </button>
                         )}
 
                         {step === "quoting" && (
-                            <button disabled className="w-full py-2.5 border border-[#00ff41]/15 text-[#00ff41]/30 text-[10px] tracking-wider flex items-center justify-center gap-2">
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                FETCHING QUOTE...
+                            <button
+                                disabled
+                                className={cn(
+                                    "flex w-full items-center justify-center gap-2 py-2.5 text-[11px]",
+                                    isPump
+                                        ? "rounded-xl border border-white/10 text-white/40"
+                                        : "border border-[#00ff41]/15 text-[10px] tracking-wider text-[#00ff41]/30"
+                                )}
+                            >
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Fetching quote…
                             </button>
                         )}
 
                         {step === "quoted" && (
                             <button
                                 onClick={executeBuy}
-                                className="w-full py-3 border-2 border-[#00ff41]/50 bg-[#00ff41]/15 text-[#00ff41] text-xs tracking-wider
-                                 hover:bg-[#00ff41]/25 hover:border-[#00ff41]/70 transition-all"
-                                style={{ textShadow: '0 0 6px rgba(0,255,65,0.3)' }}
+                                className={cn(
+                                    "w-full py-3.5 text-sm font-semibold transition-all",
+                                    isPump
+                                        ? "rounded-xl bg-[#53ffb2] text-black hover:brightness-110"
+                                        : "border-2 border-[#00ff41]/50 bg-[#00ff41]/15 text-xs tracking-wider text-[#00ff41] hover:border-[#00ff41]/70 hover:bg-[#00ff41]/25"
+                                )}
+                                style={isPump ? undefined : { textShadow: "0 0 6px rgba(0,255,65,0.3)" }}
                             >
-                                BUY {tokenSymbol ?? "TOKEN"}
+                                Place trade
                             </button>
                         )}
 
                         {step === "signing" && (
-                            <button disabled className="w-full py-3 border border-[#ffaa00]/30 bg-[#ffaa00]/5 text-[#ffaa00]/50 text-[10px] tracking-wider flex items-center justify-center gap-2">
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                AWAITING SIGNATURE...
+                            <button
+                                disabled
+                                className={cn(
+                                    "flex w-full items-center justify-center gap-2 py-3 text-[11px]",
+                                    isPump
+                                        ? "rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-200/70"
+                                        : "border border-[#ffaa00]/30 bg-[#ffaa00]/5 text-[10px] tracking-wider text-[#ffaa00]/50"
+                                )}
+                            >
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Awaiting signature…
                             </button>
                         )}
 
                         {step === "success" && txSig && (
-                            <div className="p-3 border border-[#00ff41]/30 bg-[#00ff41]/5">
-                                <p className="text-[10px] text-[#00ff41] tracking-wider mb-2" style={{ textShadow: '0 0 4px rgba(0,255,65,0.3)' }}>
-                                    ▶ TRANSACTION SENT
+                            <div
+                                className={cn(
+                                    "p-3",
+                                    isPump
+                                        ? "rounded-xl border border-[#53ffb2]/35 bg-[#53ffb2]/10"
+                                        : "border border-[#00ff41]/30 bg-[#00ff41]/5"
+                                )}
+                            >
+                                <p
+                                    className={cn(
+                                        "mb-2 text-[11px] font-medium",
+                                        isPump ? "text-[#53ffb2]" : "text-[10px] tracking-wider text-[#00ff41]"
+                                    )}
+                                    style={isPump ? undefined : { textShadow: "0 0 4px rgba(0,255,65,0.3)" }}
+                                >
+                                    Transaction sent
                                 </p>
                                 <a
                                     href={getExplorerUrl(txSig)}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-[9px] text-[#00ff41]/40 hover:text-[#00ff41]/70 flex items-center gap-1 tracking-wider"
+                                    className={cn(
+                                        "flex items-center gap-1 text-[10px]",
+                                        isPump
+                                            ? "text-[#53ffb2]/80 hover:text-[#53ffb2]"
+                                            : "text-[9px] tracking-wider text-[#00ff41]/40 hover:text-[#00ff41]/70"
+                                    )}
                                 >
-                                    VIEW ON EXPLORER
-                                    <ExternalLink className="w-3 h-3" />
+                                    View on explorer
+                                    <ExternalLink className="h-3 w-3" />
                                 </a>
                             </div>
                         )}
                     </div>
 
                     {error && (
-                        <div className="p-3 border border-[#ff4400]/30 bg-[#ff4400]/5">
+                        <div
+                            className={cn(
+                                "p-3",
+                                isPump
+                                    ? "rounded-xl border border-red-500/35 bg-red-500/10"
+                                    : "border border-[#ff4400]/30 bg-[#ff4400]/5"
+                            )}
+                        >
                             <div className="flex items-start gap-2">
-                                <AlertCircle className="w-4 h-4 text-[#ff4400]/50 flex-shrink-0 mt-0.5" />
+                                <AlertCircle
+                                    className={cn(
+                                        "mt-0.5 h-4 w-4 flex-shrink-0",
+                                        isPump ? "text-red-400/80" : "text-[#ff4400]/50"
+                                    )}
+                                />
                                 <div>
-                                    <p className="text-[10px] text-[#ff4400]/60 tracking-wider">{error}</p>
-                                    <button
-                                        onClick={() => { setError(null); setStep("input"); }}
-                                        className="text-[9px] text-[#ff4400]/30 hover:text-[#ff4400]/60 mt-1 tracking-wider"
+                                    <p
+                                        className={cn(
+                                            "text-[11px]",
+                                            isPump ? "text-red-200/90" : "text-[10px] tracking-wider text-[#ff4400]/60"
+                                        )}
                                     >
-                                        TRY AGAIN
+                                        {error}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setError(null);
+                                            setStep("input");
+                                        }}
+                                        className={cn(
+                                            "mt-1 text-[10px]",
+                                            isPump
+                                                ? "text-red-300/70 hover:text-red-200"
+                                                : "text-[9px] tracking-wider text-[#ff4400]/30 hover:text-[#ff4400]/60"
+                                        )}
+                                    >
+                                        Try again
                                     </button>
                                 </div>
                             </div>

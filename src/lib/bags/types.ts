@@ -537,6 +537,8 @@ export interface NormalizedToken {
 
     // DexScreener extra
     pairAddress?: string;
+    /** Quote side symbol from DexScreener (e.g. SOL, USDC) — used for TradingView DEX ticker slugs. */
+    quoteTokenSymbol?: string;
     dexId?: string;
     priceChange24h?: number;
     txCount24h?: number;

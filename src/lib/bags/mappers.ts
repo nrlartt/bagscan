@@ -291,6 +291,7 @@ export function mergeDexScreenerData(
         volume5mUsd: safeNum((pair.volume as { m5?: unknown } | undefined)?.m5) ?? token.volume5mUsd,
         volume1hUsd: safeNum((pair.volume as { h1?: unknown } | undefined)?.h1) ?? token.volume1hUsd,
         pairAddress: pair.pairAddress ?? token.pairAddress,
+        quoteTokenSymbol: pair.quoteToken?.symbol ?? token.quoteTokenSymbol,
         dexId: pair.dexId ?? token.dexId,
         priceChange24h: safeNum(pair.priceChange?.h24) ?? token.priceChange24h,
         txCount24h: txCount24hMerged,
