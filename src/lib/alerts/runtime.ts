@@ -9,7 +9,8 @@ const globalForAlertsRuntime = globalThis as {
 };
 
 function shouldEnableInternalAlertsRuntime() {
-    if (process.env.ENABLE_INTERNAL_ALERTS_RUNTIME === "false") {
+    // Opt-in only — avoids hammering DB/RPC on cold start (can cause gateway 504s).
+    if (process.env.ENABLE_INTERNAL_ALERTS_RUNTIME !== "true") {
         return false;
     }
 
@@ -62,7 +63,13 @@ export function startInternalAlertsRuntime() {
 
     globalForAlertsRuntime.bagscanAlertsRuntimeStarted = true;
 
-    void runAlertsRuntimeTick();
+    const startupDelayMs = Number(process.env.ALERTS_RUNTIME_STARTUP_DELAY_MS ?? 120_000);
+    const safeStartupDelay =
+        Number.isFinite(startupDelayMs) && startupDelayMs >= 0 ? startupDelayMs : 120_000;
+
+    setTimeout(() => {
+        void runAlertsRuntimeTick();
+    }, safeStartupDelay).unref?.();
 
     const timer = setInterval(() => {
         void runAlertsRuntimeTick();

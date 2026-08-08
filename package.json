@@ -9,7 +9,7 @@
     "db:push": "prisma db push",
     "db:push:accept-data-loss": "prisma db push --accept-data-loss",
     "db:secure:public": "prisma db execute --file scripts/supabase-public-hardening.sql",
-    "start": "next start",
+    "start": "next start -H 0.0.0.0",
     "lint": "eslint",
     "bags:cli": "npx --yes @bagsfm/bags-cli"
   },

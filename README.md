@@ -218,7 +218,9 @@ Open `http://localhost:3000`.
 
 ## Environment Notes
 
-- `ENABLE_INTERNAL_ALERTS_RUNTIME="true"` enables the server-side alert runtime.
+- `ENABLE_INTERNAL_ALERTS_RUNTIME="true"` enables the in-process alert scheduler (off by default in production; prefer external cron hitting `/api/alerts/cron`).
+- `GET /api/health` is a fast liveness probe for gateways (no database).
+- Production start binds `0.0.0.0` via `npm start` — set `PORT` to match your reverse proxy upstream.
 - External cron for `/api/alerts/cron` can remain enabled as a backup.
 - `Talk To Bags` is published behind an on-chain holder gate and currently requires a wallet holding at least `2.5M $SCAN`.
 
