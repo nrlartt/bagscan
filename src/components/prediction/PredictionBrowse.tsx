@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, Flame, Loader2, Search, Target } from "lucide-react";
@@ -51,9 +51,14 @@ export function PredictionBrowse() {
 
     const visibleEvents = useMemo(() => filteredEvents.slice(0, visibleCount), [filteredEvents, visibleCount]);
 
-    useEffect(() => {
+    // Changing category or query starts a fresh list — collapse back to one page
+    // during render so the first paint is not an over-long list.
+    const listResetKey = `${category}|${deferredSearch}`;
+    const [lastListResetKey, setLastListResetKey] = useState(listResetKey);
+    if (lastListResetKey !== listResetKey) {
+        setLastListResetKey(listResetKey);
         setVisibleCount(24);
-    }, [category, deferredSearch]);
+    }
 
     return (
         <div className="mx-auto max-w-[1680px] px-4 py-5 sm:px-6 lg:px-8">

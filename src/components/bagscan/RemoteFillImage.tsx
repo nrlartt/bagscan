@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { normalizeRemoteImageUrl } from "@/lib/media/normalizeRemoteImageUrl";
 import { cn } from "@/lib/utils";
 
@@ -50,12 +50,13 @@ export function RemoteFillImage({
         (normalized!.startsWith("blob:") || normalized!.startsWith("data:"));
     const [mode, setMode] = useState<LoadMode>(isClientLocal ? "direct" : "optimized");
 
-    useEffect(() => {
-        const local =
-            Boolean(normalized) &&
-            (normalized!.startsWith("blob:") || normalized!.startsWith("data:"));
-        setMode(local ? "direct" : "optimized");
-    }, [normalized]);
+    // A new URL restarts the optimized → direct → fallback ladder. Adjusting during
+    // render (instead of in an effect) avoids painting the previous image's state.
+    const [lastSrc, setLastSrc] = useState(normalized);
+    if (lastSrc !== normalized) {
+        setLastSrc(normalized);
+        setMode(isClientLocal ? "direct" : "optimized");
+    }
 
     const onOptimizedError = useCallback(() => setMode("direct"), []);
     const onDirectError = useCallback(() => setMode("failed"), []);

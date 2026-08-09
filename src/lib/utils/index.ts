@@ -36,6 +36,39 @@ export function formatCurrency(
     }).format(value);
 }
 
+function trimTrailingZeros(value: string): string {
+    return value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
+}
+
+/**
+ * Render a small decimal without collapsing it to zero.
+ * Bonding-curve tokens routinely price below $0.0001, where `toFixed(2)` prints
+ * "0.00" and `toExponential()` prints "1.23e-7" — both unreadable on a card.
+ */
+export function formatCompactDecimal(
+    value: number | null | undefined,
+    opts?: { significant?: number; maxDecimals?: number }
+): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+    const { significant = 3, maxDecimals = 18 } = opts ?? {};
+    const abs = Math.abs(value);
+    if (abs === 0) return "0";
+    if (abs >= 1) return trimTrailingZeros(value.toFixed(2));
+    if (abs >= 0.01) return trimTrailingZeros(value.toFixed(4));
+
+    // Keep `significant` digits past the leading zeros: 0.000000123 → "0.000000123"
+    const leadingZeros = -Math.floor(Math.log10(abs)) - 1;
+    const decimals = Math.min(maxDecimals, leadingZeros + significant);
+    return trimTrailingZeros(value.toFixed(decimals));
+}
+
+/** USD price of a single token, readable across the whole magnitude range. */
+export function formatTokenPrice(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+    if (value >= 1) return formatCurrency(value, { compact: value >= 1_000_000 });
+    return `$${formatCompactDecimal(value)}`;
+}
+
 export type ValuationSource = "market-cap" | "fdv" | "none";
 
 export function getValuationMetric(input: {

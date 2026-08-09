@@ -253,15 +253,35 @@ export function sumDexTxBuysSells(txns: unknown, window: "m5" | "h1" | "h24"): n
 }
 
 /**
+ * DexScreener `/latest/dex/*` pair shape — only the fields BagScan reads, all
+ * optional because the upstream payload is untyped JSON.
+ */
+export interface DexScreenerPair {
+    baseToken?: { address?: string; name?: string; symbol?: string };
+    quoteToken?: { symbol?: string };
+    info?: { imageUrl?: string; websites?: Array<{ url?: string }> };
+    priceUsd?: unknown;
+    fdv?: unknown;
+    marketCap?: unknown;
+    liquidity?: { usd?: unknown };
+    volume?: { h24?: unknown; h1?: unknown; m5?: unknown };
+    priceChange?: { h24?: unknown };
+    txns?: Record<string, { buys?: unknown; sells?: unknown } | undefined>;
+    pairAddress?: string;
+    dexId?: string;
+    pairCreatedAt?: unknown;
+}
+
+/**
  * Merge DexScreener pair data – now also captures 24h stats.
  */
 export function mergeDexScreenerData(
     token: NormalizedToken,
-    pairs: any[]
+    pairs: DexScreenerPair[]
 ): NormalizedToken {
     if (!pairs || pairs.length === 0) return token;
 
-    const forMint = pairs.filter((p: any) => p.baseToken?.address === token.tokenMint);
+    const forMint = pairs.filter((p) => p.baseToken?.address === token.tokenMint);
     const candidates = forMint.length > 0 ? forMint : pairs;
     const pair = pickBestDexPairByActivity(candidates) ?? candidates[0];
     if (!pair) return token;

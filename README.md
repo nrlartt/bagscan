@@ -2,9 +2,9 @@
 
 # BagScan
 
-### Solana discovery, Bags-native execution
+### Multi-network discovery, Bags-native execution
 
-BagScan is a premium discovery and launch terminal for the Bags ecosystem, with Solana-native wallet flows, official Bags SDK integration, alerts, portfolio tracking, and a growing assistant layer.
+BagScan is a premium discovery and launch terminal for the Bags ecosystem, covering both Solana and Robinhood Chain, with Solana-native wallet flows, official Bags SDK integration, alerts, portfolio tracking, and a growing assistant layer.
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.1.6-0b0b0b?style=flat-square)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2.3-0b0b0b?style=flat-square)](https://react.dev/)
@@ -23,6 +23,7 @@ BagScan is a premium discovery and launch terminal for the Bags ecosystem, with 
 BagScan brings Bags market discovery, launch infrastructure, partner monetization, portfolio visibility, and notification workflows into one terminal.
 
 - Discover live Bags tokens through premium boards for trending, spotlight, new launches, hackathon, and leaderboard views.
+- Switch between Solana and Robinhood Chain (`4663`) from the header network selector, with bonding-curve progress, spot prices, and graduated Uniswap V4 pools on the Robinhood side.
 - Launch tokens through the official Bags SDK with fee sharing, admin settings, company incorporation support, and safer transaction handling.
 - Track holdings, estimated PnL, and claimable fee positions from a wallet-native portfolio surface.
 - Deliver in-app, browser, Telegram, and Telegram group alert flows through a server-backed notification engine.
@@ -34,6 +35,7 @@ BagScan brings Bags market discovery, launch infrastructure, partner monetizatio
 | Surface | Purpose |
 | --- | --- |
 | `Discover` | Bags token boards, market slices, spotlight, and hackathon views |
+| `Robinhood` | Robinhood Chain launches, alpha flow, and wallet portfolios on chain `4663` |
 | `Alpha` | Higher-conviction monitoring and premium Bags market views |
 | `Agents` | Bags Hackathon AI agents directory with tokenized project enrichment |
 | `Launch` | Token launch flow with official Bags SDK integration |
@@ -119,6 +121,9 @@ flowchart LR
 ### Discovery
 
 - Premium terminal UI across trending, spotlight, new launches, hackathon, and leaderboard surfaces
+- Network selector (Solana / Robinhood Chain) persisted per browser and synced across open tabs
+- Robinhood Chain boards driven by `/api/rh/tokens` and `/api/rh/token`, with EVM addresses routing to a dedicated detail view at `/token/<0x…>`
+- `Discover`, `Alpha`, and `Portfolio` all follow the selected network — each renders a Solana or Robinhood surface from its own data source
 - Official Bags market data blended with Bags-native discovery workflows
 - AI Agents directory sourced from the Bags Hackathon category
 - Curated spotlight rotation and current-pulse presentation
@@ -131,10 +136,17 @@ flowchart LR
 - Company incorporation support in the launch flow
 - Safer transaction confirmation and retry handling
 
+### Alpha
+
+- Solana alpha terminal with signal scoring, rug pressure, and trend rotations
+- Robinhood alpha board (`/api/rh/alpha`) scoring indexed on-chain trade flow into curve momentum, volume, buy/sell pressure, whale prints, and crowd formation
+- Robinhood signals use a 7-day window; that chain's flow is far thinner than Solana's, so a 24h view would read empty
+
 ### Portfolio And Alerts
 
 - Wallet portfolio panel and full portfolio page
-- Cost-basis-aware PnL work completed in product flows
+- Robinhood Chain portfolios (`/api/rh/portfolio`) with token holdings, ETH/WETH balance, and creator fee positions, looked up by EVM address
+- Cost-basis-aware PnL work completed in product flows (Solana; Robinhood exposes trades per token, not per wallet, so no cost basis there yet)
 - In-app inbox, browser push, Telegram direct alerts
 - Telegram group broadcast targets
 - Internal runtime plus external cron backup
@@ -179,6 +191,7 @@ cp .env.example .env
 Most important variables:
 
 - `DATABASE_URL`
+- `NEXT_PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_SOLANA_RPC_URL`
 - `HELIUS_API_KEY`
 - `BAGS_API_KEY`
@@ -218,6 +231,7 @@ Open `http://localhost:3000`.
 
 ## Environment Notes
 
+- `NEXT_PUBLIC_SITE_URL` sets the canonical origin used by metadata, Open Graph URLs, `robots.txt`, and `sitemap.xml`. Set it per environment or shared links point at the production domain.
 - `ENABLE_INTERNAL_ALERTS_RUNTIME="true"` enables the in-process alert scheduler (off by default in production; prefer external cron hitting `/api/alerts/cron`).
 - `GET /api/health` is a fast liveness probe for gateways (no database).
 - Production start binds `0.0.0.0` via `npm start` — set `PORT` to match your reverse proxy upstream.

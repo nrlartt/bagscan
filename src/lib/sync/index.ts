@@ -37,7 +37,7 @@ import {
     sumDexTxBuysSells,
 } from "@/lib/bags/mappers";
 import { getTokenMetadataBatch, type TokenMetadata } from "@/lib/solana/metadata";
-import type { BagsPool, NormalizedToken, BagsOfficialTopToken, BagsTokenLaunchFeedItem } from "@/lib/bags/types";
+import type { BagsPool, NormalizedToken, BagsTokenLaunchFeedItem } from "@/lib/bags/types";
 import type { AlphaToken } from "@/lib/alpha/types";
 
 // ── Caches ───────────────────────────────────

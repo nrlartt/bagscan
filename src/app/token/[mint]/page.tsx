@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
@@ -43,6 +43,8 @@ import {
     Globe,
     Send,
 } from "lucide-react";
+import { isEvmAddress } from "@/lib/networks";
+import { RhTokenDetailView } from "@/components/bagscan/RhTokenDetailView";
 
 interface TokenDetailResponse {
     success: boolean;
@@ -66,6 +68,14 @@ export default function TokenDetailPage() {
     const params = useParams();
     const mint = params.mint as string;
 
+    if (isEvmAddress(mint)) {
+        return <RhTokenDetailView address={mint} />;
+    }
+
+    return <SolanaTokenDetailPage mint={mint} />;
+}
+
+function SolanaTokenDetailPage({ mint }: { mint: string }) {
     const { data, isLoading, error, refetch } = useQuery<TokenDetailResponse>({
         queryKey: ["token", mint],
         queryFn: async () => {
@@ -78,17 +88,16 @@ export default function TokenDetailPage() {
     });
 
     const [detailTab, setDetailTab] = useState<"holders" | "activity">("activity");
-    const detailTabMintRef = useRef<string | null>(null);
+    const [tabSeededMint, setTabSeededMint] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (!mint) return;
-        if (!data?.success || !data.data?.token) return;
-        if (data.data.token.tokenMint !== mint) return;
-        if (detailTabMintRef.current === mint) return;
-        detailTabMintRef.current = mint;
-        const hasHolders = data.data.token.claimStats && data.data.token.claimStats.length > 0;
-        setDetailTab(hasHolders ? "holders" : "activity");
-    }, [mint, data]);
+    // Pick the opening tab once per token, as soon as its data lands. Done during
+    // render (not in an effect) so the first paint already shows the right tab.
+    const loadedToken =
+        data?.success && data.data?.token?.tokenMint === mint ? data.data.token : null;
+    if (loadedToken && tabSeededMint !== mint) {
+        setTabSeededMint(mint);
+        setDetailTab(loadedToken.claimStats && loadedToken.claimStats.length > 0 ? "holders" : "activity");
+    }
 
     if (isLoading) {
         return (
@@ -122,7 +131,6 @@ export default function TokenDetailPage() {
     const officialCreatorXHandle = getPrimaryCreatorXHandle(token);
     const officialWebsiteUrl = normalizeExternalHref(token.website);
     const officialTelegramUrl = normalizeTelegramHref(token.telegram);
-    const officialWebsiteHost = getWebsiteHost(token.website);
     const officialProjectFollowers = token.projectTwitterFollowers ?? token.creatorFollowers;
 
     const fourthStat =
@@ -1058,15 +1066,6 @@ function normalizeTelegramHref(value?: string | null) {
     return `https://t.me/${value.replace(/^@+/, "").replace(/^t\.me\//i, "")}`;
 }
 
-function getWebsiteHost(value?: string | null) {
-    const href = normalizeExternalHref(value);
-    if (!href) return undefined;
-    try {
-        return new URL(href).hostname.replace(/^www\./i, "");
-    } catch {
-        return undefined;
-    }
-}
 
 function getOfficialProjectXHandle(token: NormalizedToken) {
     return (

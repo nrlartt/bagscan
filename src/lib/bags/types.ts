@@ -477,8 +477,12 @@ export interface HeliusAsset {
 }
 
 // ── Normalized internal type ─────────────────
+export type BagScanChain = "solana" | "robinhood";
+
 export interface NormalizedToken {
     tokenMint: string;
+    /** Which chain this token belongs to (defaults to Solana when omitted). */
+    chain?: BagScanChain;
     poolAddress?: string;
     name?: string;
     symbol?: string;
@@ -550,6 +554,11 @@ export interface NormalizedToken {
     buyCount24h?: number;
     sellCount24h?: number;
     pairCreatedAt?: string;
+
+    /** Robinhood Chain bonding curve progress (0–100). */
+    bondingProgressPct?: number;
+    /** Robinhood Chain spot price as 1e18 fixed-point ETH per token. */
+    priceEthPerToken?: string;
 
     // Alpha enrichment
     alphaScore?: number;

@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { formatCurrency, formatNumber, shortenAddress, cn, getValuationMetric } from "@/lib/utils";
+import {
+    formatCurrency,
+    formatNumber,
+    formatTokenPrice,
+    shortenAddress,
+    cn,
+    getValuationMetric,
+} from "@/lib/utils";
 import { ProviderBadge } from "./Badges";
 import { RemoteFillImage, REMOTE_IMAGE_SIZES_GRID } from "./RemoteFillImage";
 import type { NormalizedToken } from "@/lib/bags/types";
@@ -149,7 +156,7 @@ function MiniSparkline({ change }: { change?: number }) {
             out.push(`${(i / (n - 1)) * 100},${y}`);
         }
         return out.join(" ");
-    }, [up, change]);
+    }, [up]);
 
     return (
         <svg
@@ -296,7 +303,7 @@ function ExploreFeedTokenCard({
                             {valuation.value !== undefined
                                 ? formatCurrency(valuation.value)
                                 : token.priceUsd
-                                  ? `$${token.priceUsd < 0.0001 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}`
+                                  ? formatTokenPrice(token.priceUsd)
                                   : "—"}
                         </p>
                         <p className="mt-1 text-[9px] tracking-[0.16em] text-[#00ff41]/40">
@@ -772,8 +779,7 @@ function NewLaunchTokenCard({
                                 useLaunchPalette ? "text-[#ffb800]/35" : "text-[#00ff41]/25"
                             )}
                         >
-                            $
-                            {token.priceUsd < 0.0001 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}
+                            {formatTokenPrice(token.priceUsd)}
                         </span>
                     ) : isNew && !launchTime ? (
                         <span className="text-[8px] tracking-[0.15em] text-[#ffb800]/20">JUST LAUNCHED</span>

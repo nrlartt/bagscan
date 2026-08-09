@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Filter, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -28,6 +28,12 @@ function compactUsdLabel(n: number): string {
     return `$${Math.round(n)}`;
 }
 
+/** Bound labels blank out at the slider extremes, which read as "no limit". */
+const mcapLoLabel = (n: number) => (n > 0 ? compactUsdLabel(n) : "");
+const mcapHiLabel = (n: number) => (n < EXPLORE_MCAP_SLIDER_MAX - 50_000 ? compactUsdLabel(n) : "");
+const volLoLabel = (n: number) => (n > 0 ? compactUsdLabel(n) : "");
+const volHiLabel = (n: number) => (n < EXPLORE_VOL_SLIDER_MAX - 5_000 ? compactUsdLabel(n) : "");
+
 export function ExploreFiltersPopover({ applied, onApply, className }: ExploreFiltersPopoverProps) {
     const idBase = useId();
     const filterActive = hasActiveMarketFilters(applied);
@@ -45,38 +51,25 @@ export function ExploreFiltersPopover({ applied, onApply, className }: ExploreFi
     const [volMinStr, setVolMinStr] = useState("");
     const [volMaxStr, setVolMaxStr] = useState("");
 
-    useEffect(() => {
-        if (!open) return;
-        const d = appliedFiltersToDraft(applied);
-        setMcapLo(d.mcapLo);
-        setMcapHi(d.mcapHi);
-        setVolLo(d.volLo);
-        setVolHi(d.volHi);
-        setMcapMinStr(d.mcapLo > 0 ? compactUsdLabel(d.mcapLo) : "");
-        setMcapMaxStr(
-            d.mcapHi < EXPLORE_MCAP_SLIDER_MAX - 50_000 ? compactUsdLabel(d.mcapHi) : ""
-        );
-        setVolMinStr(d.volLo > 0 ? compactUsdLabel(d.volLo) : "");
-        setVolMaxStr(
-            d.volHi < EXPLORE_VOL_SLIDER_MAX - 5_000 ? compactUsdLabel(d.volHi) : ""
-        );
-    }, [open, applied]);
-
-    const syncRangeLabels = useCallback(() => {
-        setMcapMinStr(mcapLo > 0 ? compactUsdLabel(mcapLo) : "");
-        setMcapMaxStr(
-            mcapHi < EXPLORE_MCAP_SLIDER_MAX - 50_000 ? compactUsdLabel(mcapHi) : ""
-        );
-        setVolMinStr(volLo > 0 ? compactUsdLabel(volLo) : "");
-        setVolMaxStr(
-            volHi < EXPLORE_VOL_SLIDER_MAX - 5_000 ? compactUsdLabel(volHi) : ""
-        );
-    }, [mcapLo, mcapHi, volLo, volHi]);
-
-    useEffect(() => {
-        if (!open) return;
-        syncRangeLabels();
-    }, [mcapLo, mcapHi, volLo, volHi, open, syncRangeLabels]);
+    // Seed the draft from the applied filters whenever the panel opens (or the
+    // applied set changes while it is open). Done during render so the panel's
+    // first paint already shows the current filters.
+    const draftKey = open ? JSON.stringify(applied) : null;
+    const [lastDraftKey, setLastDraftKey] = useState<string | null>(draftKey);
+    if (lastDraftKey !== draftKey) {
+        setLastDraftKey(draftKey);
+        if (open) {
+            const d = appliedFiltersToDraft(applied);
+            setMcapLo(d.mcapLo);
+            setMcapHi(d.mcapHi);
+            setVolLo(d.volLo);
+            setVolHi(d.volHi);
+            setMcapMinStr(mcapLoLabel(d.mcapLo));
+            setMcapMaxStr(mcapHiLabel(d.mcapHi));
+            setVolMinStr(volLoLabel(d.volLo));
+            setVolMaxStr(volHiLabel(d.volHi));
+        }
+    }
 
     useEffect(() => {
         if (!open) return;
@@ -206,8 +199,9 @@ export function ExploreFiltersPopover({ applied, onApply, className }: ExploreFi
                                 step={MC_STEP}
                                 value={mcapLo}
                                 onChange={(e) => {
-                                    const v = Number(e.target.value);
-                                    setMcapLo(Math.min(v, mcapHi - MC_STEP));
+                                    const next = Math.min(Number(e.target.value), mcapHi - MC_STEP);
+                                    setMcapLo(next);
+                                    setMcapMinStr(mcapLoLabel(next));
                                 }}
                                 className="absolute h-6 w-full cursor-pointer appearance-none bg-transparent opacity-100 [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:mt-[-0.35rem] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-[#00ff41] [&::-webkit-slider-thumb]:bg-[#0a0a0c]"
                             />
@@ -219,8 +213,9 @@ export function ExploreFiltersPopover({ applied, onApply, className }: ExploreFi
                                 step={MC_STEP}
                                 value={mcapHi}
                                 onChange={(e) => {
-                                    const v = Number(e.target.value);
-                                    setMcapHi(Math.max(v, mcapLo + MC_STEP));
+                                    const next = Math.max(Number(e.target.value), mcapLo + MC_STEP);
+                                    setMcapHi(next);
+                                    setMcapMaxStr(mcapHiLabel(next));
                                 }}
                                 className="absolute h-6 w-full cursor-pointer appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:mt-[-0.35rem] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-[#00ff41] [&::-webkit-slider-thumb]:bg-[#0a0a0c]"
                             />
@@ -268,8 +263,9 @@ export function ExploreFiltersPopover({ applied, onApply, className }: ExploreFi
                                 step={VOL_STEP}
                                 value={volLo}
                                 onChange={(e) => {
-                                    const v = Number(e.target.value);
-                                    setVolLo(Math.min(v, volHi - VOL_STEP));
+                                    const next = Math.min(Number(e.target.value), volHi - VOL_STEP);
+                                    setVolLo(next);
+                                    setVolMinStr(volLoLabel(next));
                                 }}
                                 className="absolute h-6 w-full cursor-pointer appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:mt-[-0.35rem] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-[#00ff41] [&::-webkit-slider-thumb]:bg-[#0a0a0c]"
                             />
@@ -280,8 +276,9 @@ export function ExploreFiltersPopover({ applied, onApply, className }: ExploreFi
                                 step={VOL_STEP}
                                 value={volHi}
                                 onChange={(e) => {
-                                    const v = Number(e.target.value);
-                                    setVolHi(Math.max(v, volLo + VOL_STEP));
+                                    const next = Math.max(Number(e.target.value), volLo + VOL_STEP);
+                                    setVolHi(next);
+                                    setVolMaxStr(volHiLabel(next));
                                 }}
                                 className="absolute h-6 w-full cursor-pointer appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:mt-[-0.35rem] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-[#00ff41] [&::-webkit-slider-thumb]:bg-[#0a0a0c]"
                             />

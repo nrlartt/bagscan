@@ -46,8 +46,12 @@ yarn-error.log*
 /prisma/*.db
 /prisma/*.db-journal
 
-# uploads (user content)
+# uploads + generated launch metadata (user content, written at runtime)
 /public/uploads
+/public/launch-metadata
+
+# runtime caches
+/.cache
 
 # vercel
 .vercel
@@ -67,3 +71,11 @@ next-env.d.ts
 
 # build artifacts
 build_output.txt
+
+# local dev scratch: server logs, pid files, API dumps, scratch scripts
+.tmp-*
+debug.log
+*.log
+
+# local research checkouts (not part of this project)
+/_research_solclaw

@@ -8,6 +8,8 @@ import { LiveTicker } from "@/components/bagscan/LiveTicker";
 import { ErrorState } from "@/components/bagscan/States";
 import { TokenCardSkeleton, TokenTableSkeleton } from "@/components/bagscan/Skeletons";
 import { useDiscoverySearch } from "@/components/bagscan/DiscoverySearchContext";
+import { useNetwork } from "@/components/bagscan/NetworkContext";
+import { RhDiscoverHome } from "@/components/bagscan/RhDiscoverHome";
 import { ExploreCharityStrip, FeaturedLaunchesGrid } from "@/components/bagscan/ExploreSections";
 import { ExploreFiltersPopover } from "@/components/bagscan/ExploreFiltersPopover";
 import { cn } from "@/lib/utils";
@@ -114,6 +116,14 @@ async function fetchTokensResponse(params: string): Promise<TokensResponse> {
 }
 
 export default function HomePage() {
+  const { network } = useNetwork();
+  if (network === "robinhood") {
+    return <RhDiscoverHome />;
+  }
+  return <SolanaDiscoverHome />;
+}
+
+function SolanaDiscoverHome() {
   const { debouncedSearch } = useDiscoverySearch();
   const [lane, setLane] = useState<ExploreLane>("new");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
@@ -124,9 +134,14 @@ export default function HomePage() {
 
   const isSearching = debouncedSearch.length >= 2;
 
-  useEffect(() => {
+  // A new lane, query or filter set is a new result list — reset pagination during
+  // render rather than in an effect, which would cost an extra paint.
+  const feedResetKey = `${lane}|${isSearching}|${JSON.stringify(marketFilters)}`;
+  const [lastFeedResetKey, setLastFeedResetKey] = useState(feedResetKey);
+  if (lastFeedResetKey !== feedResetKey) {
+    setLastFeedResetKey(feedResetKey);
     setFeedPage(1);
-  }, [lane, isSearching, marketFilters]);
+  }
 
   const queryClient = useQueryClient();
 

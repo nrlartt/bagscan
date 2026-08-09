@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { Suspense, useDeferredValue, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
@@ -21,6 +22,8 @@ import {
     Wallet,
 } from "lucide-react";
 import { cn, copyToClipboard, formatCurrency, formatNumber, shortenAddress } from "@/lib/utils";
+import { useNetwork } from "@/components/bagscan/NetworkContext";
+import { RhPortfolioView } from "@/components/bagscan/RhPortfolioView";
 import { fetchPortfolio } from "@/lib/portfolio/client";
 import type { PortfolioResponse } from "@/lib/portfolio/types";
 import { SOL_MINT } from "@/lib/solana";
@@ -31,25 +34,54 @@ const ACCENT_MUTED = "rgba(83,255,178,0.45)";
 
 type PortfolioTab = "balances" | "rewards";
 
+/** `useSearchParams` needs a Suspense boundary for this statically shipped route. */
 export default function PortfolioPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="mx-auto w-full max-w-[92rem] px-4 py-10 sm:px-6 lg:px-8">
+                    <div className="h-40 animate-pulse rounded-2xl border border-white/[0.06] bg-white/[0.02]" />
+                </div>
+            }
+        >
+            <PortfolioRouter />
+        </Suspense>
+    );
+}
+
+/** Solana and Robinhood Chain portfolios come from different indexes entirely. */
+function PortfolioRouter() {
+    const { network } = useNetwork();
+    const searchParams = useSearchParams();
+    const walletParam = searchParams.get("wallet")?.trim() ?? "";
+
+    if (network === "robinhood") {
+        return <RhPortfolioView walletParam={walletParam} />;
+    }
+    return <SolanaPortfolioBody walletParam={walletParam} />;
+}
+
+function SolanaPortfolioBody({ walletParam }: { walletParam: string }) {
     const { publicKey, connected } = useWallet();
     const { setVisible } = useWalletModal();
-    const [walletInput, setWalletInput] = useState("");
+
+    const [walletInput, setWalletInput] = useState(walletParam);
     const [tab, setTab] = useState<PortfolioTab>("balances");
     const [holdingSearch, setHoldingSearch] = useState("");
     const [hideDust, setHideDust] = useState(true);
     const [copiedAddr, setCopiedAddr] = useState(false);
     const [copiedShare, setCopiedShare] = useState(false);
 
+    // Follow `?wallet=` when it changes (deep links, shared portfolio URLs).
+    const [seededWalletParam, setSeededWalletParam] = useState(walletParam);
+    if (seededWalletParam !== walletParam) {
+        setSeededWalletParam(walletParam);
+        if (walletParam) setWalletInput(walletParam);
+    }
+
     const connectedWallet = publicKey?.toBase58() ?? "";
     const trackedWallet = walletInput.trim() || connectedWallet;
     const deferredWallet = useDeferredValue(trackedWallet);
-
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        const q = new URLSearchParams(window.location.search).get("wallet");
-        if (q?.trim()) setWalletInput(q.trim());
-    }, []);
 
     const walletError = useMemo(() => {
         if (!deferredWallet) return null;

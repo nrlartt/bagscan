@@ -11,6 +11,8 @@ import {
     Radio, Cpu,
 } from "lucide-react";
 import type { AlphaFeedResponse, AlphaToken, AlphaSignal, AlphaSignalSeverity, RadarTrend } from "@/lib/alpha/types";
+import { useNetwork } from "@/components/bagscan/NetworkContext";
+import { RhAlphaBoard } from "@/components/bagscan/RhAlphaBoard";
 
 const BREAKING_WINDOW_MS = 2 * 60 * 60 * 1000;
 const EMPTY_TOKENS: AlphaToken[] = [];
@@ -19,6 +21,14 @@ const EMPTY_TRENDS: RadarTrend[] = [];
 type QuickFilter = "all" | "rug-check" | "momentum" | "new-launches" | "last-minute";
 
 export default function AlphaPage() {
+    const { network } = useNetwork();
+    if (network === "robinhood") {
+        return <RhAlphaBoard />;
+    }
+    return <SolanaAlphaPage />;
+}
+
+function SolanaAlphaPage() {
     const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
 
     const { data, isLoading, error, refetch, isFetching } = useQuery<AlphaFeedResponse>({
