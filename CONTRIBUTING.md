@@ -7,7 +7,7 @@ Thanks for your interest in contributing.
 - Keep the product Robinhood Chain–native; every surface targets chain 4663 only.
 - Prefer premium, intentional UI over generic dashboard patterns.
 - Preserve security defaults for wallet, alerts, Telegram, and database features.
-- Keep changes grounded in verifiable on-chain behavior — check contracts and the indexer before assuming.
+- Keep changes grounded in verifiable on-chain behavior — check contracts and RPC reads before assuming.
 
 ## Development Flow
 
@@ -33,7 +33,7 @@ npm run db:secure:public
 
 - Keep PRs scoped.
 - Explain user-facing impact clearly.
-- Mention any indexer API or contract-interface changes involved.
+- Mention any RPC or launchpad contract-interface changes involved.
 - Include screenshots or short videos for UI work.
 - Note any environment variables, cron behavior, or database expectations.
 

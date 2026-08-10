@@ -72,7 +72,7 @@ export default function AboutPage() {
                     <p>
                         After graduation, trades route through the Robinhood UniversalRouter and Uniswap V4 pool.
                         Buys wrap ETH to WETH; sells unwrap proceeds back to native ETH when possible. Quotes cover
-                        both phases via the chain indexer.
+                        both phases via on-chain quotes.
                     </p>
                 </Section>
 
@@ -117,9 +117,9 @@ export default function AboutPage() {
 
                 <Section title="DATA">
                     <p>
-                        Token, portfolio, trade and quote data comes from a Robinhood Chain indexer. Balances,
-                        allowances and every transaction you sign go straight to the chain RPC — nothing is
-                        intermediated.
+                        Token, portfolio, trade and quote data is read directly from Robinhood Chain
+                        launchpad contracts and event logs. Balances, allowances and every transaction you
+                        sign go straight to the chain RPC — nothing is intermediated.
                     </p>
                     <p>
                         Curve trades are built and signed in your browser against the token&apos;s own contract, so

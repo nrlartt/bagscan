@@ -603,7 +603,7 @@ export function RhTradeWidget({ token, ethUsd }: { token: RhTokenView; ethUsd?: 
             <p className="mt-3 text-[9px] leading-relaxed text-white/25">
                 {isPool
                     ? "Trades route through the Robinhood UniversalRouter and Uniswap V4 pool. Buys wrap ETH to WETH; sells unwrap proceeds automatically when possible."
-                    : "Trades execute directly against this token's bonding curve contract. Quotes come from the chain indexer and move with every trade — the slippage bound is what protects you."}
+                    : "Trades execute directly against this token's bonding curve contract. Quotes are read on-chain and move with every trade — the slippage bound is what protects you."}
             </p>
         </div>
     );

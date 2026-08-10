@@ -72,10 +72,9 @@ function usd(eth: number | undefined, ethUsd: number | undefined): number | unde
 }
 
 /**
- * Normalize the indexer's `/evm/rh/portfolio` + `/evm/rh/balances` payloads into the
- * shape the portfolio UI renders. Values are derived from the curve/pool spot
- * price, so they are marks — not realized proceeds — and there is no cost basis
- * to compare against (the API exposes trades per token, not per wallet).
+ * Normalize on-chain portfolio + balance payloads into the shape the portfolio UI renders.
+ * Values are marks from the live curve/pool spot price — not realized proceeds — and there
+ * is no cost basis to compare against (trades are indexed per token, not per wallet).
  */
 export function buildRhPortfolioView(
     owner: string,

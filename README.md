@@ -23,7 +23,7 @@ BagScan is a discovery, intelligence and trading terminal built for one network:
 - **Discover** every Robinhood Chain launch across two lanes — still filling its bonding curve, or graduated into a Uniswap V4 pool.
 - **Read the flow** on an alpha board that scores indexed on-chain trades into curve momentum, volume spikes, buy/sell pressure, whale prints and crowd formation.
 - **Track a wallet** — token holdings marked at the live curve price, ETH/WETH balance, and creator fee positions with claimable and lifetime totals.
-- **Trade from the app** — bonding-curve trades before graduation, Uniswap V4 pool swaps after, with quotes from the chain indexer and a slippage bound you set.
+- **Trade from the app** — bonding-curve trades before graduation, Uniswap V4 pool swaps after, with on-chain quotes and a slippage bound you set.
 - **Get alerted** when a watched token crosses a curve band, graduates, spikes on volume, moves sharply on price, or takes a whale trade.
 
 ## Product Surface
@@ -42,7 +42,7 @@ BagScan is a discovery, intelligence and trading terminal built for one network:
 flowchart LR
     U[Browser + EVM wallet] --> W[BagScan Web App]
     W --> A[App Router + API routes]
-    A --> B[RH indexer API<br/>evm/rh/*]
+    A --> B[RH on-chain reads<br/>factory / lens / logs]
     A --> E[PostgreSQL / Prisma<br/>alerts only]
     W --> R[Robinhood Chain RPC<br/>chain 4663]
     R --> C[Bonding curve contracts]
@@ -55,7 +55,7 @@ flowchart LR
 
 | Data | Source |
 | --- | --- |
-| Token lists, detail, portfolios, trades, quotes | Robinhood Chain indexer (`/evm/rh/*`), set via `RH_INDEXER_BASE_URL` |
+| Token lists, detail, portfolios, trades, quotes | Robinhood Chain RPC — on-chain reads via launchpad contracts |
 | Balances, allowances, transaction sending | Robinhood Chain RPC, direct from the browser wallet |
 | Watches, inbox, push subscriptions | PostgreSQL via Prisma |
 | ETH/USD rate | CoinGecko, cached for 60s |
@@ -144,7 +144,7 @@ npm install
 cp .env.example .env
 ```
 
-Required to run the market surfaces: `RH_INDEXER_BASE_URL` and `RH_INDEXER_API_KEY`.
+Required to run the market surfaces: `RH_RPC_URL` (optional — defaults to the public Robinhood Chain RPC).
 Required additionally for alerts: `DATABASE_URL`, `ALERTS_SESSION_SECRET`, `ALERTS_CRON_SECRET`.
 
 ### 3. Push the schema (alerts only)
@@ -185,7 +185,7 @@ Note: `explorer.robinhood.com` does not resolve — the Blockscout instance abov
 ## Security
 
 - Alert sessions are HMAC-signed cookies over a wallet address proven by an EIP-191 signature; nonces are single-use.
-- API routes log upstream errors server-side and return generic messages, so indexer internals never reach the client.
+- API routes log upstream RPC errors server-side and return generic messages.
 - Baseline security headers (HSTS, `nosniff`, `SAMEORIGIN`, Referrer-Policy, Permissions-Policy) ship from `next.config.ts`.
 - Read the process in [SECURITY.md](./SECURITY.md) and the Supabase notes in [docs/SUPABASE_SECURITY_HARDENING.md](./docs/SUPABASE_SECURITY_HARDENING.md).
 
