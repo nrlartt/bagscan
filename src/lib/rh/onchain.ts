@@ -31,12 +31,13 @@ import {
 } from "./addresses";
 import { bagsPoolKey, directionFor, isTokenCurrency0 } from "./pool";
 import {
-    ensureLaunchRegistry,
     getFactoryTokenTotal,
     getFactoryTokens,
     getLaunchRecord,
     getMigrationForCurve,
     getPartnerFeeBps,
+    hydrateLaunchRecord,
+    kickRegistrySync,
 } from "./registry";
 import { rhPublicClient } from "./rpc";
 
@@ -171,34 +172,52 @@ async function readLensState(token: Address): Promise<RhLensState | null> {
     return state.exists ? state : null;
 }
 
+interface BuildListOptions {
+    includeMetadata?: boolean;
+    includeMigration?: boolean;
+}
+
+async function readTokenStrings(token: Address): Promise<{ name: string; symbol: string; metadataURI: string }> {
+    const [name, symbol, metadataURI] = await Promise.all([
+        rhPublicClient.readContract({ address: token, abi: RH_TOKEN_ABI, functionName: "name" }).catch(() => ""),
+        rhPublicClient.readContract({ address: token, abi: RH_TOKEN_ABI, functionName: "symbol" }).catch(() => ""),
+        rhPublicClient.readContract({ address: token, abi: RH_TOKEN_ABI, functionName: "metadataURI" }).catch(() => ""),
+    ]);
+    return { name, symbol, metadataURI };
+}
+
 async function buildListItem(
     token: Address,
     state: RhLensState,
-    partnerFeeBps: number
+    partnerFeeBps: number,
+    options: BuildListOptions = {}
 ): Promise<RhTokenListItem | null> {
-    await ensureLaunchRegistry();
     const launch = getLaunchRecord(token);
-    const migration = state.migrated ? await migrationMeta(state.curve) : { block: null, timestamp: null };
-    const price = await resolvePriceWei(token, state);
+    const migration =
+        options.includeMigration && state.migrated
+            ? await migrationMeta(state.curve)
+            : { block: null, timestamp: null };
 
     let name = launch?.name ?? "";
     let symbol = launch?.symbol ?? "";
     let metadataURI = launch?.metadataURI ?? "";
 
-    if (!name || !symbol) {
-        const [n, s, uri] = await Promise.all([
-            rhPublicClient.readContract({ address: token, abi: RH_TOKEN_ABI, functionName: "name" }).catch(() => ""),
-            rhPublicClient.readContract({ address: token, abi: RH_TOKEN_ABI, functionName: "symbol" }).catch(() => ""),
-            rhPublicClient
-                .readContract({ address: token, abi: RH_TOKEN_ABI, functionName: "metadataURI" })
-                .catch(() => ""),
-        ]);
-        name = name || n;
-        symbol = symbol || s;
-        metadataURI = metadataURI || uri;
+    if (!name || !symbol || !metadataURI) {
+        const onChain = await readTokenStrings(token);
+        name = name || onChain.name;
+        symbol = symbol || onChain.symbol;
+        metadataURI = metadataURI || onChain.metadataURI;
     }
 
-    const metadata = metadataURI ? await fetchMetadata(metadataURI) : null;
+    const price =
+        !state.migrated && state.priceQuotePerToken > 0n
+            ? weiStr(state.priceQuotePerToken)
+            : state.migrated
+              ? await resolvePriceWei(token, state)
+              : null;
+
+    const metadata =
+        options.includeMetadata && metadataURI ? await fetchMetadata(metadataURI) : null;
     const partner = launch?.partner && launch.partner !== ZERO ? launch.partner : null;
 
     return {
@@ -225,19 +244,88 @@ async function buildListItem(
     };
 }
 
+async function buildListItemsBatch(
+    entries: { token: Address; state: RhLensState }[],
+    partnerFeeBps: number,
+    options: BuildListOptions = {}
+): Promise<RhTokenListItem[]> {
+    if (entries.length === 0) return [];
+
+    const strings = await Promise.all(
+        entries.map(({ token }) =>
+            readTokenStrings(token).catch(() => ({ name: "", symbol: "", metadataURI: "" }))
+        )
+    );
+
+    const poolPriceTokens = entries.filter(({ state }) => state.migrated);
+    const poolPrices = new Map<string, string | null>();
+    await Promise.all(
+        poolPriceTokens.map(async ({ token, state }) => {
+            poolPrices.set(token.toLowerCase(), await resolvePriceWei(token, state));
+        })
+    );
+
+    const items: RhTokenListItem[] = [];
+    for (let i = 0; i < entries.length; i++) {
+        const { token, state } = entries[i];
+        const launch = getLaunchRecord(token);
+        const onChain = strings[i];
+        const name = launch?.name || onChain.name;
+        const symbol = launch?.symbol || onChain.symbol;
+        const metadataURI = launch?.metadataURI || onChain.metadataURI;
+        const price = state.migrated
+            ? poolPrices.get(token.toLowerCase()) ?? null
+            : state.priceQuotePerToken > 0n
+              ? weiStr(state.priceQuotePerToken)
+              : null;
+
+        items.push({
+            address: token,
+            name,
+            symbol,
+            metadataURI,
+            metadata: null,
+            curve: state.curve,
+            feeShare: state.feeShare,
+            poolId: state.poolId,
+            creator: launch?.creator ?? ZERO,
+            partner: launch?.partner && launch.partner !== ZERO ? launch.partner : null,
+            partnerFeeBps,
+            createdAtBlock: launch?.createdAtBlock ?? 0,
+            createdAtTimestamp: launch?.createdAtTimestamp ?? 0,
+            txHash: launch?.txHash ?? ZERO,
+            migrated: state.migrated,
+            migratedAtBlock: null,
+            migratedAtTimestamp: null,
+            priceEthPerToken: price,
+            bondingProgressPct: Number(state.bondingProgressPct),
+            version: "v2",
+        });
+    }
+
+    if (options.includeMetadata) {
+        await Promise.all(
+            items.map(async (item) => {
+                if (item.metadataURI) item.metadata = await fetchMetadata(item.metadataURI);
+            })
+        );
+    }
+
+    return items;
+}
+
 export async function getRhTokens(query: RhTokensQuery = {}): Promise<RhTokensResponse> {
-    await ensureLaunchRegistry();
+    kickRegistrySync();
     const limit = Math.min(100, Math.max(1, query.limit ?? 48));
     const offset = Math.max(0, query.offset ?? 0);
-    const partnerFeeBps = await getPartnerFeeBps();
-    const total = await getFactoryTokenTotal();
+    const [partnerFeeBps, total] = await Promise.all([getPartnerFeeBps(), getFactoryTokenTotal()]);
 
-    const collected: RhTokenListItem[] = [];
+    const matched: { token: Address; state: RhLensState; registryIndex: number }[] = [];
     let registryIndex = total - 1;
     let scanned = 0;
 
-    while (collected.length < limit + offset && registryIndex >= 0 && scanned < RH_REGISTRY_SCAN_CAP) {
-        const batchSize = Math.min(32, registryIndex + 1);
+    while (matched.length < limit + offset && registryIndex >= 0 && scanned < RH_REGISTRY_SCAN_CAP) {
+        const batchSize = Math.min(48, registryIndex + 1);
         const start = registryIndex - batchSize + 1;
         const addresses = await getFactoryTokens(start, batchSize);
 
@@ -253,43 +341,51 @@ export async function getRhTokens(query: RhTokensQuery = {}): Promise<RhTokensRe
             if (!state?.exists) continue;
             if (query.migrated === true && !state.migrated) continue;
             if (query.migrated === false && state.migrated) continue;
-            if (query.creator && getLaunchRecord(addresses[i])?.creator.toLowerCase() !== query.creator.toLowerCase()) {
+            if (
+                query.creator &&
+                getLaunchRecord(addresses[i])?.creator.toLowerCase() !== query.creator.toLowerCase()
+            ) {
                 continue;
             }
 
-            const item = await buildListItem(addresses[i], state, partnerFeeBps);
-            if (item) collected.push(item);
-            if (collected.length >= limit + offset) break;
+            matched.push({ token: addresses[i], state, registryIndex: start + i });
+            if (matched.length >= limit + offset) break;
         }
 
         registryIndex = start - 1;
         scanned += batchSize;
     }
 
+    // Factory tail order is newest-first — preserve it unless explicit timestamp sort is requested.
     if (query.migrated === true && query.orderBy === "migratedAtTimestamp") {
-        collected.sort((a, b) => (b.migratedAtTimestamp ?? 0) - (a.migratedAtTimestamp ?? 0));
+        matched.sort((a, b) => b.registryIndex - a.registryIndex);
     } else if (query.orderDirection === "asc") {
-        collected.sort((a, b) => a.createdAtTimestamp - b.createdAtTimestamp);
-    } else {
-        collected.sort((a, b) => b.createdAtTimestamp - a.createdAtTimestamp);
+        matched.sort((a, b) => a.registryIndex - b.registryIndex);
     }
 
-    const page = collected.slice(offset, offset + limit);
+    const pageEntries = matched.slice(offset, offset + limit);
+    const items = await buildListItemsBatch(pageEntries, partnerFeeBps, { includeMetadata: false });
+
     return {
-        items: page,
+        items,
         total,
         totalTruncated: total > scanned,
     };
 }
 
 export async function getRhToken(tokenAddress: string): Promise<RhTokenDetailResponse | null> {
-    await ensureLaunchRegistry();
+    kickRegistrySync();
     const token = addr(tokenAddress);
     const state = await readLensState(token);
     if (!state) return null;
 
+    await hydrateLaunchRecord(token).catch(() => undefined);
+
     const partnerFeeBps = await getPartnerFeeBps();
-    const item = await buildListItem(token, state, partnerFeeBps);
+    const item = await buildListItem(token, state, partnerFeeBps, {
+        includeMetadata: true,
+        includeMigration: true,
+    });
     if (!item) return null;
 
     const livePrice = await resolvePriceWei(token, state);
@@ -482,7 +578,7 @@ export async function getRhBalances(owner: string): Promise<RhBalancesResponse> 
 }
 
 export async function getRhPortfolio(owner: string): Promise<RhPortfolioResponse> {
-    await ensureLaunchRegistry();
+    kickRegistrySync();
     const address = addr(owner);
     const total = await getFactoryTokenTotal();
     const scanCount = Math.min(RH_PORTFOLIO_SCAN_TOKENS, total);
@@ -516,7 +612,11 @@ export async function getRhPortfolio(owner: string): Promise<RhPortfolioResponse
             const state = states[i];
             if (!state?.exists) continue;
 
-            const item = await buildListItem(batch[i], state, partnerFeeBps);
+            const item = (
+                await buildListItemsBatch([{ token: batch[i], state }], partnerFeeBps, {
+                    includeMetadata: false,
+                })
+            )[0];
             if (!item) continue;
 
             if (balance > 0n) {

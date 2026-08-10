@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
 
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from "next/server";
 import { getEthUsdPrice, getRhToken, getRhTokens } from "@/lib/rh/client";
 import { rhTokenDetailToView, rhTokenListItemToView } from "@/lib/rh/mappers";
