@@ -37,13 +37,8 @@ export async function GET(req: NextRequest) {
         );
     } catch (error) {
         console.error("[api/rh/quote] error:", error);
-        // The upstream quoter only covers bonding curves, so a graduated token
-        // reaching here is the common failure — say so instead of a bare 502.
         return NextResponse.json(
-            {
-                success: false,
-                error: "No curve quote available for this token. Graduated tokens trade through the Uniswap V4 pool.",
-            },
+            { success: false, error: "Quote unavailable for this token and amount." },
             { status: 502 }
         );
     }

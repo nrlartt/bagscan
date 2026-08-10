@@ -132,9 +132,8 @@ export async function getRhTrades(
 }
 
 /**
- * Price a curve trade. `amountWei` is ETH in for a buy, tokens in for a sell.
- * Only bonding tokens are quotable — the endpoint 500s for graduated tokens,
- * whose liquidity lives in a Uniswap V4 pool.
+ * Price a trade. `amountWei` is ETH in for a buy, tokens in for a sell.
+ * Pre-migration quotes come from the bonding curve; post-migration from the V4 quoter.
  */
 export async function getRhQuote(
     tokenAddress: string,

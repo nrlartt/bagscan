@@ -4,7 +4,7 @@
 
 ### The Robinhood Chain token terminal
 
-BagScan is a discovery, intelligence and trading terminal built for one network: **Robinhood Chain (`4663`)**. Live bonding-curve boards, flow-scored alpha, wallet portfolios with creator fee positions, wallet-signed alerts, and buy/sell that executes straight against a token's curve contract.
+BagScan is a discovery, intelligence and trading terminal built for one network: **Robinhood Chain (`4663`)**. Live bonding-curve boards, flow-scored alpha, wallet portfolios with creator fee positions, wallet-signed alerts, and buy/sell across a token's full lifecycle — bonding curve before graduation, Uniswap V4 pool after.
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.1.6-0b0b0b?style=flat-square)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2.3-0b0b0b?style=flat-square)](https://react.dev/)
@@ -23,7 +23,7 @@ BagScan is a discovery, intelligence and trading terminal built for one network:
 - **Discover** every Robinhood Chain launch across two lanes — still filling its bonding curve, or graduated into a Uniswap V4 pool.
 - **Read the flow** on an alpha board that scores indexed on-chain trades into curve momentum, volume spikes, buy/sell pressure, whale prints and crowd formation.
 - **Track a wallet** — token holdings marked at the live curve price, ETH/WETH balance, and creator fee positions with claimable and lifetime totals.
-- **Trade from the app** against a token's own bonding curve contract, with quotes from the chain indexer and a slippage bound you set.
+- **Trade from the app** — bonding-curve trades before graduation, Uniswap V4 pool swaps after, with quotes from the chain indexer and a slippage bound you set.
 - **Get alerted** when a watched token crosses a curve band, graduates, spikes on volume, moves sharply on price, or takes a whale trade.
 
 ## Product Surface
@@ -46,6 +46,7 @@ flowchart LR
     A --> E[PostgreSQL / Prisma<br/>alerts only]
     W --> R[Robinhood Chain RPC<br/>chain 4663]
     R --> C[Bonding curve contracts]
+    R --> P[UniversalRouter + V4 pool]
     A --> F[Alerts evaluator]
     F --> G[In-app inbox / Web push / Telegram]
 ```
@@ -61,6 +62,8 @@ flowchart LR
 
 ### Trading Flow
 
+**Bonding curve (pre-graduation)**
+
 ```mermaid
 sequenceDiagram
     participant User
@@ -70,16 +73,34 @@ sequenceDiagram
 
     User->>UI: Enter ETH (buy) or token amount (sell)
     UI->>API: Quote side + amountWei
-    API-->>UI: amountOutWei, fee, block
+    API-->>UI: amountOutWei, fee, block (venue: curve)
     UI->>UI: Apply slippage → minimum out
     User->>Chain: sell only — approve curve as spender
     User->>Chain: buy(minTokensOut) with ETH value<br/>or sell(tokenAmount, minEthOut)
     Chain-->>UI: Receipt, linked to the explorer
 ```
 
+**Uniswap V4 pool (post-graduation)**
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Trade widget
+    participant API as /api/rh/quote
+    participant Router as UniversalRouter
+
+    User->>UI: Enter ETH (buy) or token amount (sell)
+    UI->>API: Quote side + amountWei
+    API-->>UI: amountOutWei, block (venue: pool)
+    UI->>UI: Apply slippage → minimum out
+    User->>UI: Wrap ETH / Permit2 approvals (one-time)
+    User->>Router: execute V4_SWAP exact-in
+    Router-->>UI: Receipt; sells auto-unwrap WETH proceeds
+```
+
 The curve ABI was recovered from live mainnet transactions — none is published. `buy(uint256)` is payable and takes a minimum-tokens-out bound; `sell(uint256,uint256)` takes the token amount and a minimum-ETH-out bound. Every token deploys its own curve contract, so the target address always comes from the token payload.
 
-**Graduated tokens are not tradable in-app.** Their liquidity lives in a Uniswap V4 pool, which BagScan does not route yet, and the upstream quoter only covers curves. Those tokens link out instead of showing a quote that would not execute.
+Pool swaps use the Robinhood-modified UniversalRouter (`minHopPriceX36` field required). Stock Uniswap SDK calldata will revert — calldata is encoded manually per the Bags trade guide.
 
 ## Core Capabilities
 
@@ -170,7 +191,6 @@ Note: `explorer.robinhood.com` does not resolve — the Blockscout instance abov
 
 ## Roadmap Direction
 
-- Route graduated tokens through the Uniswap V4 pool so trading covers a token's whole life
 - Per-wallet trade history once an endpoint exists, unlocking cost basis and realized PnL
 - Creator fee claiming from the portfolio instead of linking out
 - Richer charting from indexed trades

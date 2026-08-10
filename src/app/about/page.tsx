@@ -7,7 +7,7 @@ import { RH_CHAIN_ID, RH_EXPLORER_URL, RH_RPC_URLS, RH_THEME } from "@/lib/rh/ch
 export const metadata: Metadata = {
     title: "About",
     description:
-        "BagScan is a Robinhood Chain terminal: discovery, flow intelligence, portfolios, alerts and in-app curve trading on chain 4663.",
+        "BagScan is a Robinhood Chain terminal: discovery, flow intelligence, portfolios, alerts and in-app trading on chain 4663.",
     alternates: { canonical: "/about" },
 };
 
@@ -36,7 +36,8 @@ export default function AboutPage() {
                 <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-white/50">
                     Every surface here targets one network: discovery of live launches, flow intelligence scored from
                     on-chain trades, wallet portfolios with creator fee positions, wallet-signed alerts, and trading
-                    that executes directly against a token&apos;s bonding curve.
+                    that executes from your wallet — on the bonding curve before graduation, and through the Uniswap
+                    V4 pool after.
                 </p>
             </div>
 
@@ -65,12 +66,13 @@ export default function AboutPage() {
 
                 <Section title="TRADING">
                     <p>
-                        Buys and sells execute against the token&apos;s own bonding curve contract from your connected
-                        wallet, with a slippage bound you set. Sells approve the curve first.
+                        Before graduation, buys and sells execute against the token&apos;s bonding curve contract with
+                        a slippage bound you set. Sells approve the curve first.
                     </p>
                     <p>
-                        Graduated tokens are not tradable in-app yet — their liquidity sits in a Uniswap V4 pool, which
-                        BagScan does not route. Those link out instead of pretending to quote.
+                        After graduation, trades route through the Robinhood UniversalRouter and Uniswap V4 pool.
+                        Buys wrap ETH to WETH; sells unwrap proceeds back to native ETH when possible. Quotes cover
+                        both phases via the chain indexer.
                     </p>
                 </Section>
 

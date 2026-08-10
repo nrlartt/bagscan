@@ -116,13 +116,14 @@ export type RhTradeSide = "buy" | "sell";
 
 export interface RhQuoteResponse {
     side: RhTradeSide;
-    /** "curve" while bonding. Pool quotes are not served by this endpoint. */
+    /** "curve" while bonding, "pool" once graduated to Uniswap V4. */
     venue: string;
     /** Input amount in wei: ETH for a buy, tokens for a sell. */
     amountInWei: string;
     /** Expected output in wei: tokens for a buy, ETH for a sell. */
     amountOutWei: string;
-    feeWei: string;
+    /** Null when the venue does not report a fee (pool quotes). */
+    feeWei: string | null;
     asOfBlock: number;
 }
 
