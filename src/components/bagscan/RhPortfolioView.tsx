@@ -248,8 +248,7 @@ export function RhPortfolioView({ walletParam }: { walletParam: string }) {
                                 <p className="mt-1.5 text-[10px] tracking-[0.1em] text-[#ff5f5f]/80">{ownerError}</p>
                             ) : (
                                 <p className="mt-1.5 text-[10px] leading-relaxed text-white/30">
-                                    Robinhood Chain is EVM — Solana wallet connection does not apply here, so portfolios
-                                    are looked up by address.
+                                    Portfolios are looked up by Robinhood Chain address — paste any 0x wallet above.
                                 </p>
                             )}
                         </div>

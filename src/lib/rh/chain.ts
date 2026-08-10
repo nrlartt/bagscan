@@ -1,5 +1,5 @@
 /**
- * Robinhood Chain — the only network BagScan targets.
+ * Robinhood Chain — the only network this app targets.
  *
  * `explorer.robinhood.com` does not resolve; the working explorers are the
  * Blockscout instance and hoodscan.ai, verified against chainid.network's

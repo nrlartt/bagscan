@@ -118,8 +118,8 @@ function SidebarNavBody({ onNavigate }: { onNavigate?: () => void }) {
                     <RhLogo size={13} />
                 </div>
                 <p className="mt-2 text-[10px] leading-snug text-white/35">
-                    Every launch accrues fees to its creator fee-share contract. Track and claim them from your
-                    portfolio.
+                    Every launch accrues fees to its creator fee-share contract. Track claimable and lifetime totals
+                    from your portfolio.
                 </p>
                 <Link
                     href="/portfolio"

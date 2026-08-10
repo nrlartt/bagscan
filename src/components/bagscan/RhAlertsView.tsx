@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAccount, useConnect, useSignMessage } from "wagmi";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -44,7 +44,12 @@ interface NotificationRow {
 interface AlertsPayload {
     signedIn: boolean;
     wallet?: string;
-    preferences?: { inAppEnabled: boolean; pushEnabled: boolean };
+    preferences?: {
+        inAppEnabled: boolean;
+        pushEnabled: boolean;
+        telegramEnabled: boolean;
+        telegramChatId: string | null;
+    };
     watches?: WatchRow[];
     notifications?: NotificationRow[];
     unreadCount?: number;
@@ -55,6 +60,15 @@ const SEVERITY_STYLE: Record<string, string> = {
     hot: "border-[#00C805]/25 bg-[#00C805]/[0.05] text-[#00C805]/85",
     info: "border-white/10 bg-white/[0.03] text-white/60",
 };
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = window.atob(base64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+    return out;
+}
 
 async function loadAlerts(): Promise<AlertsPayload> {
     const res = await fetch("/api/alerts", { cache: "no-store" });
@@ -154,7 +168,70 @@ export function RhAlertsView() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alerts"] }),
     });
 
+    const [telegramChatId, setTelegramChatId] = useState("");
+    const [prefsError, setPrefsError] = useState<string | null>(null);
+
+    const savePreferences = useMutation({
+        mutationFn: async (patch: {
+            pushEnabled?: boolean;
+            telegramEnabled?: boolean;
+            telegramChatId?: string | null;
+        }) => {
+            const res = await fetch("/api/alerts/preferences", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(patch),
+            });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error ?? "Failed to save preferences");
+        },
+        onSuccess: () => {
+            setPrefsError(null);
+            void queryClient.invalidateQueries({ queryKey: ["alerts"] });
+        },
+        onError: (err: Error) => setPrefsError(err.message),
+    });
+
+    const enablePush = useMutation({
+        mutationFn: async () => {
+            const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+            if (!vapid) throw new Error("Push is not configured on this deployment");
+
+            if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+                throw new Error("This browser does not support push notifications");
+            }
+
+            const permission = await Notification.requestPermission();
+            if (permission !== "granted") throw new Error("Notification permission denied");
+
+            const reg = await navigator.serviceWorker.register("/bagscan-alerts-sw.js");
+            await reg.update().catch(() => undefined);
+
+            const subscription = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(vapid) as BufferSource,
+            });
+
+            const res = await fetch("/api/alerts/push-subscription", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ subscription: subscription.toJSON() }),
+            });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error ?? "Failed to register push");
+
+            await savePreferences.mutateAsync({ pushEnabled: true });
+        },
+        onError: (err: Error) => setPrefsError(err.message),
+    });
+
     const tokenValid = isEvmAddress(tokenInput.trim());
+    const prefs = data?.preferences;
+    const pushConfigured = Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
+
+    useEffect(() => {
+        if (prefs?.telegramChatId) setTelegramChatId(prefs.telegramChatId);
+    }, [prefs?.telegramChatId]);
 
     return (
         <div className="mx-auto w-full min-w-0 max-w-[1100px] px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -289,6 +366,81 @@ export function RhAlertsView() {
                                     ))
                                 )}
                             </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                            <p className="mb-3 text-[10px] tracking-[0.16em] text-white/35">DELIVERY</p>
+                            <div className="space-y-3">
+                                <label className="flex items-center justify-between gap-3">
+                                    <span className="text-[10px] text-white/55">In-app inbox</span>
+                                    <span className="text-[9px] text-[#00C805]">ON</span>
+                                </label>
+
+                                <div className="flex items-center justify-between gap-3">
+                                    <span className="text-[10px] text-white/55">Browser push</span>
+                                    {prefs?.pushEnabled ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => savePreferences.mutate({ pushEnabled: false })}
+                                            className="text-[9px] tracking-wider text-white/35 hover:text-[#ff8a8a]"
+                                        >
+                                            DISABLE
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => enablePush.mutate()}
+                                            disabled={!pushConfigured || enablePush.isPending}
+                                            className="rounded-lg px-2 py-1 text-[9px] tracking-wider text-black disabled:opacity-30"
+                                            style={{ backgroundColor: RH_THEME.green }}
+                                        >
+                                            {enablePush.isPending ? "…" : "ENABLE"}
+                                        </button>
+                                    )}
+                                </div>
+                                {!pushConfigured ? (
+                                    <p className="text-[9px] text-white/25">Push requires VAPID keys on the server.</p>
+                                ) : null}
+
+                                <div className="space-y-2 border-t border-white/[0.06] pt-3">
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={prefs?.telegramEnabled ?? false}
+                                            onChange={(e) =>
+                                                savePreferences.mutate({
+                                                    telegramEnabled: e.target.checked,
+                                                    telegramChatId: telegramChatId.trim() || null,
+                                                })
+                                            }
+                                            className="rounded border-white/20"
+                                        />
+                                        <span className="text-[10px] text-white/55">Telegram</span>
+                                    </label>
+                                    <input
+                                        value={telegramChatId}
+                                        onChange={(e) => setTelegramChatId(e.target.value)}
+                                        placeholder="Numeric chat id"
+                                        className="w-full rounded-xl border border-white/[0.09] bg-black/50 px-3 py-2 font-mono text-[11px] text-white/90 placeholder:text-white/25 focus:border-[#00C805]/45 focus:outline-none"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            savePreferences.mutate({
+                                                telegramEnabled: prefs?.telegramEnabled ?? false,
+                                                telegramChatId: telegramChatId.trim() || null,
+                                            })
+                                        }
+                                        disabled={savePreferences.isPending}
+                                        className="w-full rounded-xl border border-white/10 py-2 text-[9px] tracking-wider text-white/45 hover:border-[#00C805]/30 hover:text-[#00C805]"
+                                    >
+                                        SAVE TELEGRAM ID
+                                    </button>
+                                </div>
+                            </div>
+                            {prefsError ? (
+                                <p className="mt-2 text-[10px] text-[#ff8a8a]">{prefsError}</p>
+                            ) : null}
                         </div>
 
                         <p className="px-1 text-[9px] leading-relaxed text-white/25">

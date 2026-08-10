@@ -4,7 +4,7 @@ import { parseRhFixed18, parseWeiToEth } from "./mappers";
 const RH_TOTAL_SUPPLY = 1_000_000_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /**
- * Robinhood Chain flow is far thinner than Solana's: of the newest 100 bonding
+ * Robinhood Chain trade flow is thin early on: of the newest 100 bonding
  * tokens only a handful have any curve progress, and graduations land days
  * apart. Signals are therefore built on a 7-day window, with the 24h slice kept
  * separately as the "is this live right now" indicator.

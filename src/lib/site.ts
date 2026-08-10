@@ -2,7 +2,7 @@
 export const SITE_URL =
     process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") || "https://bagscan.app";
 
-export const SITE_NAME = "BagScan";
+export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME?.trim() || "BagScan";
 
 export const SITE_TITLE = "BagScan — Robinhood Chain Token Terminal";
 

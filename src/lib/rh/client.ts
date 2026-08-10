@@ -11,14 +11,10 @@ import type {
 } from "./api-types";
 
 /**
- * Upstream Robinhood Chain indexer, supplied entirely by configuration — no
- * provider host is baked into this codebase.
- *
- * `BAGS_*` are legacy env names kept only so an existing deployment keeps
- * running; once `.env` uses `RH_INDEXER_*`, they can be deleted.
+ * Upstream Robinhood Chain indexer, supplied entirely by configuration.
  */
 const BASE = () => {
-    const url = process.env.RH_INDEXER_BASE_URL || process.env.BAGS_API_BASE_URL;
+    const url = process.env.RH_INDEXER_BASE_URL;
     if (!url) {
         throw new Error("RH_INDEXER_BASE_URL is not configured");
     }
@@ -29,7 +25,7 @@ function headers(): HeadersInit {
     const h: Record<string, string> = {
         Accept: "application/json",
     };
-    const key = process.env.RH_INDEXER_API_KEY || process.env.BAGS_API_KEY;
+    const key = process.env.RH_INDEXER_API_KEY;
     if (key) h["x-api-key"] = key;
     return h;
 }

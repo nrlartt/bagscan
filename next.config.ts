@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
 /**
- * Baseline hardening for the public deployment. No CSP here on purpose: the
- * wallet-adapter modals and injected wallet providers need inline styles/scripts,
- * so a policy has to be introduced deliberately and tested end-to-end.
+ * Baseline hardening for the public deployment. No CSP here on purpose: wagmi
+ * wallet connectors and injected providers need inline styles/scripts, so a
+ * policy has to be introduced deliberately and tested end-to-end.
  */
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },

@@ -292,8 +292,8 @@ export function RhAlphaBoard() {
                         </h1>
                         <p className="mt-1.5 max-w-2xl text-[11px] leading-relaxed text-white/45">
                             On-chain trade flow scored into signals: curve momentum, volume, buy/sell pressure, whale
-                            prints and crowd formation. Windowed over 7 days — Robinhood Chain flow is thinner than
-                            Solana&apos;s, so a 24h view would read empty.
+                            prints and crowd formation. Windowed over 7 days — early-chain flow is thin, so a 24h
+                            view would read empty.
                         </p>
                     </div>
 

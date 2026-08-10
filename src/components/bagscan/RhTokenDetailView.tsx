@@ -22,6 +22,7 @@ import type { RhTokenState } from "@/lib/rh/api-types";
 import type { RhTokenView } from "@/lib/rh/token";
 import { parseRhFixed18, parseWeiToEth } from "@/lib/rh/mappers";
 import { RhTradeWidget } from "./RhTradeWidget";
+import { RhTradesFeed } from "./RhTradesFeed";
 
 interface RhTokenDetailResponse {
     success: boolean;
@@ -209,6 +210,8 @@ export function RhTokenDetailView({ address }: { address: string }) {
                             </p>
                         </DetailSection>
                     ) : null}
+
+                    <RhTradesFeed address={address} />
 
                     <DetailSection title="CONTRACTS">
                         <dl className="grid gap-3 sm:grid-cols-2">
