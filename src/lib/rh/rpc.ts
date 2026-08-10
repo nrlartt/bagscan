@@ -22,11 +22,11 @@ const configured = rhRpcUrl();
 const transports = [
     configured,
     ...RH_RPC_URLS.filter((url) => url !== configured),
-].map((url) => http(url, { batch: true, timeout: 20_000 }));
+].map((url) => http(url, { timeout: 25_000 }));
 
-/** Server-side Robinhood Chain read client with RPC failover + multicall batching. */
+/** Server-side Robinhood Chain read client with RPC failover. */
 export const rhPublicClient = createPublicClient({
     chain: robinhoodChain,
-    transport: fallback(transports, { rank: false, retryCount: 1 }),
-    batch: { multicall: true },
+    transport: fallback(transports, { rank: false, retryCount: 2 }),
+    batch: { multicall: { batchSize: 32, wait: 16 } },
 });

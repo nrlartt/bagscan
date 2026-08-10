@@ -27,8 +27,8 @@ interface MigrationRecord {
 
 /** Only scan this many blocks synchronously on cold start — enough for recent launches. */
 const BOOTSTRAP_BLOCK_WINDOW = 120_000n;
-/** Background sync chunk size. */
-const SYNC_CHUNK = 20_000n;
+/** Background sync chunk size — keep small; some public RPCs reject wide eth_getLogs ranges. */
+const SYNC_CHUNK = 5_000n;
 /** Max chunks per background tick so we don't starve request handlers. */
 const SYNC_CHUNKS_PER_TICK = 2;
 

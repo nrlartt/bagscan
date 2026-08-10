@@ -223,11 +223,12 @@ export function RhDiscoverHome() {
 
     const featuredParams = "page=1&pageSize=12&migrated=false";
 
-    const { data, isLoading, error, refetch } = useQuery<RhTokensResponse>({
+    const { data, isLoading, isError, error, refetch } = useQuery<RhTokensResponse>({
         queryKey: ["rh-tokens", params],
         queryFn: () => fetchRhTokens(params),
         refetchInterval: 20_000,
         staleTime: 10_000,
+        retry: 1,
     });
 
     const { data: featuredData } = useQuery<RhTokensResponse>({
@@ -236,6 +237,7 @@ export function RhDiscoverHome() {
         enabled: !isSearching,
         staleTime: 15_000,
         refetchInterval: 25_000,
+        retry: 1,
     });
 
     const tokens = data?.data ?? EMPTY;
@@ -339,8 +341,11 @@ export function RhDiscoverHome() {
                 </div>
             </div>
 
-            {error ? (
-                <ErrorState error="Failed to load Robinhood tokens" onRetry={() => refetch()} />
+            {isError ? (
+                <ErrorState
+                    error={error instanceof Error ? error.message : "Failed to load Robinhood tokens"}
+                    onRetry={() => refetch()}
+                />
             ) : isLoading ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {Array.from({ length: 8 }).map((_, i) => (

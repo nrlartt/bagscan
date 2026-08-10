@@ -172,6 +172,36 @@ async function readLensState(token: Address): Promise<RhLensState | null> {
     return state.exists ? state : null;
 }
 
+/** Batch lens reads — falls back to per-token calls if a multicall batch fails. */
+async function readTokenStatesBatch(tokens: Address[]): Promise<(RhLensState | null)[]> {
+    if (tokens.length === 0) return [];
+
+    const lens = ROBINHOOD_LAUNCHPAD.lens as Address;
+    const chunkSize = 12;
+    const out: (RhLensState | null)[] = [];
+
+    for (let i = 0; i < tokens.length; i += chunkSize) {
+        const chunk = tokens.slice(i, i + chunkSize);
+        try {
+            const states = await rhPublicClient.readContract({
+                address: lens,
+                abi: RH_LENS_ABI,
+                functionName: "getTokenStates",
+                args: [chunk],
+            });
+            for (const state of states) {
+                out.push(state?.exists ? state : null);
+            }
+        } catch (err) {
+            console.warn("[rh/onchain] getTokenStates batch failed, falling back:", err);
+            const singles = await Promise.all(chunk.map((token) => readLensState(token)));
+            out.push(...singles);
+        }
+    }
+
+    return out;
+}
+
 interface BuildListOptions {
     includeMetadata?: boolean;
     includeMigration?: boolean;
@@ -314,10 +344,19 @@ async function buildListItemsBatch(
     return items;
 }
 
+const tokensListCache = new Map<string, { ts: number; data: RhTokensResponse }>();
+const TOKENS_LIST_CACHE_TTL_MS = 30_000;
+
 export async function getRhTokens(query: RhTokensQuery = {}): Promise<RhTokensResponse> {
-    kickRegistrySync();
     const limit = Math.min(100, Math.max(1, query.limit ?? 48));
     const offset = Math.max(0, query.offset ?? 0);
+    const cacheKey = `${limit}|${offset}|${query.migrated ?? "all"}|${query.creator ?? ""}|${query.orderBy ?? ""}|${query.orderDirection ?? ""}`;
+    const cached = tokensListCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < TOKENS_LIST_CACHE_TTL_MS) {
+        return cached.data;
+    }
+
+    kickRegistrySync();
     const [partnerFeeBps, total] = await Promise.all([getPartnerFeeBps(), getFactoryTokenTotal()]);
 
     const matched: { token: Address; state: RhLensState; registryIndex: number }[] = [];
@@ -325,20 +364,15 @@ export async function getRhTokens(query: RhTokensQuery = {}): Promise<RhTokensRe
     let scanned = 0;
 
     while (matched.length < limit + offset && registryIndex >= 0 && scanned < RH_REGISTRY_SCAN_CAP) {
-        const batchSize = Math.min(48, registryIndex + 1);
+        const batchSize = Math.min(24, registryIndex + 1);
         const start = registryIndex - batchSize + 1;
         const addresses = await getFactoryTokens(start, batchSize);
 
-        const states = await rhPublicClient.readContract({
-            address: ROBINHOOD_LAUNCHPAD.lens as Address,
-            abi: RH_LENS_ABI,
-            functionName: "getTokenStates",
-            args: [addresses],
-        });
+        const states = await readTokenStatesBatch(addresses);
 
         for (let i = addresses.length - 1; i >= 0; i--) {
             const state = states[i];
-            if (!state?.exists) continue;
+            if (!state) continue;
             if (query.migrated === true && !state.migrated) continue;
             if (query.migrated === false && state.migrated) continue;
             if (
@@ -366,11 +400,13 @@ export async function getRhTokens(query: RhTokensQuery = {}): Promise<RhTokensRe
     const pageEntries = matched.slice(offset, offset + limit);
     const items = await buildListItemsBatch(pageEntries, partnerFeeBps, { includeMetadata: false });
 
-    return {
+    const result = {
         items,
         total,
         totalTruncated: total > scanned,
     };
+    tokensListCache.set(cacheKey, { ts: Date.now(), data: result });
+    return result;
 }
 
 export async function getRhToken(tokenAddress: string): Promise<RhTokenDetailResponse | null> {
@@ -589,12 +625,7 @@ export async function getRhPortfolio(owner: string): Promise<RhPortfolioResponse
 
     for (let start = total - scanCount; start < total; start += 32) {
         const batch = await getFactoryTokens(start, Math.min(32, total - start));
-        const states = await rhPublicClient.readContract({
-            address: ROBINHOOD_LAUNCHPAD.lens as Address,
-            abi: RH_LENS_ABI,
-            functionName: "getTokenStates",
-            args: [batch],
-        });
+        const states = await readTokenStatesBatch(batch);
 
         const balances = await Promise.all(
             batch.map((token) =>
@@ -610,7 +641,7 @@ export async function getRhPortfolio(owner: string): Promise<RhPortfolioResponse
         for (let i = 0; i < batch.length; i++) {
             const balance = balances[i];
             const state = states[i];
-            if (!state?.exists) continue;
+            if (!state) continue;
 
             const item = (
                 await buildListItemsBatch([{ token: batch[i], state }], partnerFeeBps, {
