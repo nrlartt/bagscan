@@ -1,0 +1,16 @@
+# Netlify build settings live here rather than in the dashboard, so every site
+# connected to this repo builds identically and the config is reviewable.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Next 16 requires Node >= 20.9. Netlify defaults older sites to Node 18,
+  # which fails the install/build within about a minute.
+  NODE_VERSION = "22"
+  NPM_FLAGS = "--no-audit --no-fund"
+
+# Serves the App Router, API routes and image optimization on Netlify.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
