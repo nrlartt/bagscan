@@ -2,53 +2,35 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-    Home,
-    Zap,
-    HelpCircle,
-    Wallet,
-    Menu,
-    X,
-    Search,
-    ExternalLink,
-} from "lucide-react";
+import { Home, Zap, HelpCircle, Wallet, Menu, X, Search, ExternalLink, Bell } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { BagLogo } from "./BagLogo";
-import { WalletPortfolioButton } from "./WalletPortfolioButton";
-import { NetworkSelector } from "./NetworkSelector";
-import { useNetwork } from "./NetworkContext";
-import { RH_THEME } from "./NetworkIcons";
+import { RhLogo } from "./RhLogo";
+import { WalletButton } from "./WalletButton";
 import { Footer } from "./Footer";
 import { useDiscoverySearch } from "./DiscoverySearchContext";
+import { RH_CHAIN_ID, RH_EXPLORER_URL, RH_THEME } from "@/lib/rh/chain";
 
-/** Primary teal accent for BagScan chrome (Bags-adjacent palette). */
-const ACCENT_TEAL = "#20e3b2";
-
-/** Every entry renders a network-aware surface, so no Solana-only markers. */
 const SIDEBAR_LINKS = [
-    { href: "/", label: "HOME", icon: Home },
+    { href: "/", label: "DISCOVER", icon: Home },
     { href: "/alpha", label: "ALPHA", icon: Zap },
     { href: "/portfolio", label: "PORTFOLIO", icon: Wallet },
+    { href: "/alerts", label: "ALERTS", icon: Bell },
     { href: "/about", label: "ABOUT", icon: HelpCircle },
 ] as const;
-
-const SCAN_URL = "https://bags.fm/BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
 
 function HeaderSearch() {
     const pathname = usePathname();
     const { search, setSearch } = useDiscoverySearch();
-    const { network } = useNetwork();
     const onHome = pathname === "/";
-    const placeholder =
-        network === "robinhood" ? "Search Robinhood tokens or 0x address..." : "Search for coins...";
+    const placeholder = "Search Robinhood tokens or paste a 0x address…";
 
     if (!onHome) {
         return (
             <div className="mx-0 flex min-w-0 max-w-xl flex-1 items-center justify-center sm:mx-4 lg:mx-8">
                 <Link
                     href="/"
-                    className="w-full rounded-lg border border-[#00ff41]/15 bg-[#1a1d21]/90 py-2.5 text-center text-[10px] tracking-[0.12em] text-[#00ff41]/35 transition-colors hover:border-[#00ff41]/25 hover:text-[#00ff41]/55"
+                    className="w-full rounded-lg border border-[#00C805]/15 bg-[#0e130e]/90 py-2.5 text-center text-[10px] tracking-[0.12em] text-[#00C805]/35 transition-colors hover:border-[#00C805]/25 hover:text-[#00C805]/60"
                 >
                     SEARCH ON DISCOVER →
                 </Link>
@@ -58,7 +40,7 @@ function HeaderSearch() {
 
     return (
         <div className="relative mx-0 w-full min-w-0 max-w-none sm:mx-4 sm:max-w-xl lg:mx-8">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#00ff41]/25" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#00C805]/25" />
             <input
                 type="search"
                 value={search}
@@ -66,7 +48,7 @@ function HeaderSearch() {
                 placeholder={placeholder}
                 aria-label={placeholder}
                 autoComplete="off"
-                className="w-full rounded-lg border border-[#2a2f36] bg-[#1a1d21] py-2 pl-10 pr-10 text-[11px] text-white/90 placeholder:text-white/25 focus:border-[#20e3b2]/50 focus:outline-none focus:ring-1 focus:ring-[#20e3b2]/30 sm:py-2.5 sm:text-[12px]"
+                className="w-full rounded-lg border border-white/[0.08] bg-[#0e130e] py-2 pl-10 pr-10 text-[11px] text-white/90 placeholder:text-white/25 focus:border-[#00C805]/50 focus:outline-none focus:ring-1 focus:ring-[#00C805]/30 sm:py-2.5 sm:text-[12px]"
             />
             {search ? (
                 <button
@@ -84,24 +66,23 @@ function HeaderSearch() {
 
 function SidebarNavBody({ onNavigate }: { onNavigate?: () => void }) {
     const pathname = usePathname();
-    const { network, networkConfig } = useNetwork();
-    const isRobinhood = network === "robinhood";
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <Link
-                href="/"
-                onClick={onNavigate}
-                className="mb-6 flex items-center gap-2.5 px-1"
-            >
+            <Link href="/" onClick={onNavigate} className="mb-6 flex items-center gap-2.5 px-1">
                 <span
                     className="flex h-9 w-9 items-center justify-center rounded-full"
-                    style={{ backgroundColor: `${ACCENT_TEAL}22`, boxShadow: `0 0 16px ${ACCENT_TEAL}33` }}
+                    style={{ backgroundColor: RH_THEME.greenDim, boxShadow: `0 0 16px ${RH_THEME.greenGlow}` }}
                 >
-                    <BagLogo size={26} />
+                    <RhLogo size={20} />
                 </span>
-                <span className="text-[15px] font-medium tracking-tight text-white" style={{ color: ACCENT_TEAL }}>
-                    BagScan
+                <span className="flex flex-col leading-none">
+                    <span className="text-[15px] font-medium tracking-tight" style={{ color: RH_THEME.green }}>
+                        BagScan
+                    </span>
+                    <span className="mt-0.5 text-[8px] tracking-[0.16em] text-white/30">
+                        ROBINHOOD CHAIN · {RH_CHAIN_ID}
+                    </span>
                 </span>
             </Link>
 
@@ -113,16 +94,16 @@ function SidebarNavBody({ onNavigate }: { onNavigate?: () => void }) {
                             : pathname === item.href || pathname.startsWith(`${item.href}/`);
                     return (
                         <Link
-                            key={`${item.href}-${item.label}`}
+                            key={item.href}
                             href={item.href}
                             onClick={onNavigate}
                             className={cn(
                                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-[11px] tracking-[0.14em] transition-all duration-200 motion-safe:hover:translate-x-0.5",
                                 active
-                                    ? "bg-white/[0.06] text-[#20e3b2]"
+                                    ? "bg-white/[0.06] text-[#00C805]"
                                     : "text-white/45 hover:bg-white/[0.04] hover:text-white/75"
                             )}
-                            style={active ? { textShadow: `0 0 12px ${ACCENT_TEAL}44` } : undefined}
+                            style={active ? { textShadow: `0 0 12px ${RH_THEME.greenGlow}` } : undefined}
                         >
                             <item.icon className="h-4 w-4 shrink-0 opacity-80" />
                             <span className="flex-1">{item.label}</span>
@@ -131,67 +112,33 @@ function SidebarNavBody({ onNavigate }: { onNavigate?: () => void }) {
                 })}
             </nav>
 
-            {isRobinhood ? (
-                <a
-                    href={networkConfig.launchUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={onNavigate}
-                    className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-center text-[11px] font-semibold tracking-[0.2em] text-black transition-opacity hover:opacity-90"
-                    style={{
-                        backgroundColor: RH_THEME.green,
-                        boxShadow: `0 0 24px ${RH_THEME.green}55`,
-                    }}
-                >
-                    CREATE
-                    <ExternalLink className="h-3 w-3" />
-                </a>
-            ) : (
-                <Link
-                    href="/launch"
-                    onClick={onNavigate}
-                    className="mt-6 block w-full rounded-xl py-3 text-center text-[11px] font-semibold tracking-[0.2em] text-black transition-opacity hover:opacity-90"
-                    style={{
-                        backgroundColor: ACCENT_TEAL,
-                        boxShadow: `0 0 24px ${ACCENT_TEAL}55`,
-                    }}
-                >
-                    CREATE
-                </Link>
-            )}
-
-            <div className="mt-5 rounded-lg border border-white/10 bg-[#14181c] p-3">
+            <div className="mt-6 rounded-lg border border-white/10 bg-[#0e130e] p-3">
                 <div className="flex items-center justify-between gap-2">
                     <span className="text-[9px] tracking-[0.12em] text-white/40">CREATOR FEES</span>
-                    <span
-                        className="rounded px-1.5 py-0.5 text-[8px] tracking-wider text-black"
-                        style={{ backgroundColor: ACCENT_TEAL }}
-                    >
-                        BAGS
-                    </span>
+                    <RhLogo size={13} />
                 </div>
                 <p className="mt-2 text-[10px] leading-snug text-white/35">
-                    Earn when users trade your launch. Share routes through BagScan.
+                    Every launch accrues fees to its creator fee-share contract. Track and claim them from your
+                    portfolio.
                 </p>
                 <Link
-                    href={SCAN_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="/portfolio"
+                    onClick={onNavigate}
                     className="mt-2 inline-flex text-[9px] tracking-[0.14em] hover:underline"
-                    style={{ color: ACCENT_TEAL }}
+                    style={{ color: RH_THEME.green }}
                 >
-                    $SCAN PARTNER
+                    VIEW FEE POSITIONS
                 </Link>
             </div>
 
             <a
-                href="https://bags.fm"
+                href={RH_EXPLORER_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={onNavigate}
-                className="mt-6 flex items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#1a1d21] py-2.5 text-[10px] tracking-[0.16em] text-white/50 transition-colors hover:border-[#20e3b2]/35 hover:text-[#20e3b2] lg:mt-auto"
+                className="mt-6 flex items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#0e130e] py-2.5 text-[10px] tracking-[0.16em] text-white/50 transition-colors hover:border-[#00C805]/35 hover:text-[#00C805] lg:mt-auto"
             >
-                TRY BAGS
+                CHAIN EXPLORER
                 <ExternalLink className="h-3 w-3" />
             </a>
         </div>
@@ -199,7 +146,6 @@ function SidebarNavBody({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function BagScanShell({ children }: { children: ReactNode }) {
-    const pathname = usePathname();
     const [mobileMenu, setMobileMenu] = useState(false);
 
     useEffect(() => {
@@ -212,9 +158,9 @@ export function BagScanShell({ children }: { children: ReactNode }) {
     }, [mobileMenu]);
 
     return (
-        <div className="flex min-h-screen min-w-0 overflow-x-clip bg-[#0b0e11] text-white/90">
+        <div className="flex min-h-screen min-w-0 overflow-x-clip bg-[#070907] text-white/90">
             {/* Desktop sidebar */}
-            <aside className="fixed inset-y-0 left-0 z-40 hidden w-[240px] flex-col border-r border-white/[0.08] bg-[#0b0e11] px-4 pb-6 pt-[max(1.25rem,env(safe-area-inset-top))] lg:flex">
+            <aside className="fixed inset-y-0 left-0 z-40 hidden w-[240px] flex-col border-r border-white/[0.08] bg-[#070907] px-4 pb-6 pt-[max(1.25rem,env(safe-area-inset-top))] lg:flex">
                 <SidebarNavBody />
             </aside>
 
@@ -237,7 +183,7 @@ export function BagScanShell({ children }: { children: ReactNode }) {
                 />
                 <aside
                     className={cn(
-                        "absolute inset-y-0 left-0 flex w-[min(86vw,280px)] flex-col border-r border-white/10 bg-[#0b0e11] px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] transition-transform duration-200",
+                        "absolute inset-y-0 left-0 flex w-[min(86vw,280px)] flex-col border-r border-white/10 bg-[#070907] px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] transition-transform duration-200",
                         mobileMenu ? "translate-x-0" : "-translate-x-full"
                     )}
                 >
@@ -258,8 +204,8 @@ export function BagScanShell({ children }: { children: ReactNode }) {
             </div>
 
             <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-[240px]">
-                <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0b0e11]/95 pt-[env(safe-area-inset-top)] backdrop-blur-md">
-                    <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2 px-2 py-2 sm:flex-nowrap sm:gap-2 sm:px-4 sm:py-2">
+                <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#070907]/95 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+                    <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2 px-2 py-2 sm:flex-nowrap sm:gap-2 sm:px-4">
                         <button
                             type="button"
                             className="order-1 shrink-0 rounded-lg p-2 text-white/60 hover:bg-white/5 lg:hidden"
@@ -270,8 +216,7 @@ export function BagScanShell({ children }: { children: ReactNode }) {
                         </button>
 
                         <div className="order-2 ml-auto flex shrink-0 items-center gap-2 sm:order-3 sm:ml-0">
-                            <NetworkSelector />
-                            <WalletPortfolioButton key={pathname} />
+                            <WalletButton />
                         </div>
 
                         <div className="order-3 w-full min-w-0 basis-full sm:order-2 sm:basis-auto sm:flex-1 sm:px-0">

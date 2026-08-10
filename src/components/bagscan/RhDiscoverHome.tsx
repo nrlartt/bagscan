@@ -3,39 +3,27 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-    LayoutGrid,
-    List,
-    ExternalLink,
-    Rocket,
-    Sparkles,
-    TrendingUp,
-    SearchX,
-    ArrowUpRight,
-} from "lucide-react";
+import { LayoutGrid, List, Rocket, TrendingUp, SearchX, ArrowUpRight } from "lucide-react";
 import {
     cn,
     formatCurrency,
     formatCompactDecimal,
     formatTokenPrice,
     shortenAddress,
-    getValuationMetric,
 } from "@/lib/utils";
 import { useDiscoverySearch } from "./DiscoverySearchContext";
 import { RemoteFillImage, REMOTE_IMAGE_SIZES_GRID } from "./RemoteFillImage";
 import { ErrorState } from "./States";
 import { TokenCardSkeleton } from "./Skeletons";
-import { BAGSCAN_NETWORKS } from "@/lib/networks";
-import { NetworkIcon, RH_THEME } from "./NetworkIcons";
+import { RhLogo } from "./RhLogo";
 import { RhBondingBar, rhFormatPct, rhClampPct, rhTimeAgoShort } from "./RhUi";
-import type { NormalizedToken } from "@/lib/bags/types";
-import { parseRhFixed18 } from "@/lib/bags/rh-mappers";
+import type { RhTokenView } from "@/lib/rh/token";
 
 type RhLane = "new" | "graduated";
 
 interface RhTokensResponse {
     success: boolean;
-    data: NormalizedToken[];
+    data: RhTokenView[];
     meta: {
         total: number;
         page: number;
@@ -46,7 +34,7 @@ interface RhTokensResponse {
     };
 }
 
-const EMPTY: NormalizedToken[] = [];
+const EMPTY: RhTokenView[] = [];
 
 async function fetchRhTokens(params: string): Promise<RhTokensResponse> {
     const res = await fetch(`/api/rh/tokens?${params}`);
@@ -56,7 +44,7 @@ async function fetchRhTokens(params: string): Promise<RhTokensResponse> {
     return json;
 }
 
-function RhFeaturedStrip({ tokens }: { tokens: NormalizedToken[] }) {
+function RhFeaturedStrip({ tokens }: { tokens: RhTokenView[] }) {
     if (tokens.length === 0) return null;
 
     return (
@@ -70,11 +58,11 @@ function RhFeaturedStrip({ tokens }: { tokens: NormalizedToken[] }) {
             </div>
             <div className="flex gap-3 overflow-x-auto overscroll-x-contain px-3 py-3 [-webkit-overflow-scrolling:touch] scrollbar-thin">
                 {tokens.slice(0, 10).map((token, i) => {
-                    const mcap = token.marketCap ?? token.fdvUsd;
+                    const fdv = token.fdvUsd;
                     return (
                         <Link
-                            key={token.tokenMint}
-                            href={`/token/${token.tokenMint}`}
+                            key={token.address}
+                            href={`/token/${token.address}`}
                             className="group flex min-w-[210px] shrink-0 items-center gap-3 rounded-xl border border-white/[0.07] bg-black/40 px-3 py-2.5 transition-all hover:border-[#00C805]/35 hover:bg-[#00C805]/[0.04]"
                         >
                             <span className="min-w-[1.1rem] text-center text-xs font-bold tabular-nums text-white/40 group-hover:text-[#00C805]">
@@ -95,11 +83,11 @@ function RhFeaturedStrip({ tokens }: { tokens: NormalizedToken[] }) {
                             </div>
                             <div className="min-w-0 flex-1">
                                 <p className="truncate text-xs font-semibold text-white/90">
-                                    {token.symbol ? `$${token.symbol}` : shortenAddress(token.tokenMint)}
+                                    {token.symbol ? `$${token.symbol}` : shortenAddress(token.address)}
                                 </p>
                                 <p className="truncate text-[10px] text-white/38">
                                     {token.bondingProgressPct != null ? `${rhFormatPct(token.bondingProgressPct)} · ` : ""}
-                                    {mcap != null && mcap > 0 ? formatCurrency(mcap) : "—"}
+                                    {fdv != null && fdv > 0 ? formatCurrency(fdv) : "—"}
                                 </p>
                             </div>
                             <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-white/20 group-hover:text-[#00C805]/70" />
@@ -111,15 +99,14 @@ function RhFeaturedStrip({ tokens }: { tokens: NormalizedToken[] }) {
     );
 }
 
-function RhTokenCard({ token, index }: { token: NormalizedToken; index: number }) {
-    const priceEth = parseRhFixed18(token.priceEthPerToken ?? null);
-    const valuation = getValuationMetric(token);
-    const mcap = valuation.value;
-    const age = rhTimeAgoShort(token.pairCreatedAt);
+function RhTokenCard({ token, index }: { token: RhTokenView; index: number }) {
+    const priceEth = token.priceEth;
+    const fdv = token.fdvUsd;
+    const age = rhTimeAgoShort(token.createdAt);
 
     return (
         <Link
-            href={`/token/${token.tokenMint}`}
+            href={`/token/${token.address}`}
             className={cn(
                 "group relative flex flex-col overflow-hidden rounded-2xl border bg-[#0a0c0a]/90 transition-all duration-300",
                 "border-[#00C805]/12 hover:border-[#00C805]/38 hover:shadow-[0_16px_48px_rgba(0,200,5,0.1)] hover:-translate-y-0.5"
@@ -151,13 +138,13 @@ function RhTokenCard({ token, index }: { token: NormalizedToken; index: number }
                         </span>
                     ) : null}
                 </div>
-                {mcap != null && mcap > 0 ? (
+                {fdv != null && fdv > 0 ? (
                     <span
                         className="pointer-events-none absolute bottom-2.5 left-2.5 rounded-md border border-white/10 bg-black/70 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-white/92 backdrop-blur-md"
-                        title={valuation.description}
+                        title="Spot price times the fixed 1B supply"
                     >
-                        {formatCurrency(mcap)}{" "}
-                        <span className="text-[8px] font-normal text-white/40">{valuation.shortLabel}</span>
+                        {formatCurrency(fdv)}{" "}
+                        <span className="text-[8px] font-normal text-white/40">FDV</span>
                     </span>
                 ) : null}
             </div>
@@ -166,7 +153,7 @@ function RhTokenCard({ token, index }: { token: NormalizedToken; index: number }
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                         <p className="truncate text-[13px] font-semibold tracking-wide text-white/95">
-                            {token.symbol ? `$${token.symbol}` : shortenAddress(token.tokenMint)}
+                            {token.symbol ? `$${token.symbol}` : shortenAddress(token.address)}
                         </p>
                         <p className="truncate text-[10px] text-white/42">{token.name ?? "—"}</p>
                     </div>
@@ -198,7 +185,7 @@ function RhTokenCard({ token, index }: { token: NormalizedToken; index: number }
                     <p className="text-[9px] tracking-[0.12em] text-[#00C805]/55">UNISWAP V4 POOL LIVE</p>
                 )}
 
-                <p className="mt-auto truncate font-mono text-[9px] text-white/22">{shortenAddress(token.tokenMint)}</p>
+                <p className="mt-auto truncate font-mono text-[9px] text-white/22">{shortenAddress(token.address)}</p>
             </div>
         </Link>
     );
@@ -262,14 +249,14 @@ export function RhDiscoverHome() {
                 <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                     <div className="min-w-0">
                         <div className="mb-2 flex items-center gap-2">
-                            <NetworkIcon network="robinhood" size={22} />
-                            <span className="text-[10px] tracking-[0.2em] text-[#00C805]/70">BAGS V2 · CHAIN 4663</span>
+                            <RhLogo size={22} />
+                            <span className="text-[10px] tracking-[0.2em] text-[#00C805]/70">ROBINHOOD CHAIN · 4663</span>
                         </div>
                         <h1 className="text-lg font-semibold tracking-tight text-white sm:text-xl">
                             Discover Robinhood launches
                         </h1>
                         <p className="mt-1.5 max-w-xl text-[11px] leading-relaxed text-white/45">
-                            Bonding-curve tokens with live progress, spot prices, and graduated Uniswap V4 pools — powered by the Bags API.
+                            Bonding-curve tokens with live progress, spot prices, and graduated Uniswap V4 pools, indexed straight from chain 4663.
                         </p>
                     </div>
                     <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
@@ -281,17 +268,6 @@ export function RhDiscoverHome() {
                                 <span className="ml-2">indexed</span>
                             </div>
                         ) : null}
-                        <a
-                            href={BAGSCAN_NETWORKS.robinhood.launchUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-[11px] font-semibold tracking-[0.1em] text-black transition-opacity hover:opacity-90"
-                            style={{ backgroundColor: RH_THEME.green, boxShadow: `0 0 28px ${RH_THEME.greenGlow}` }}
-                        >
-                            <Sparkles className="h-3.5 w-3.5" />
-                            LAUNCH NOW
-                            <ExternalLink className="h-3.5 w-3.5 opacity-60" />
-                        </a>
                     </div>
                 </div>
             </div>
@@ -384,22 +360,13 @@ export function RhDiscoverHome() {
                     <p className="mx-auto mt-1.5 max-w-sm text-[10px] leading-relaxed text-white/30">
                         {isSearching
                             ? "Search matches this page of results — paste a full 0x token address for an exact lookup."
-                            : "Nothing has been indexed on this lane yet. Check the other lane or start a launch."}
+                            : "Nothing has been indexed on this lane yet — try the other lane."}
                     </p>
-                    <a
-                        href={BAGSCAN_NETWORKS.robinhood.launchUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-4 inline-flex items-center gap-2 rounded-xl border border-[#00C805]/30 px-4 py-2 text-[10px] tracking-[0.14em] text-[#00C805] transition-colors hover:bg-[#00C805]/10"
-                    >
-                        LAUNCH ON ROBINHOOD
-                        <ExternalLink className="h-3 w-3" />
-                    </a>
                 </div>
             ) : viewMode === "grid" ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {tokens.map((token, i) => (
-                        <RhTokenCard key={token.tokenMint} token={token} index={i} />
+                        <RhTokenCard key={token.address} token={token} index={i} />
                     ))}
                 </div>
             ) : (
@@ -416,15 +383,15 @@ export function RhDiscoverHome() {
                         </thead>
                         <tbody>
                             {tokens.map((token) => {
-                                const mcap = token.marketCap ?? token.fdvUsd;
+                                const fdv = token.fdvUsd;
                                 return (
                                     <tr
-                                        key={token.tokenMint}
+                                        key={token.address}
                                         className="border-b border-white/[0.05] transition-colors hover:bg-[#00C805]/[0.03]"
                                     >
                                         <td className="px-3 py-2.5">
                                             <Link
-                                                href={`/token/${token.tokenMint}`}
+                                                href={`/token/${token.address}`}
                                                 className="flex items-center gap-2.5"
                                             >
                                                 <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border border-white/10 bg-black">
@@ -442,7 +409,7 @@ export function RhDiscoverHome() {
                                                 </div>
                                                 <span>
                                                     <span className="block font-semibold text-white/90">
-                                                        {token.symbol ? `$${token.symbol}` : shortenAddress(token.tokenMint)}
+                                                        {token.symbol ? `$${token.symbol}` : shortenAddress(token.address)}
                                                     </span>
                                                     <span className="block text-[10px] text-white/35">{token.name}</span>
                                                 </span>
@@ -451,12 +418,12 @@ export function RhDiscoverHome() {
                                         <td className="px-3 py-2.5 tabular-nums text-white/75">
                                             {token.priceUsd != null
                                                 ? formatTokenPrice(token.priceUsd)
-                                                : token.priceEthPerToken
-                                                  ? `${formatCompactDecimal(parseRhFixed18(token.priceEthPerToken))} ETH`
+                                                : token.priceEth != null
+                                                  ? `${formatCompactDecimal(token.priceEth)} ETH`
                                                   : "—"}
                                         </td>
                                         <td className="px-3 py-2.5 tabular-nums text-white/55">
-                                            {mcap != null && mcap > 0 ? formatCurrency(mcap) : "—"}
+                                            {fdv != null && fdv > 0 ? formatCurrency(fdv) : "—"}
                                         </td>
                                         <td className="px-3 py-2.5">
                                             <div className="flex min-w-[88px] items-center gap-2">
@@ -474,7 +441,7 @@ export function RhDiscoverHome() {
                                             </div>
                                         </td>
                                         <td className="px-3 py-2.5 font-mono text-white/40">
-                                            {shortenAddress(token.creatorWallet ?? "—")}
+                                            {shortenAddress(token.creator ?? "—")}
                                         </td>
                                     </tr>
                                 );

@@ -6,181 +6,109 @@ datasource db {
   provider = "postgresql"
 }
 
-enum AlertKind {
-  alpha_hot
-  alpha_critical
-  portfolio_profit
-  portfolio_drawdown
-  fee_claim
+enum RhAlertKind {
+  curve_progress
+  graduation
+  volume_spike
+  price_move
+  whale_trade
   system
 }
 
-enum AlertSeverity {
+enum RhAlertSeverity {
   info
   hot
   critical
 }
 
-model TokenSnapshot {
-  id             String   @id @default(cuid())
-  tokenMint      String
-  poolAddress    String?
-  name           String?
-  symbol         String?
-  image          String?
-  creatorWallet  String?
-  creatorDisplay String?
-  provider       String?
-  providerUser   String?
-  fdvUsd         Float?
-  priceUsd       Float?
-  liquidityUsd   Float?
-  volume24hUsd   Float?
-  lifetimeFees   Float?
-  claimCount     Int?
-  claimVolume    Float?
-  rawJson        String?
-  capturedAt     DateTime @default(now())
-
-  @@index([tokenMint])
-  @@index([capturedAt])
-}
-
-model TokenRegistry {
-  tokenMint          String   @id
-  firstSeenAt        DateTime @default(now())
-  lastSeenAt         DateTime @updatedAt
-  poolAddress        String?
-  name               String?
-  symbol             String?
-  image              String?
-  description        String?
-  website            String?
-  twitter            String?
-  telegram           String?
-  creatorWallet      String?
-  creatorDisplay     String?
-  provider           String?
-  providerUser       String?
-  launchSource       String?
-  latestPriceUsd     Float?
-  latestFdvUsd       Float?
-  latestLiquidityUsd Float?
-  latestLifetimeFees Float?
-  latestClaimCount   Int?
-  isActive           Boolean  @default(true)
-  rawJson            String?
-}
-
-model LaunchDraft {
-  id              String   @id @default(cuid())
-  walletAddress   String?
-  name            String
-  symbol          String
-  description     String
-  imageUrl        String?
-  website         String?
-  twitter         String?
-  telegram        String?
-  tokenMint       String?
-  tokenMetadata   String?
-  feeShareConfig  String?
-  partnerIncluded Boolean  @default(false)
+/// One row per wallet that has signed in to alerts.
+model RhSubscriber {
+  wallet          String   @id // lowercase 0x address
   createdAt       DateTime @default(now())
+  lastSeenAt      DateTime @updatedAt
+  inAppEnabled    Boolean  @default(true)
+  pushEnabled     Boolean  @default(false)
+  telegramEnabled Boolean  @default(false)
+  telegramChatId  String?
+
+  watches       RhWatch[]
+  notifications RhAlertNotification[]
+  pushSubs      RhPushSubscription[]
 }
 
-model PartnerSnapshot {
+/// A token a wallet is watching, plus the rules that fire for it.
+model RhWatch {
   id            String   @id @default(cuid())
-  partnerWallet String
-  claimedFees   Float?
-  unclaimedFees Float?
-  rawJson       String?
-  capturedAt    DateTime @default(now())
+  wallet        String
+  tokenAddress  String // lowercase
+  symbol        String?
+  curveEnabled  Boolean  @default(true)
+  gradEnabled   Boolean  @default(true)
+  volumeEnabled Boolean  @default(true)
+  /// Fire when |price change| since last evaluation exceeds this percentage.
+  priceMovePct  Float?   @default(25)
+  /// Fire when a single trade moves at least this much ETH.
+  whaleTradeEth Float?   @default(0.25)
+  createdAt     DateTime @default(now())
+
+  subscriber RhSubscriber @relation(fields: [wallet], references: [wallet], onDelete: Cascade)
+
+  @@unique([wallet, tokenAddress])
+  @@index([tokenAddress])
 }
 
-model AlertPreference {
-  id                       String              @id @default(cuid())
-  walletAddress            String              @unique
-  inAppEnabled             Boolean             @default(true)
-  browserPushEnabled       Boolean             @default(false)
-  telegramEnabled          Boolean             @default(false)
-  alphaHotEnabled          Boolean             @default(true)
-  alphaCriticalEnabled     Boolean             @default(true)
-  portfolioProfitEnabled   Boolean             @default(true)
-  portfolioDrawdownEnabled Boolean             @default(true)
-  feesEnabled              Boolean             @default(true)
-  profitThresholdPercent   Float               @default(25)
-  drawdownThresholdPercent Float               @default(-15)
-  claimableFeesThresholdSol Float              @default(0.25)
-  telegramChatId           String?
-  lastEvaluatedAt          DateTime?
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
-  notifications            AlertNotification[]
-  pushSubscriptions        PushSubscription[]
-
-  @@index([lastEvaluatedAt])
-}
-
-model TelegramBroadcastTarget {
-  id                 String   @id @default(cuid())
-  chatId             String   @unique
-  chatType           String
-  title              String?
-  username           String?
-  isActive           Boolean  @default(true)
-  trendingEnabled    Boolean  @default(true)
-  launchesEnabled    Boolean  @default(true)
-  digestEnabled      Boolean  @default(true)
-  lastTrendingSentAt DateTime?
-  lastLaunchesSentAt DateTime?
-  lastDigestSentAt   DateTime?
-  createdAt          DateTime @default(now())
+/// Last observed on-chain state per token — the baseline every rule diffs against.
+model RhTokenState {
+  tokenAddress       String   @id // lowercase
+  symbol             String?
+  name               String?
+  image              String?
+  migrated           Boolean  @default(false)
+  bondingProgressPct Float?
+  priceEth           Float?
+  volumeEth7d        Float?
+  lastTradeAt        DateTime?
+  /// Highest curve threshold already alerted on, so each band fires once.
+  lastCurveBand      Int?
   updatedAt          DateTime @updatedAt
-
-  @@index([isActive])
 }
 
-model TelegramBotState {
-  key          String   @id
-  lastUpdateId Int      @default(0)
-  updatedAt    DateTime @updatedAt
+model RhAlertNotification {
+  id           String          @id @default(cuid())
+  wallet       String
+  tokenAddress String
+  kind         RhAlertKind
+  severity     RhAlertSeverity @default(info)
+  title        String
+  body         String
+  valueLabel   String?
+  readAt       DateTime?
+  createdAt    DateTime        @default(now())
+
+  subscriber RhSubscriber @relation(fields: [wallet], references: [wallet], onDelete: Cascade)
+
+  @@index([wallet, createdAt])
+  @@index([wallet, readAt])
 }
 
-model PushSubscription {
-  id             String          @id @default(cuid())
-  walletAddress  String
-  endpoint       String          @unique
-  p256dh         String
-  auth           String
-  expirationTime String?
-  userAgent      String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  preference     AlertPreference @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
+model RhPushSubscription {
+  endpoint  String   @id
+  wallet    String
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
 
-  @@index([walletAddress])
+  subscriber RhSubscriber @relation(fields: [wallet], references: [wallet], onDelete: Cascade)
+
+  @@index([wallet])
 }
 
-model AlertNotification {
-  id                 String          @id @default(cuid())
-  walletAddress      String
-  kind               AlertKind
-  severity           AlertSeverity
-  title              String
-  message            String
-  eventKey           String
-  tokenMint          String?
-  actionUrl          String?
-  imageUrl           String?
-  readAt             DateTime?
-  deliveredPushAt    DateTime?
-  deliveredTelegramAt DateTime?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
-  preference         AlertPreference @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
+/// Short-lived nonce for wallet sign-in.
+model RhAuthChallenge {
+  nonce     String   @id
+  wallet    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 
-  @@unique([walletAddress, eventKey])
-  @@index([walletAddress, createdAt(sort: Desc)])
-  @@index([walletAddress, readAt])
+  @@index([expiresAt])
 }

@@ -2,14 +2,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 25;
 
 import { NextResponse } from "next/server";
-import { getEthUsdPrice, getRhTokens, getRhTrades } from "@/lib/bags/rh-client";
+import { getEthUsdPrice, getRhTokens, getRhTrades } from "@/lib/rh/client";
 import {
     buildRhAlphaToken,
     mapWithConcurrency,
     rankRhCandidates,
     type RhAlphaFeed,
-} from "@/lib/bags/rh-alpha";
-import type { RhTokenListItem } from "@/lib/bags/rh-types";
+} from "@/lib/rh/alpha";
+import type { RhTokenListItem } from "@/lib/rh/api-types";
 
 /** How many pre-ranked tokens get a trades lookup per refresh. */
 const DEEP_SCAN_LIMIT = 20;

@@ -1,9 +1,9 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getEthUsdPrice, getRhToken } from "@/lib/bags/rh-client";
-import { rhTokenDetailToNormalized } from "@/lib/bags/rh-mappers";
-import { isEvmAddress } from "@/lib/networks";
+import { getEthUsdPrice, getRhToken } from "@/lib/rh/client";
+import { rhTokenDetailToView } from "@/lib/rh/mappers";
+import { isEvmAddress } from "@/lib/rh/chain";
 
 export async function GET(req: NextRequest) {
     try {
@@ -17,20 +17,17 @@ export async function GET(req: NextRequest) {
 
         const detail = await getRhToken(address);
         if (!detail) {
-            return NextResponse.json(
-                { success: false, error: "Token not found" },
-                { status: 404 }
-            );
+            return NextResponse.json({ success: false, error: "Token not found" }, { status: 404 });
         }
 
         const ethUsd = await getEthUsdPrice();
-        const token = rhTokenDetailToNormalized(detail, ethUsd);
 
         return NextResponse.json({
             success: true,
             data: {
-                token,
+                token: rhTokenDetailToView(detail, ethUsd),
                 state: detail.state,
+                ethUsd,
             },
         });
     } catch (error) {

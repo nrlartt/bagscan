@@ -2,17 +2,17 @@
 
 # BagScan
 
-### Multi-network discovery, Bags-native execution
+### The Robinhood Chain token terminal
 
-BagScan is a premium discovery and launch terminal for the Bags ecosystem, covering both Solana and Robinhood Chain, with Solana-native wallet flows, official Bags SDK integration, alerts, portfolio tracking, and a growing assistant layer.
+BagScan is a discovery, intelligence and trading terminal built for one network: **Robinhood Chain (`4663`)**. Live bonding-curve boards, flow-scored alpha, wallet portfolios with creator fee positions, wallet-signed alerts, and buy/sell that executes straight against a token's curve contract.
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.1.6-0b0b0b?style=flat-square)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2.3-0b0b0b?style=flat-square)](https://react.dev/)
-[![Bags SDK](https://img.shields.io/badge/Bags_SDK-1.3.5-0b0b0b?style=flat-square)](https://www.npmjs.com/package/@bagsfm/bags-sdk)
+[![wagmi](https://img.shields.io/badge/wagmi-3.x-0b0b0b?style=flat-square)](https://wagmi.sh/)
+[![Chain](https://img.shields.io/badge/Robinhood_Chain-4663-00C805?style=flat-square)](https://robinhoodchain.blockscout.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-0b0b0b?style=flat-square)](./LICENSE)
-[![Live App](https://img.shields.io/badge/Live-bagscan.app-0b0b0b?style=flat-square)](https://bagscan.app)
 
-`DISCOVER` `ALPHA` `AGENTS` `LAUNCH` `PORTFOLIO` `ALERTS`
+`DISCOVER` `ALPHA` `PORTFOLIO` `ALERTS` `TRADE`
 
 </div>
 
@@ -20,157 +20,94 @@ BagScan is a premium discovery and launch terminal for the Bags ecosystem, cover
 
 ## What BagScan Does
 
-BagScan brings Bags market discovery, launch infrastructure, partner monetization, portfolio visibility, and notification workflows into one terminal.
-
-- Discover live Bags tokens through premium boards for trending, spotlight, new launches, hackathon, and leaderboard views.
-- Switch between Solana and Robinhood Chain (`4663`) from the header network selector, with bonding-curve progress, spot prices, and graduated Uniswap V4 pools on the Robinhood side.
-- Launch tokens through the official Bags SDK with fee sharing, admin settings, company incorporation support, and safer transaction handling.
-- Track holdings, estimated PnL, and claimable fee positions from a wallet-native portfolio surface.
-- Deliver in-app, browser, Telegram, and Telegram group alert flows through a server-backed notification engine.
-- Surface the Bags Hackathon ecosystem through dedicated boards for apps, AI agents, accepted projects, and category slices.
-- Run `Talk To Bags` as a private-beta assistant layer backed by official Bags data and OpenClaw orchestration.
+- **Discover** every Robinhood Chain launch across two lanes — still filling its bonding curve, or graduated into a Uniswap V4 pool.
+- **Read the flow** on an alpha board that scores indexed on-chain trades into curve momentum, volume spikes, buy/sell pressure, whale prints and crowd formation.
+- **Track a wallet** — token holdings marked at the live curve price, ETH/WETH balance, and creator fee positions with claimable and lifetime totals.
+- **Trade from the app** against a token's own bonding curve contract, with quotes from the chain indexer and a slippage bound you set.
+- **Get alerted** when a watched token crosses a curve band, graduates, spikes on volume, moves sharply on price, or takes a whale trade.
 
 ## Product Surface
 
 | Surface | Purpose |
 | --- | --- |
-| `Discover` | Bags token boards, market slices, spotlight, and hackathon views |
-| `Robinhood` | Robinhood Chain launches, alpha flow, and wallet portfolios on chain `4663` |
-| `Alpha` | Higher-conviction monitoring and premium Bags market views |
-| `Agents` | Bags Hackathon AI agents directory with tokenized project enrichment |
-| `Launch` | Token launch flow with official Bags SDK integration |
-| `Portfolio` | Wallet-native holdings, fees, and PnL visibility |
-| `Alerts` | In-app, browser, Telegram, and group broadcast notifications |
-| `Talk To Bags` | Private-beta assistant for official Bags-backed answers |
+| `Discover` | Bonding and graduated lanes, curve progress, spot price, FDV |
+| `Alpha` | Signals scored from 7 days of indexed trades |
+| `Portfolio` | Holdings, ETH balance and creator fee positions for any address |
+| `Alerts` | Wallet-signed watches with in-app, push and Telegram delivery |
+| `Token` | Detail page with live curve state, contracts, and in-app trading |
 
 ## Architecture
 
-### High-Level System
-
 ```mermaid
 flowchart LR
-    U[User Wallet + Browser] --> W[BagScan Web App]
-    W --> A[App Router + API Routes]
-    A --> B[Bags SDK 1.3.5]
-    A --> C[Official Bags API]
-    A --> D[Solana RPC / Helius]
-    A --> E[PostgreSQL / Prisma]
-    A --> F[Alerts Runtime]
-    F --> G[Telegram / Browser Push / In-App]
-    A --> H[OpenClaw]
-    H --> T[Talk To Bags Private Beta]
+    U[Browser + EVM wallet] --> W[BagScan Web App]
+    W --> A[App Router + API routes]
+    A --> B[RH indexer API<br/>evm/rh/*]
+    A --> E[PostgreSQL / Prisma<br/>alerts only]
+    W --> R[Robinhood Chain RPC<br/>chain 4663]
+    R --> C[Bonding curve contracts]
+    A --> F[Alerts evaluator]
+    F --> G[In-app inbox / Web push / Telegram]
 ```
 
-### Discovery And Execution Model
+### Where Each Piece Of Data Comes From
 
-```mermaid
-flowchart TD
-    Market[Live Bags market data] --> Discover[Discover boards]
-    Market --> Alpha[Alpha views]
-    Market --> Agents[Agents directory]
-    Market --> Talk[Talk To Bags]
+| Data | Source |
+| --- | --- |
+| Token lists, detail, portfolios, trades, quotes | Robinhood Chain indexer (`/evm/rh/*`), set via `RH_INDEXER_BASE_URL` |
+| Balances, allowances, transaction sending | Robinhood Chain RPC, direct from the browser wallet |
+| Watches, inbox, push subscriptions | PostgreSQL via Prisma |
+| ETH/USD rate | CoinGecko, cached for 60s |
 
-    Wallet[Wallet session] --> Portfolio[Portfolio]
-    Wallet --> Launch[Launch flow]
-    Wallet --> Alerts[Alerts engine]
-
-    Launch --> BagsSDK[Official Bags SDK]
-    BagsSDK --> BagsChain[Bags + Solana execution]
-
-    Alerts --> NotificationCenter[Notification Center]
-    Alerts --> Telegram[Telegram delivery]
-    Alerts --> Push[Browser push]
-```
-
-### Launch Flow
+### Trading Flow
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant UI as Launch UI
-    participant API as BagScan API
-    participant SDK as Bags SDK
-    participant Solana as Solana / Bags
+    participant UI as Trade widget
+    participant API as /api/rh/quote
+    participant Chain as Curve contract
 
-    User->>UI: Fill metadata, settings, fees, admin, company
-    UI->>API: Create metadata + fee config
-    API->>SDK: Prepare official launch payload
-    SDK->>Solana: Build launch transaction(s)
-    Solana-->>API: Return serialized tx / execution state
-    API-->>UI: Review-ready transaction flow
-    User->>UI: Sign and confirm
-    UI->>API: Submit signed transaction
-    API->>Solana: Broadcast + confirm
-    Solana-->>UI: Launch complete
+    User->>UI: Enter ETH (buy) or token amount (sell)
+    UI->>API: Quote side + amountWei
+    API-->>UI: amountOutWei, fee, block
+    UI->>UI: Apply slippage → minimum out
+    User->>Chain: sell only — approve curve as spender
+    User->>Chain: buy(minTokensOut) with ETH value<br/>or sell(tokenAmount, minEthOut)
+    Chain-->>UI: Receipt, linked to the explorer
 ```
 
-### Alerts Delivery
+The curve ABI was recovered from live mainnet transactions — none is published. `buy(uint256)` is payable and takes a minimum-tokens-out bound; `sell(uint256,uint256)` takes the token amount and a minimum-ETH-out bound. Every token deploys its own curve contract, so the target address always comes from the token payload.
 
-```mermaid
-flowchart LR
-    Engine[Alert evaluation engine] --> Inbox[In-app inbox]
-    Engine --> Push[Browser push]
-    Engine --> TG[Telegram direct alerts]
-    Engine --> Group[Telegram group broadcasts]
-    Cron[External cron backup] --> Engine
-    Runtime[Internal runtime] --> Engine
-```
+**Graduated tokens are not tradable in-app.** Their liquidity lives in a Uniswap V4 pool, which BagScan does not route yet, and the upstream quoter only covers curves. Those tokens link out instead of showing a quote that would not execute.
 
 ## Core Capabilities
 
 ### Discovery
-
-- Premium terminal UI across trending, spotlight, new launches, hackathon, and leaderboard surfaces
-- Network selector (Solana / Robinhood Chain) persisted per browser and synced across open tabs
-- Robinhood Chain boards driven by `/api/rh/tokens` and `/api/rh/token`, with EVM addresses routing to a dedicated detail view at `/token/<0x…>`
-- `Discover`, `Alpha`, and `Portfolio` all follow the selected network — each renders a Solana or Robinhood surface from its own data source
-- Official Bags market data blended with Bags-native discovery workflows
-- AI Agents directory sourced from the Bags Hackathon category
-- Curated spotlight rotation and current-pulse presentation
-
-### Launch
-
-- Official Bags SDK `1.3.5` integration
-- Fee sharing and admin configuration
-- Partner fee configuration support
-- Company incorporation support in the launch flow
-- Safer transaction confirmation and retry handling
+- Bonding and graduated lanes with live curve progress and spot pricing
+- Exact lookup by pasting a `0x` contract address
+- Valuation labeled honestly as FDV — every launch mints a fixed 1B supply and no circulating market cap exists on this chain
 
 ### Alpha
+- Signals: curve momentum, volume spike, live flow, buy/sell pressure, price surge/dump, whale trade, crowd forming, fresh launch
+- 7-day window, because Robinhood Chain flow is thin enough that a 24-hour view reads empty; the 24h slice is kept as a separate liveness indicator
+- Bonding and graduated candidates are ranked in separate lanes so graduations (always at 100% progress) cannot crowd out the curve
 
-- Solana alpha terminal with signal scoring, rug pressure, and trend rotations
-- Robinhood alpha board (`/api/rh/alpha`) scoring indexed on-chain trade flow into curve momentum, volume, buy/sell pressure, whale prints, and crowd formation
-- Robinhood signals use a 7-day window; that chain's flow is far thinner than Solana's, so a 24h view would read empty
+### Portfolio
+- Holdings valued at the live curve or pool price, with supply share
+- Native ETH and WETH balances
+- Creator fee positions: claimable now and lifetime earned
+- No cost basis: the API indexes trades per token, not per wallet, so BagScan says so rather than guessing
 
-### Portfolio And Alerts
-
-- Wallet portfolio panel and full portfolio page
-- Robinhood Chain portfolios (`/api/rh/portfolio`) with token holdings, ETH/WETH balance, and creator fee positions, looked up by EVM address
-- Cost-basis-aware PnL work completed in product flows (Solana; Robinhood exposes trades per token, not per wallet, so no cost basis there yet)
-- In-app inbox, browser push, Telegram direct alerts
-- Telegram group broadcast targets
-- Internal runtime plus external cron backup
-
-### Talk To Bags
-
-- Private beta / internal development surface
-- OpenClaw orchestration layer
-- Grounded around official Bags-backed responses
-- Not fully published yet; kept behind a feature flag while being hardened
+### Alerts
+- Sign in by signing a message — no transaction, no gas
+- Per-token rules: curve bands (25/50/75/90), graduation, volume spike, price move, whale trade
+- Each curve band fires once; a first sighting only establishes the baseline
+- Delivery: in-app inbox, browser push (VAPID), Telegram
 
 ## Tech Stack
 
-- `Next.js 16`
-- `React 19`
-- `TypeScript`
-- `Tailwind CSS v4`
-- `Prisma`
-- `PostgreSQL`
-- `@bagsfm/bags-sdk 1.3.5`
-- `Solana Wallet Adapter`
-- `TanStack Query`
-- `Recharts`
-- `web-push`
+`Next.js 16` · `React 19` · `TypeScript` · `Tailwind CSS v4` · `wagmi 3` · `viem` · `TanStack Query` · `Prisma` · `PostgreSQL` · `web-push`
 
 ## Local Development
 
@@ -180,48 +117,25 @@ flowchart LR
 npm install
 ```
 
-### 2. Configure Environment
-
-Copy `.env.example` into `.env` and fill in the required values:
+### 2. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Most important variables:
+Required to run the market surfaces: `RH_INDEXER_BASE_URL` and `RH_INDEXER_API_KEY`.
+Required additionally for alerts: `DATABASE_URL`, `ALERTS_SESSION_SECRET`, `ALERTS_CRON_SECRET`.
 
-- `DATABASE_URL`
-- `NEXT_PUBLIC_SITE_URL`
-- `NEXT_PUBLIC_SOLANA_RPC_URL`
-- `HELIUS_API_KEY`
-- `BAGS_API_KEY`
-- `ALERTS_SESSION_SECRET`
-- `ALERTS_CRON_SECRET`
-- `TELEGRAM_BOT_TOKEN`
-
-### 3. Generate Prisma Client
+### 3. Push the schema (alerts only)
 
 ```bash
 npx prisma generate
-```
-
-### 4. Push Schema
-
-```bash
 npm run db:push
 ```
 
-### 5. Secure Public Tables
+The schema holds nothing but alert state: subscribers, watches, token snapshots, notifications and push subscriptions.
 
-If your environment creates Prisma tables in the Supabase `public` schema, run:
-
-```bash
-npm run db:secure:public
-```
-
-See [docs/SUPABASE_SECURITY_HARDENING.md](./docs/SUPABASE_SECURITY_HARDENING.md) for details.
-
-### 6. Start The App
+### 4. Start
 
 ```bash
 npm run dev
@@ -229,37 +143,38 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Network Reference
+
+| | |
+| --- | --- |
+| Chain ID | `4663` |
+| Currency | ETH (18 decimals) |
+| RPC | `https://rpc.mainnet.chain.robinhood.com` (also `robinhood-rpc.publicnode.com`, `rpc.arrowrpc.com`) |
+| Explorer | `https://robinhoodchain.blockscout.com` |
+
+Note: `explorer.robinhood.com` does not resolve — the Blockscout instance above is the working explorer.
+
 ## Environment Notes
 
-- `NEXT_PUBLIC_SITE_URL` sets the canonical origin used by metadata, Open Graph URLs, `robots.txt`, and `sitemap.xml`. Set it per environment or shared links point at the production domain.
-- `ENABLE_INTERNAL_ALERTS_RUNTIME="true"` enables the in-process alert scheduler (off by default in production; prefer external cron hitting `/api/alerts/cron`).
-- `GET /api/health` is a fast liveness probe for gateways (no database).
+- `NEXT_PUBLIC_SITE_URL` sets the canonical origin for metadata, Open Graph, `robots.txt` and `sitemap.xml`.
+- `ENABLE_INTERNAL_ALERTS_RUNTIME="true"` runs the alert evaluator in-process. Leave it off on multi-instance hosting and point external cron at `/api/alerts/cron` (bearer `ALERTS_CRON_SECRET`) so runs don't overlap.
+- `GET /api/health` is a fast liveness probe with no database dependency.
 - Production start binds `0.0.0.0` via `npm start` — set `PORT` to match your reverse proxy upstream.
-- External cron for `/api/alerts/cron` can remain enabled as a backup.
-- `Talk To Bags` is published behind an on-chain holder gate and currently requires a wallet holding at least `2.5M $SCAN`.
 
 ## Security
 
-BagScan is designed primarily around server-side access to application data. Internal Prisma tables currently use RLS hardening when created in Supabase `public`, and the longer-term direction is to keep internal data in non-exposed schemas.
-
-- Read the security process in [SECURITY.md](./SECURITY.md)
-- Read the Supabase hardening notes in [docs/SUPABASE_SECURITY_HARDENING.md](./docs/SUPABASE_SECURITY_HARDENING.md)
-
-## Contributing
-
-Contributions are welcome. Before opening large changes, please describe the intended direction in an issue or discussion so the discovery, launch, and alert surfaces stay coherent.
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
+- Alert sessions are HMAC-signed cookies over a wallet address proven by an EIP-191 signature; nonces are single-use.
+- API routes log upstream errors server-side and return generic messages, so indexer internals never reach the client.
+- Baseline security headers (HSTS, `nosniff`, `SAMEORIGIN`, Referrer-Policy, Permissions-Policy) ship from `next.config.ts`.
+- Read the process in [SECURITY.md](./SECURITY.md) and the Supabase notes in [docs/SUPABASE_SECURITY_HARDENING.md](./docs/SUPABASE_SECURITY_HARDENING.md).
 
 ## Roadmap Direction
 
-Near-term focus areas:
-
-- Hardening `Talk To Bags` until it is ready for public release
-- Continuing Bags-native launch reliability improvements
-- Expanding assistant and notification workflows
-- Improving Solana-wide discovery without losing Bags-native execution depth
+- Route graduated tokens through the Uniswap V4 pool so trading covers a token's whole life
+- Per-wallet trade history once an endpoint exists, unlocking cost basis and realized PnL
+- Creator fee claiming from the portfolio instead of linking out
+- Richer charting from indexed trades
 
 ## License
 
-This project is licensed under the [MIT License](./LICENSE).
+[MIT](./LICENSE)

@@ -1,83 +1,37 @@
-import { runAlertsCron } from "./engine";
+import "server-only";
+import { runAlertsEvaluation } from "./engine";
 
-const DEFAULT_RUNTIME_INTERVAL_MS = 60_000;
+const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 
-const globalForAlertsRuntime = globalThis as {
-    bagscanAlertsRuntimeStarted?: boolean;
-    bagscanAlertsRuntimeRunning?: boolean;
-    bagscanAlertsRuntimeTimer?: ReturnType<typeof setInterval>;
-};
+let started = false;
 
-function shouldEnableInternalAlertsRuntime() {
-    // Opt-in only — avoids hammering DB/RPC on cold start (can cause gateway 504s).
-    if (process.env.ENABLE_INTERNAL_ALERTS_RUNTIME !== "true") {
-        return false;
-    }
-
-    if (process.env.NODE_ENV === "test") {
-        return false;
-    }
-
-    if (process.env.NEXT_PHASE === "phase-production-build") {
-        return false;
-    }
-
-    return Boolean(process.env.DATABASE_URL);
-}
-
-function getRuntimeIntervalMs() {
-    const value = Number(process.env.ALERTS_RUNTIME_INTERVAL_MS ?? DEFAULT_RUNTIME_INTERVAL_MS);
-    return Number.isFinite(value) && value >= 30_000 ? value : DEFAULT_RUNTIME_INTERVAL_MS;
-}
-
-async function runAlertsRuntimeTick() {
-    if (globalForAlertsRuntime.bagscanAlertsRuntimeRunning) {
-        return;
-    }
-
-    globalForAlertsRuntime.bagscanAlertsRuntimeRunning = true;
-
-    try {
-        const result = await runAlertsCron();
-
-        if (!result.skipped) {
-            console.log(
-                `[alerts/runtime] processed ${result.walletsProcessed} wallets, created ${result.createdCount} alerts, broadcasts ${result.telegramBroadcasts.broadcastsSent}`
-            );
-        }
-    } catch (error) {
-        console.error("[alerts/runtime] tick failed:", error);
-    } finally {
-        globalForAlertsRuntime.bagscanAlertsRuntimeRunning = false;
-    }
-}
-
+/**
+ * Optional in-process scheduler for single-instance deployments. Off unless
+ * ENABLE_INTERNAL_ALERTS_RUNTIME is set — on multi-instance hosting prefer an
+ * external cron hitting /api/alerts/cron so evaluations don't overlap.
+ */
 export function startInternalAlertsRuntime() {
-    if (!shouldEnableInternalAlertsRuntime()) {
-        return false;
-    }
+    if (started) return;
+    if (process.env.ENABLE_INTERNAL_ALERTS_RUNTIME !== "true") return;
+    started = true;
 
-    if (globalForAlertsRuntime.bagscanAlertsRuntimeStarted) {
-        return true;
-    }
+    const interval = Math.max(
+        60_000,
+        Number(process.env.ALERTS_RUNTIME_INTERVAL_MS) || DEFAULT_INTERVAL_MS
+    );
 
-    globalForAlertsRuntime.bagscanAlertsRuntimeStarted = true;
+    const tick = async () => {
+        try {
+            const summary = await runAlertsEvaluation();
+            if (summary.alertsCreated > 0) {
+                console.log("[alerts] runtime created", summary.alertsCreated, "alerts");
+            }
+        } catch (error) {
+            console.error("[alerts] runtime tick failed:", error);
+        }
+    };
 
-    const startupDelayMs = Number(process.env.ALERTS_RUNTIME_STARTUP_DELAY_MS ?? 120_000);
-    const safeStartupDelay =
-        Number.isFinite(startupDelayMs) && startupDelayMs >= 0 ? startupDelayMs : 120_000;
-
-    setTimeout(() => {
-        void runAlertsRuntimeTick();
-    }, safeStartupDelay).unref?.();
-
-    const timer = setInterval(() => {
-        void runAlertsRuntimeTick();
-    }, getRuntimeIntervalMs());
-
-    timer.unref?.();
-    globalForAlertsRuntime.bagscanAlertsRuntimeTimer = timer;
-
-    console.log("[alerts/runtime] internal scheduler started");
-    return true;
+    // Let the server finish booting before the first scan.
+    setTimeout(() => void tick(), 30_000);
+    setInterval(() => void tick(), interval).unref?.();
 }

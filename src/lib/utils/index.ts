@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
-/** Shorten a Solana address: ABcD...xYzW */
+/** Shorten an address for display: 0xAB...cdEF */
 export function shortenAddress(address: string, chars = 4): string {
     if (!address) return "";
     if (address.length <= chars * 2 + 3) return address;
@@ -67,46 +67,6 @@ export function formatTokenPrice(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(value)) return "—";
     if (value >= 1) return formatCurrency(value, { compact: value >= 1_000_000 });
     return `$${formatCompactDecimal(value)}`;
-}
-
-export type ValuationSource = "market-cap" | "fdv" | "none";
-
-export function getValuationMetric(input: {
-    marketCap?: number | null;
-    fdvUsd?: number | null;
-}): {
-    value: number | undefined;
-    shortLabel: "MCAP" | "FDV" | "VAL";
-    longLabel: "Market Cap" | "FDV" | "Valuation";
-    source: ValuationSource;
-    description?: string;
-} {
-    if (input.marketCap !== null && input.marketCap !== undefined && Number.isFinite(input.marketCap)) {
-        return {
-            value: input.marketCap,
-            shortLabel: "MCAP",
-            longLabel: "Market Cap",
-            source: "market-cap",
-            description: "Official Bags market cap",
-        };
-    }
-
-    if (input.fdvUsd !== null && input.fdvUsd !== undefined && Number.isFinite(input.fdvUsd)) {
-        return {
-            value: input.fdvUsd,
-            shortLabel: "FDV",
-            longLabel: "FDV",
-            source: "fdv",
-            description: "Estimated fully diluted valuation fallback",
-        };
-    }
-
-    return {
-        value: undefined,
-        shortLabel: "VAL",
-        longLabel: "Valuation",
-        source: "none",
-    };
 }
 
 /** Format plain number compactly: 1.2M */

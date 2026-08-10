@@ -1,55 +1,37 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
-import { PublicKey } from "@solana/web3.js";
-import { AlertAccessError, ensureAlertAccess } from "@/lib/alerts/access";
-import {
-    createAlertChallenge,
-    setAlertChallengeCookie,
-} from "@/lib/alerts/auth";
+import { prisma } from "@/lib/db";
+import { buildSignInMessage, newNonce } from "@/lib/alerts/session";
+import { isEvmAddress } from "@/lib/rh/chain";
 
-export async function GET(request: NextRequest) {
-    const wallet = request.nextUrl.searchParams.get("wallet")?.trim();
-    if (!wallet) {
-        return NextResponse.json(
-            { success: false, error: "Missing wallet query parameter" },
-            { status: 400 }
-        );
-    }
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
+export async function POST(req: NextRequest) {
     try {
-        new PublicKey(wallet);
-    } catch {
-        return NextResponse.json(
-            { success: false, error: "Invalid Solana wallet address" },
-            { status: 400 }
-        );
-    }
-
-    try {
-        await ensureAlertAccess(wallet);
-    } catch (error) {
-        if (error instanceof AlertAccessError) {
-            return NextResponse.json(
-                { success: false, error: error.message, data: error.access },
-                { status: error.status }
-            );
+        const { wallet } = (await req.json()) as { wallet?: string };
+        if (!wallet || !isEvmAddress(wallet)) {
+            return NextResponse.json({ success: false, error: "Invalid wallet address" }, { status: 400 });
         }
 
-        return NextResponse.json(
-            {
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-            },
-            { status: 502 }
-        );
-    }
+        const normalized = wallet.toLowerCase();
+        const nonce = newNonce();
 
-    const challenge = createAlertChallenge(wallet);
-    const response = NextResponse.json({
-        success: true,
-        wallet,
-        message: challenge.message,
-        issuedAt: challenge.issuedAt,
-    });
-    setAlertChallengeCookie(response, challenge.token);
-    return response;
+        await prisma.rhAuthChallenge.create({
+            data: { nonce, wallet: normalized, expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS) },
+        });
+
+        // Opportunistic cleanup keeps the table from growing unbounded.
+        await prisma.rhAuthChallenge
+            .deleteMany({ where: { expiresAt: { lt: new Date() } } })
+            .catch(() => undefined);
+
+        return NextResponse.json({
+            success: true,
+            data: { nonce, message: buildSignInMessage(normalized, nonce) },
+        });
+    } catch (error) {
+        console.error("[api/alerts/auth/challenge] error:", error);
+        return NextResponse.json({ success: false, error: "Failed to create challenge" }, { status: 500 });
+    }
 }

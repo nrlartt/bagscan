@@ -1,283 +1,149 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Scan, TrendingUp, Users, Coins, Shield, Zap, Rocket, ExternalLink } from "lucide-react";
-import { CopyButton } from "@/components/bagscan/CopyButton";
+import { ExternalLink } from "lucide-react";
+import { RhLogo } from "@/components/bagscan/RhLogo";
+import { RH_CHAIN_ID, RH_EXPLORER_URL, RH_RPC_URLS, RH_THEME } from "@/lib/rh/chain";
 
 export const metadata: Metadata = {
-    title: "About - BagScan",
-    description: "Learn about BagScan, the Bags-native token discovery terminal. Powered by $SCAN.",
+    title: "About",
+    description:
+        "BagScan is a Robinhood Chain terminal: discovery, flow intelligence, portfolios, alerts and in-app curve trading on chain 4663.",
+    alternates: { canonical: "/about" },
 };
 
-const SCAN_CA = "BZwugyYF9Nr2x9t433UHnqJ3htQAxFF8YxUHhF2qBAGS";
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+        <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+            <h2 className="text-[10px] tracking-[0.18em] text-[#00C805]/70">{title}</h2>
+            <div className="mt-3 space-y-2 text-[12px] leading-relaxed text-white/55">{children}</div>
+        </section>
+    );
+}
 
 export default function AboutPage() {
     return (
-        <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8 animate-fade-in">
-            <div className="mb-12 text-center">
-                <div
-                    className="mx-auto mb-6 flex h-16 w-16 items-center justify-center border-2 border-[#00ff41]/40"
-                    style={{ boxShadow: "0 0 20px rgba(0,255,65,0.1)" }}
-                >
-                    <Scan className="h-8 w-8 text-[#00ff41]" />
-                </div>
-                <h1
-                    className="text-xl tracking-[0.2em] text-[#00ff41]"
-                    style={{ textShadow: "0 0 10px rgba(0,255,65,0.3)" }}
-                >
-                    [ ABOUT BAGSCAN ]
-                </h1>
-                <p className="mx-auto mt-4 max-w-lg text-[11px] leading-relaxed tracking-wider text-[#00ff41]/30">
-                    BAGSCAN IS A BAGS-NATIVE TOKEN DISCOVERY AND LAUNCH TERMINAL. BROWSE, ANALYZE,
-                    AND TRADE TOKENS LAUNCHED ON THE BAGS PLATFORM WITH CREATOR-FIRST METRICS,
-                    OFFICIAL MARKET DATA, AND TRANSPARENT FEE ANALYTICS.
-                </p>
-            </div>
-
-            <div
-                className="mb-12 overflow-hidden border-2 border-[#00ff41]/30 bg-black/80"
-                style={{ boxShadow: "0 0 25px rgba(0,255,65,0.05)" }}
-            >
-                <div className="flex items-center gap-2 border-b border-[#00ff41]/20 bg-[#00ff41]/[0.03] px-6 py-3">
-                    <Zap className="h-4 w-4 text-[#00ff41]/60" />
-                    <span className="text-[11px] tracking-[0.2em] text-[#00ff41]/70">[ $SCAN TOKEN ]</span>
-                </div>
-                <div className="p-6">
-                    <div className="mb-5 flex items-start gap-4">
-                        <div
-                            className="flex h-14 w-14 flex-shrink-0 items-center justify-center border-2 border-[#00ff41]/30 bg-[#00ff41]/[0.03]"
-                            style={{ boxShadow: "0 0 12px rgba(0,255,65,0.1)" }}
-                        >
-                            <span className="text-lg text-[#00ff41]" style={{ textShadow: "0 0 8px rgba(0,255,65,0.4)" }}>
-                                $
-                            </span>
-                        </div>
-                        <div>
-                            <h2
-                                className="mb-1 text-sm tracking-[0.15em] text-[#00ff41]"
-                                style={{ textShadow: "0 0 6px rgba(0,255,65,0.3)" }}
-                            >
-                                $SCAN
-                            </h2>
-                            <p className="text-[10px] leading-relaxed tracking-wider text-[#00ff41]/30">
-                                THE NATIVE TOKEN OF THE BAGSCAN ECOSYSTEM. $SCAN CONNECTS DISCOVERY,
-                                LAUNCH INFRASTRUCTURE, HOLDER ACCESS, AND COMMUNITY ALIGNMENT ACROSS
-                                THE BAGS PLATFORM.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="mb-5 border border-[#00ff41]/15 bg-black/60 p-3">
-                        <div className="mb-1.5 text-[8px] tracking-[0.2em] text-[#00ff41]/30">CONTRACT ADDRESS</div>
-                        <CopyableCA ca={SCAN_CA} />
-                    </div>
-
-                    <div className="mb-5 flex flex-wrap gap-2">
-                        <a
-                            href={`https://bags.fm/${SCAN_CA}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 border border-[#00ff41]/25 px-3 py-2 text-[10px] tracking-wider text-[#00ff41]/60 transition-all hover:border-[#00ff41]/50 hover:bg-[#00ff41]/5 hover:text-[#00ff41]"
-                        >
-                            <Rocket className="h-3 w-3" />
-                            TRADE ON BAGS.FM
-                            <ExternalLink className="h-2.5 w-2.5 opacity-40" />
-                        </a>
-                        <Link
-                            href={`/token/${SCAN_CA}`}
-                            className="flex items-center gap-1.5 border border-[#00ff41]/25 px-3 py-2 text-[10px] tracking-wider text-[#00ff41]/60 transition-all hover:border-[#00ff41]/50 hover:bg-[#00ff41]/5 hover:text-[#00ff41]"
-                        >
-                            <Scan className="h-3 w-3" />
-                            VIEW ON BAGSCAN
-                        </Link>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        <InfoTile label="PLATFORM" value="Bags.fm (Solana)" />
-                        <InfoTile label="UTILITY" value="Ecosystem Token" />
-                        <InfoTile label="TICKER" value="$SCAN" />
-                    </div>
-                </div>
-            </div>
-
-            <div className="mb-12 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <FeatureCard
-                    icon={<TrendingUp className="h-5 w-5" />}
-                    title="MCAP FIRST, FDV FALLBACK"
-                    description="BagScan shows the official Bags market cap when available and falls back to clearly labeled FDV when the market-cap field is missing."
-                />
-                <FeatureCard
-                    icon={<Users className="h-5 w-5" />}
-                    title="CREATOR-FIRST METRICS"
-                    description="See creator identity, royalty basis points, provider verification, and claim activity at a glance."
-                />
-                <FeatureCard
-                    icon={<Coins className="h-5 w-5" />}
-                    title="FEE AND CLAIM ANALYTICS"
-                    description="Track lifetime fees, claim counts, claim events, and creator revenue directly from Bags APIs."
-                />
-                <FeatureCard
-                    icon={<Shield className="h-5 w-5" />}
-                    title="NATIVE MONETIZATION"
-                    description="BagScan earns revenue through the Bags partner configuration with transparent, on-chain fee sharing."
-                />
-            </div>
-
-            <div className="crt-panel mb-8 p-6">
-                <div className="panel-header">[ ROADMAP ]</div>
-                <div className="mt-2 space-y-3">
-                    <RoadmapItem
-                        phase="PHASE 1"
-                        status="LIVE"
-                        items={[
-                            "Token Discovery Terminal",
-                            "Real-time Trending and New Launches",
-                            "Creator Analytics and Fee Tracking",
-                            "Alpha Signal Feed",
-                            "Token Launch Interface",
-                            "$SCAN Buyback and Burn System",
-                        ]}
-                    />
-                    <RoadmapItem
-                        phase="PHASE 2"
-                        status="IN DEVELOPMENT"
-                        items={[
-                            "Portfolio Tracker and PnL",
-                            "Smart Alert Notifications",
-                            "Wallet Tracking",
-                            "Advanced Charting",
-                        ]}
-                    />
-                    <RoadmapItem
-                        phase="PHASE 3"
-                        status="PLANNED"
-                        items={[
-                            "AI-Powered Token Scoring",
-                            "Creator Reputation System",
-                            "Mobile App",
-                            "$SCAN Holder Benefits",
-                        ]}
-                    />
-                </div>
-            </div>
-
-            <div className="crt-panel mb-8 p-6">
-                <div className="panel-header">[ OFFICIAL MARKET DATA ]</div>
-                <p className="text-[10px] leading-relaxed tracking-wider text-[#00ff41]/35">
-                    BAGSCAN USES THE OFFICIAL <span className="text-[#00ff41]/60">MARKET CAP</span>
-                    {" "}VALUE PUBLISHED BY BAGS WHEN IT IS AVAILABLE. IF THAT FIELD IS MISSING, BAGSCAN
-                    FALLS BACK TO A CLEARLY LABELED <span className="text-[#00ff41]/60">FDV</span> METRIC SO
-                    THE UI STAYS INFORMATIVE WITHOUT MISLABELING ESTIMATED VALUATION AS MARKET CAP.
-                </p>
-            </div>
-
-            <div className="crt-panel mb-8 p-6">
-                <div className="panel-header">[ MONETIZATION ]</div>
-                <p className="text-[10px] leading-relaxed tracking-wider text-[#00ff41]/35">
-                    BAGSCAN USES BAGS&apos; NATIVE PARTNER CONFIGURATION SYSTEM. WHEN A CREATOR LAUNCHES
-                    A TOKEN THROUGH BAGSCAN, A PORTION OF ONGOING FEES ARE DIRECTED TO BAGSCAN&apos;S
-                    PARTNER WALLET. <span className="text-[#ff4400]/50">40% OF ALL REVENUE IS ALLOCATED TO
-                    $SCAN BUYBACK AND BURN</span>, CREATING CONTINUOUS DEFLATIONARY PRESSURE.
-                </p>
-            </div>
-
-            <div className="crt-panel p-6">
-                <div className="panel-header">[ BUILT WITH ]</div>
-                <div className="mt-1 flex flex-wrap gap-2">
-                    {[
-                        "Next.js 14+",
-                        "TypeScript",
-                        "Tailwind CSS",
-                        "Prisma + PostgreSQL",
-                        "TanStack Query",
-                        "Solana Wallet Adapter",
-                        "Recharts",
-                        "Zod",
-                        "Lucide Icons",
-                    ].map((tech) => (
-                        <span
-                            key={tech}
-                            className="border border-[#00ff41]/15 bg-[#00ff41]/5 px-2 py-1 text-[9px] tracking-wider text-[#00ff41]/40"
-                        >
-                            {tech}
-                        </span>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function CopyableCA({ ca }: { ca: string }) {
-    return (
-        <div className="flex items-center gap-2">
-            <code className="flex-1 select-all break-all text-[10px] tracking-wider text-[#00ff41]/60">
-                {ca}
-            </code>
-            <CopyButton text={ca} />
-        </div>
-    );
-}
-
-function InfoTile({ label, value }: { label: string; value: string }) {
-    return (
-        <div className="border border-[#00ff41]/10 bg-[#00ff41]/[0.02] p-3">
-            <div className="mb-1 text-[9px] tracking-[0.15em] text-[#00ff41]/40">{label}</div>
-            <div className="text-[10px] tracking-wider text-[#00ff41]/60">{value}</div>
-        </div>
-    );
-}
-
-function RoadmapItem({ phase, status, items }: { phase: string; status: string; items: string[] }) {
-    const isLive = status === "LIVE";
-    const isInDev = status === "IN DEVELOPMENT";
-
-    return (
-        <div className="flex gap-3">
-            <div className="flex flex-col items-center">
-                <div
-                    className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full ${isLive ? "bg-[#00ff41]" : isInDev ? "bg-[#ffaa00] animate-pulse" : "bg-[#00ff41]/20"}`}
-                    style={isLive ? { boxShadow: "0 0 6px #00ff41" } : isInDev ? { boxShadow: "0 0 6px #ffaa00" } : undefined}
-                />
-                <div className="mt-1 w-px flex-1 bg-[#00ff41]/10" />
-            </div>
-            <div className="pb-4">
-                <div className="mb-1 flex items-center gap-2">
-                    <span className="text-[10px] tracking-[0.15em] text-[#00ff41]/60">{phase}</span>
-                    <span
-                        className={`border px-1.5 py-0.5 text-[8px] tracking-[0.12em] ${isLive ? "border-[#00ff41]/30 bg-[#00ff41]/5 text-[#00ff41]" : isInDev ? "border-[#ffaa00]/30 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-[#00ff41]/10 text-[#00ff41]/25"}`}
-                    >
-                        {status}
+        <div className="mx-auto w-full min-w-0 max-w-[900px] px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
+            <div className="mb-5 overflow-hidden rounded-2xl border border-[#00C805]/18 bg-gradient-to-br from-[#0c140c] via-[#0a0f0a] to-[#070907] p-5 sm:p-7">
+                <div className="flex items-center gap-2">
+                    <RhLogo size={20} />
+                    <span className="text-[10px] tracking-[0.2em] text-[#00C805]/70">
+                        ROBINHOOD CHAIN · {RH_CHAIN_ID}
                     </span>
                 </div>
-                <ul className="space-y-0.5">
-                    {items.map((item) => (
-                        <li key={item} className="flex items-center gap-1.5 text-[9px] tracking-wider text-[#00ff41]/30">
-                            <span className="text-[#00ff41]/15">-</span>
-                            {item}
-                        </li>
-                    ))}
-                </ul>
+                <h1 className="mt-2 text-xl font-semibold tracking-tight text-white sm:text-2xl">
+                    BagScan is a Robinhood Chain terminal
+                </h1>
+                <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-white/50">
+                    Every surface here targets one network: discovery of live launches, flow intelligence scored from
+                    on-chain trades, wallet portfolios with creator fee positions, wallet-signed alerts, and trading
+                    that executes directly against a token&apos;s bonding curve.
+                </p>
             </div>
-        </div>
-    );
-}
 
-function FeatureCard({
-    icon,
-    title,
-    description,
-}: {
-    icon: React.ReactNode;
-    title: string;
-    description: string;
-}) {
-    return (
-        <div className="border border-[#00ff41]/15 bg-black/70 p-5 transition-colors hover:border-[#00ff41]/30">
-            <div className="mb-3 flex h-10 w-10 items-center justify-center border border-[#00ff41]/20 text-[#00ff41]/40">
-                {icon}
+            <div className="grid gap-4 sm:grid-cols-2">
+                <Section title="DISCOVER">
+                    <p>
+                        Two lanes — tokens still filling their bonding curve, and tokens that graduated into a Uniswap
+                        V4 pool. Prices are quoted in ETH and converted to USD at the live rate.
+                    </p>
+                    <p>
+                        Valuation is always fully diluted: every launch mints a fixed 1B supply, and nothing on this
+                        chain reports a circulating market cap, so BagScan labels it FDV rather than implying one.
+                    </p>
+                </Section>
+
+                <Section title="ALPHA">
+                    <p>
+                        Signals are computed from indexed trades: curve momentum, volume, buy and sell pressure, whale
+                        prints, crowd formation and price swings, scored 0–100.
+                    </p>
+                    <p>
+                        The window is 7 days. Flow on this chain is thin enough that a 24-hour view reads empty most of
+                        the time; the 24h slice is kept as a separate &quot;live right now&quot; indicator.
+                    </p>
+                </Section>
+
+                <Section title="TRADING">
+                    <p>
+                        Buys and sells execute against the token&apos;s own bonding curve contract from your connected
+                        wallet, with a slippage bound you set. Sells approve the curve first.
+                    </p>
+                    <p>
+                        Graduated tokens are not tradable in-app yet — their liquidity sits in a Uniswap V4 pool, which
+                        BagScan does not route. Those link out instead of pretending to quote.
+                    </p>
+                </Section>
+
+                <Section title="ALERTS">
+                    <p>
+                        Watch any token and get alerted when its curve crosses 25/50/75/90%, when it graduates, on
+                        volume spikes, sharp price moves and whale trades.
+                    </p>
+                    <p>
+                        Alerts are tied to your wallet through a signed message — no transaction, no gas. Delivery is
+                        in-app, with optional browser push and Telegram.
+                    </p>
+                </Section>
             </div>
-            <h3 className="mb-1 text-[11px] tracking-[0.1em] text-[#00ff41]/70">{title}</h3>
-            <p className="text-[10px] leading-relaxed tracking-wider text-[#00ff41]/25">{description}</p>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <Section title="NETWORK">
+                    <dl className="space-y-2 font-mono text-[11px]">
+                        <div className="flex justify-between gap-3">
+                            <dt className="text-white/35">Chain ID</dt>
+                            <dd className="text-white/70">{RH_CHAIN_ID}</dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                            <dt className="shrink-0 text-white/35">RPC</dt>
+                            <dd className="truncate text-white/70">{RH_RPC_URLS[0]}</dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                            <dt className="shrink-0 text-white/35">Explorer</dt>
+                            <dd className="truncate text-white/70">
+                                <a
+                                    href={RH_EXPLORER_URL}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="hover:text-[#00C805]"
+                                >
+                                    {RH_EXPLORER_URL.replace("https://", "")}
+                                </a>
+                            </dd>
+                        </div>
+                    </dl>
+                </Section>
+
+                <Section title="DATA">
+                    <p>
+                        Token, portfolio, trade and quote data comes from a Robinhood Chain indexer. Balances,
+                        allowances and every transaction you sign go straight to the chain RPC — nothing is
+                        intermediated.
+                    </p>
+                    <p>
+                        Curve trades are built and signed in your browser against the token&apos;s own contract, so
+                        BagScan never holds funds or keys.
+                    </p>
+                </Section>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+                <Link
+                    href="/"
+                    className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[10px] font-semibold tracking-[0.14em] text-black transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: RH_THEME.green }}
+                >
+                    START DISCOVERING
+                </Link>
+                <a
+                    href={RH_EXPLORER_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/12 px-4 py-2.5 text-[10px] tracking-[0.14em] text-white/55 transition-colors hover:border-[#00C805]/30 hover:text-[#00C805]"
+                >
+                    CHAIN EXPLORER
+                    <ExternalLink className="h-3 w-3" />
+                </a>
+            </div>
         </div>
     );
 }

@@ -2,9 +2,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 25;
 
 import { NextRequest, NextResponse } from "next/server";
-import { getEthUsdPrice, getRhBalances, getRhPortfolio } from "@/lib/bags/rh-client";
-import { buildRhPortfolioView } from "@/lib/bags/rh-portfolio";
-import { isEvmAddress } from "@/lib/networks";
+import { getEthUsdPrice, getRhBalances, getRhPortfolio } from "@/lib/rh/client";
+import { buildRhPortfolioView } from "@/lib/rh/portfolio";
+import { isEvmAddress } from "@/lib/rh/chain";
 
 export async function GET(req: NextRequest) {
     const owner = req.nextUrl.searchParams.get("owner")?.trim() ?? "";

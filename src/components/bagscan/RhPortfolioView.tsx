@@ -22,12 +22,13 @@ import {
     formatTokenPrice,
     shortenAddress,
 } from "@/lib/utils";
-import { BAGSCAN_NETWORKS, isEvmAddress } from "@/lib/networks";
+import { isEvmAddress, rhExplorerAddressUrl } from "@/lib/rh/chain";
 import { RemoteFillImage } from "./RemoteFillImage";
 import { ErrorState } from "./States";
 import { RhBondingBar, rhFormatPct } from "./RhUi";
-import { NetworkIcon, RH_THEME } from "./NetworkIcons";
-import type { RhPortfolioView as RhPortfolioData } from "@/lib/bags/rh-portfolio";
+import { RhLogo } from "./RhLogo";
+import { RH_THEME } from "@/lib/rh/chain";
+import type { RhPortfolioView as RhPortfolioData } from "@/lib/rh/portfolio";
 
 type RhPortfolioTab = "holdings" | "fees";
 
@@ -168,7 +169,7 @@ export function RhPortfolioView({ walletParam }: { walletParam: string }) {
                                         {ownerValid ? shortenAddress(owner, 5) : "WALLET"}
                                     </h1>
                                     <span className="inline-flex items-center gap-1 rounded-full border border-[#00C805]/30 bg-[#00C805]/10 px-2 py-0.5 text-[9px] tracking-wider text-[#00C805]">
-                                        <NetworkIcon network="robinhood" size={12} />
+                                        <RhLogo size={12} />
                                         ROBINHOOD
                                     </span>
                                 </div>
@@ -216,7 +217,7 @@ export function RhPortfolioView({ walletParam }: { walletParam: string }) {
                                     </button>
                                     {ownerValid ? (
                                         <a
-                                            href={BAGSCAN_NETWORKS.robinhood.explorerTokenUrl(owner)}
+                                            href={rhExplorerAddressUrl(owner)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-white/15 px-3 py-2 text-[11px] text-white/60 transition-colors hover:border-[#00C805]/30 hover:text-[#00C805] sm:min-h-0 sm:px-4 sm:text-xs"
@@ -473,7 +474,7 @@ export function RhPortfolioView({ walletParam }: { walletParam: string }) {
                                             NO CREATOR FEE POSITIONS
                                         </p>
                                         <p className="mx-auto mt-1.5 max-w-sm text-[10px] leading-relaxed text-white/30">
-                                            Fee positions appear here once this wallet launches a token or is added to a
+                                            Fee positions appear here once this wallet creates a token or is added to a
                                             fee share on Robinhood Chain.
                                         </p>
                                     </div>
@@ -522,7 +523,7 @@ export function RhPortfolioView({ walletParam }: { walletParam: string }) {
                                     </div>
                                 )}
 
-                                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#00C805]/15 bg-[#00C805]/[0.04] p-3.5">
+                                <div className="mt-4 rounded-2xl border border-[#00C805]/15 bg-[#00C805]/[0.04] p-3.5">
                                     <div>
                                         <p className="text-[10px] tracking-[0.14em] text-[#00C805]/70">
                                             LIFETIME CREATOR FEES
@@ -534,16 +535,6 @@ export function RhPortfolioView({ walletParam }: { walletParam: string }) {
                                                 : ""}
                                         </p>
                                     </div>
-                                    <a
-                                        href="https://bags.fm/?network=robinhood"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-[10px] font-semibold tracking-[0.12em] text-black transition-opacity hover:opacity-90"
-                                        style={{ backgroundColor: RH_THEME.green }}
-                                    >
-                                        CLAIM ON BAGS
-                                        <ExternalLink className="h-3 w-3" />
-                                    </a>
                                 </div>
                             </div>
                         )}

@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { SITE_NAME } from "@/lib/site";
 
-export const alt = "BagScan — Bags-native token discovery terminal";
+export const alt = "BagScan — the Robinhood Chain token terminal";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -17,7 +17,7 @@ export default function OpengraphImage() {
                     flexDirection: "column",
                     justifyContent: "center",
                     padding: "80px",
-                    background: "linear-gradient(135deg, #0b0e11 0%, #0d1512 55%, #0b0e11 100%)",
+                    background: "linear-gradient(135deg, #070907 0%, #0c1a0c 55%, #070907 100%)",
                     color: "#ffffff",
                     fontFamily: "monospace",
                 }}
@@ -29,7 +29,7 @@ export default function OpengraphImage() {
                         gap: 18,
                         fontSize: 26,
                         letterSpacing: 6,
-                        color: "#20e3b2",
+                        color: "#00C805",
                     }}
                 >
                     <div
@@ -37,10 +37,10 @@ export default function OpengraphImage() {
                             width: 18,
                             height: 18,
                             borderRadius: 999,
-                            background: "#20e3b2",
+                            background: "#00C805",
                         }}
                     />
-                    SOLANA · ROBINHOOD CHAIN
+                    ROBINHOOD CHAIN · 4663
                 </div>
 
                 <div style={{ marginTop: 28, fontSize: 104, fontWeight: 700, letterSpacing: -2 }}>
@@ -48,7 +48,7 @@ export default function OpengraphImage() {
                 </div>
 
                 <div style={{ marginTop: 20, fontSize: 36, lineHeight: 1.35, color: "rgba(255,255,255,0.62)" }}>
-                    Bags-native discovery, bonding-curve tracking, launches and alerts — in one terminal.
+                    Bonding-curve discovery, flow intelligence, portfolios, alerts and in-app trading.
                 </div>
 
                 <div
@@ -61,7 +61,7 @@ export default function OpengraphImage() {
                         color: "rgba(255,255,255,0.4)",
                     }}
                 >
-                    DISCOVER · ALPHA · AGENTS · LAUNCH · PORTFOLIO · ALERTS
+                    DISCOVER · ALPHA · PORTFOLIO · ALERTS · TRADE
                 </div>
             </div>
         ),

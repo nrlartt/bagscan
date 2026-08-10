@@ -1,819 +1,341 @@
-import type {
-    AlertNotification as AlertNotificationRecord,
-    AlertPreference as AlertPreferenceRecord,
-    PushSubscription as PushSubscriptionRecord,
-} from "@prisma/client";
+import "server-only";
 import { prisma } from "@/lib/db";
-import { generateAlphaFeed } from "@/lib/alpha/engine";
-import { getPortfolioForWallet } from "@/lib/portfolio/service";
-import { getAlertAccess } from "./access";
-import { getTelegramConfig, runTelegramBroadcastCron } from "./telegram";
-import type { AlphaToken } from "@/lib/alpha/types";
-import type { PortfolioHolding } from "@/lib/portfolio/types";
-import type {
-    AlertNotificationItem,
-    AlertPreferenceState,
-    AlertPreferenceUpdateInput,
-    AlertStateResponse,
-} from "./types";
-import { withPgAdvisoryLock } from "@/lib/db";
-import type {
-    WebPushSendError,
-    WebPushSubscriptionPayload,
-} from "./webpush.server";
+import { getRhToken, getRhTrades } from "@/lib/rh/client";
+import { parseRhFixed18, parseWeiToEth } from "@/lib/rh/mappers";
+import { rhExplorerTokenUrl } from "@/lib/rh/chain";
 
-const ALERT_EVALUATION_INTERVAL_MS = 90_000;
-const DEFAULT_CRON_WALLET_GAP_MS = 250;
-const DEFAULT_NOTIFICATION_LIMIT = 30;
-const PUSH_ACTION_FALLBACK = "/alpha";
-const ALERTS_CRON_LOCK_KEY = 42_091_337;
+/** Curve bands that each fire exactly once, in ascending order. */
+const CURVE_BANDS = [25, 50, 75, 90] as const;
+/** 7-day volume, in ETH, that counts as a spike for a Robinhood launch. */
+const VOLUME_SPIKE_ETH = 0.5;
 
-const PrismaAlertKind = {
-    alpha_hot: "alpha_hot",
-    alpha_critical: "alpha_critical",
-    portfolio_profit: "portfolio_profit",
-    portfolio_drawdown: "portfolio_drawdown",
-    fee_claim: "fee_claim",
-    system: "system",
-} as const;
+type AlertKind = "curve_progress" | "graduation" | "volume_spike" | "price_move" | "whale_trade";
+type AlertSeverity = "info" | "hot" | "critical";
 
-const PrismaAlertSeverity = {
-    info: "info",
-    hot: "hot",
-    critical: "critical",
-} as const;
-
-type PrismaAlertKind = (typeof PrismaAlertKind)[keyof typeof PrismaAlertKind];
-type PrismaAlertSeverity = (typeof PrismaAlertSeverity)[keyof typeof PrismaAlertSeverity];
-
-interface AlertCandidate {
-    kind: PrismaAlertKind;
-    severity: PrismaAlertSeverity;
+interface PendingAlert {
+    kind: AlertKind;
+    severity: AlertSeverity;
     title: string;
-    message: string;
-    eventKey: string;
-    tokenMint?: string;
-    actionUrl?: string;
-    imageUrl?: string;
+    body: string;
+    valueLabel?: string;
+    /** Rule flag on the watch that must be enabled for this alert to deliver. */
+    rule: "curve" | "grad" | "volume" | "price" | "whale";
 }
 
-interface SerializedPushSubscription {
-    endpoint?: string;
-    expirationTime?: number | null;
-    keys?: {
-        p256dh?: string;
-        auth?: string;
-    };
+export interface AlertsRunSummary {
+    tokensScanned: number;
+    alertsCreated: number;
+    watchersNotified: number;
+    errors: number;
 }
 
-function mapPreference(record: AlertPreferenceRecord): AlertPreferenceState {
-    return {
-        walletAddress: record.walletAddress,
-        inAppEnabled: record.inAppEnabled,
-        browserPushEnabled: record.browserPushEnabled,
-        telegramEnabled: record.telegramEnabled,
-        alphaHotEnabled: record.alphaHotEnabled,
-        alphaCriticalEnabled: record.alphaCriticalEnabled,
-        portfolioProfitEnabled: record.portfolioProfitEnabled,
-        portfolioDrawdownEnabled: record.portfolioDrawdownEnabled,
-        feesEnabled: record.feesEnabled,
-        profitThresholdPercent: record.profitThresholdPercent,
-        drawdownThresholdPercent: record.drawdownThresholdPercent,
-        claimableFeesThresholdSol: record.claimableFeesThresholdSol,
-        telegramChatId: record.telegramChatId,
-        lastEvaluatedAt: record.lastEvaluatedAt?.toISOString() ?? null,
-        createdAt: record.createdAt.toISOString(),
-        updatedAt: record.updatedAt.toISOString(),
-    };
+function pct(value: number): string {
+    return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
-function mapNotification(record: AlertNotificationRecord): AlertNotificationItem {
-    return {
-        id: record.id,
-        kind: record.kind,
-        severity: record.severity,
-        title: record.title,
-        message: record.message,
-        tokenMint: record.tokenMint,
-        actionUrl: record.actionUrl,
-        imageUrl: record.imageUrl,
-        createdAt: record.createdAt.toISOString(),
-        readAt: record.readAt?.toISOString() ?? null,
-    };
+function ethLabel(value: number): string {
+    if (value >= 1) return `${value.toFixed(2)} ETH`;
+    if (value >= 0.0001) return `${value.toFixed(4)} ETH`;
+    return `${value.toExponential(1)} ETH`;
 }
 
-function getPushConfig() {
+/**
+ * Compare a token's live state against the last stored snapshot and return the
+ * alerts that the change justifies. Pure aside from its inputs, so the delivery
+ * loop below stays easy to reason about.
+ */
+function diffToken(
+    previous: {
+        migrated: boolean;
+        bondingProgressPct: number | null;
+        priceEth: number | null;
+        lastCurveBand: number | null;
+    } | null,
+    current: {
+        symbol?: string;
+        migrated: boolean;
+        bondingProgressPct?: number;
+        priceEth?: number;
+        volumeEth7d: number;
+        largestTradeEth: number;
+    }
+): { alerts: PendingAlert[]; nextCurveBand: number | null } {
+    const alerts: PendingAlert[] = [];
+    const label = current.symbol ? `$${current.symbol}` : "This token";
+    let nextCurveBand = previous?.lastCurveBand ?? null;
+
+    if (current.migrated && !previous?.migrated) {
+        alerts.push({
+            kind: "graduation",
+            severity: "critical",
+            title: `${label} graduated`,
+            body: "The bonding curve completed and liquidity moved into the Uniswap V4 pool.",
+            rule: "grad",
+        });
+    }
+
+    const progress = current.bondingProgressPct ?? 0;
+    if (!current.migrated) {
+        for (const band of CURVE_BANDS) {
+            if (progress >= band && (nextCurveBand ?? 0) < band) {
+                nextCurveBand = band;
+                alerts.push({
+                    kind: "curve_progress",
+                    severity: band >= 75 ? "critical" : "hot",
+                    title: `${label} curve hit ${band}%`,
+                    body: "The bonding curve is filling — graduation moves closer with every buy.",
+                    valueLabel: `${Math.round(progress)}%`,
+                    rule: "curve",
+                });
+            }
+        }
+    }
+
+    if (current.volumeEth7d >= VOLUME_SPIKE_ETH) {
+        alerts.push({
+            kind: "volume_spike",
+            severity: current.volumeEth7d >= 2 ? "critical" : "hot",
+            title: `${label} volume spike`,
+            body: "7-day trade volume is well above a typical Robinhood Chain launch.",
+            valueLabel: ethLabel(current.volumeEth7d),
+            rule: "volume",
+        });
+    }
+
+    if (previous?.priceEth != null && current.priceEth != null && previous.priceEth > 0) {
+        const change = ((current.priceEth - previous.priceEth) / previous.priceEth) * 100;
+        if (Math.abs(change) >= 1) {
+            alerts.push({
+                kind: "price_move",
+                severity: Math.abs(change) >= 50 ? "critical" : "hot",
+                title: `${label} moved ${pct(change)}`,
+                body: "Spot price changed since the last check.",
+                valueLabel: pct(change),
+                rule: "price",
+            });
+        }
+    }
+
+    if (current.largestTradeEth > 0) {
+        alerts.push({
+            kind: "whale_trade",
+            severity: "hot",
+            title: `${label} whale trade`,
+            body: "A single trade moved a large amount of ETH.",
+            valueLabel: ethLabel(current.largestTradeEth),
+            rule: "whale",
+        });
+    }
+
+    return { alerts, nextCurveBand };
+}
+
+async function deliverPush(wallet: string, title: string, body: string, tokenAddress: string) {
     const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     const privateKey = process.env.VAPID_PRIVATE_KEY;
-    const subject = process.env.VAPID_SUBJECT;
-    const configured = Boolean(publicKey && privateKey && subject);
+    if (!publicKey || !privateKey) return;
 
-    return {
-        configured,
-        publicKey,
-        privateKey,
-        subject,
-    };
-}
+    const subs = await prisma.rhPushSubscription.findMany({ where: { wallet } });
+    if (subs.length === 0) return;
 
-function hasAnyDeliveryEnabled(preference: AlertPreferenceRecord) {
-    return (
-        preference.inAppEnabled ||
-        preference.browserPushEnabled ||
-        preference.telegramEnabled
-    );
-}
+    const webpush = (await import("web-push")).default;
+    webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:alerts@bagscan.app", publicKey, privateKey);
 
-function getEventBucket(hours: number) {
-    return Math.floor(Date.now() / (hours * 60 * 60 * 1000));
-}
-
-function sleep(ms: number) {
-    return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-function getCronWalletGapMs() {
-    const raw = Number(process.env.ALERTS_CRON_WALLET_GAP_MS ?? DEFAULT_CRON_WALLET_GAP_MS);
-    if (!Number.isFinite(raw) || raw < 0) return DEFAULT_CRON_WALLET_GAP_MS;
-    return Math.min(raw, 10_000);
-}
-
-function toSeverity(kind: "info" | "hot" | "critical") {
-    if (kind === "critical") return PrismaAlertSeverity.critical;
-    if (kind === "hot") return PrismaAlertSeverity.hot;
-    return PrismaAlertSeverity.info;
-}
-
-function formatTokenLabel(symbol?: string, mint?: string) {
-    if (symbol) return `$${symbol}`;
-    if (mint) return `${mint.slice(0, 4)}...${mint.slice(-4)}`;
-    return "Token";
-}
-
-function formatPercent(value: number) {
-    const sign = value > 0 ? "+" : "";
-    return `${sign}${value.toFixed(1)}%`;
-}
-
-function formatSol(value: number) {
-    return `${value.toFixed(value >= 10 ? 2 : 4)} SOL`;
-}
-
-function createActionUrl(tokenMint?: string, fallback = PUSH_ACTION_FALLBACK) {
-    return tokenMint ? `/token/${tokenMint}` : fallback;
-}
-
-function buildAlphaCriticalCandidates(tokens: AlphaToken[]): AlertCandidate[] {
-    return tokens
-        .filter((token) =>
-            token.alphaScore >= 90 ||
-            token.signals.some((signal) => signal.severity === "critical")
-        )
-        .slice(0, 3)
-        .map((token) => ({
-            kind: PrismaAlertKind.alpha_critical,
-            severity: toSeverity("critical"),
-            title: `${formatTokenLabel(token.symbol, token.tokenMint)} reached critical alpha`,
-            message: [
-                token.priceChange24h !== undefined ? `Move ${formatPercent(token.priceChange24h)}` : null,
-                token.txCount24h ? `${token.txCount24h} tx/24h` : null,
-                token.trendingNowScore ? `trend ${token.trendingNowScore}` : null,
-            ].filter(Boolean).join(" | "),
-            eventKey: `alpha-critical:${token.tokenMint}:${getEventBucket(4)}`,
-            tokenMint: token.tokenMint,
-            actionUrl: createActionUrl(token.tokenMint),
-            imageUrl: token.image,
-        }));
-}
-
-function buildAlphaHotCandidates(tokens: AlphaToken[]): AlertCandidate[] {
-    return tokens
-        .filter((token) => token.isTrendingNow && (token.trendingNowScore ?? 0) >= 80)
-        .slice(0, 4)
-        .map((token) => ({
-            kind: PrismaAlertKind.alpha_hot,
-            severity: toSeverity((token.trendingNowScore ?? 0) >= 110 ? "critical" : "hot"),
-            title: `${formatTokenLabel(token.symbol, token.tokenMint)} is trending now`,
-            message:
-                token.trendingReasons?.join(" | ") ||
-                `${token.txCount24h ?? 0} tx in 24h | ${formatPercent(token.priceChange24h ?? 0)}`,
-            eventKey: `alpha-hot:${token.tokenMint}:${getEventBucket(2)}`,
-            tokenMint: token.tokenMint,
-            actionUrl: createActionUrl(token.tokenMint),
-            imageUrl: token.image,
-        }));
-}
-
-function buildProfitCandidates(
-    holdings: PortfolioHolding[],
-    thresholdPercent: number
-) {
-    return holdings
-        .filter((holding) =>
-            (holding.unrealizedPnlPercent ?? Number.NEGATIVE_INFINITY) >= thresholdPercent &&
-            (holding.valueUsd ?? 0) >= 25
-        )
-        .sort((a, b) => (b.unrealizedPnlPercent ?? 0) - (a.unrealizedPnlPercent ?? 0))
-        .slice(0, 3)
-        .map((holding) => ({
-            kind: PrismaAlertKind.portfolio_profit,
-            severity: toSeverity((holding.unrealizedPnlPercent ?? 0) >= thresholdPercent * 1.8 ? "critical" : "hot"),
-            title: `${formatTokenLabel(holding.symbol, holding.mint)} is above your profit target`,
-            message: `${formatPercent(holding.unrealizedPnlPercent ?? 0)} unrealized | value ${holding.valueUsd?.toFixed(2) ? `$${holding.valueUsd.toFixed(2)}` : "$0.00"}`,
-            eventKey: `portfolio-profit:${holding.mint}:${thresholdPercent}:${getEventBucket(6)}`,
-            tokenMint: holding.mint,
-            actionUrl: createActionUrl(holding.mint, "/portfolio"),
-            imageUrl: holding.image,
-        }));
-}
-
-function buildDrawdownCandidates(
-    holdings: PortfolioHolding[],
-    thresholdPercent: number
-) {
-    return holdings
-        .filter((holding) =>
-            (holding.unrealizedPnlPercent ?? Number.POSITIVE_INFINITY) <= thresholdPercent &&
-            (holding.valueUsd ?? 0) >= 25
-        )
-        .sort((a, b) => (a.unrealizedPnlPercent ?? 0) - (b.unrealizedPnlPercent ?? 0))
-        .slice(0, 3)
-        .map((holding) => ({
-            kind: PrismaAlertKind.portfolio_drawdown,
-            severity: toSeverity((holding.unrealizedPnlPercent ?? 0) <= thresholdPercent * 1.75 ? "critical" : "hot"),
-            title: `${formatTokenLabel(holding.symbol, holding.mint)} fell below your drawdown limit`,
-            message: `${formatPercent(holding.unrealizedPnlPercent ?? 0)} unrealized | value ${holding.valueUsd?.toFixed(2) ? `$${holding.valueUsd.toFixed(2)}` : "$0.00"}`,
-            eventKey: `portfolio-drawdown:${holding.mint}:${thresholdPercent}:${getEventBucket(4)}`,
-            tokenMint: holding.mint,
-            actionUrl: createActionUrl(holding.mint, "/portfolio"),
-            imageUrl: holding.image,
-        }));
-}
-
-function buildFeeClaimCandidate(
-    wallet: string,
-    claimableFeesSol: number
-) {
-    return {
-        kind: PrismaAlertKind.fee_claim,
-        severity: toSeverity(claimableFeesSol >= 1 ? "critical" : "hot"),
-        title: "Claimable Bags fees are ready",
-        message: `${wallet.slice(0, 4)}...${wallet.slice(-4)} can claim ${formatSol(claimableFeesSol)}`,
-        eventKey: `fee-claim:${wallet}:${getEventBucket(6)}`,
-        actionUrl: "/portfolio",
-    } satisfies AlertCandidate;
-}
-
-async function getOrCreatePreference(walletAddress: string) {
-    return prisma.alertPreference.upsert({
-        where: { walletAddress },
-        create: { walletAddress },
-        update: {},
-    });
-}
-
-async function createNotificationIfMissing(walletAddress: string, candidate: AlertCandidate) {
-    const existing = await prisma.alertNotification.findUnique({
-        where: {
-            walletAddress_eventKey: {
-                walletAddress,
-                eventKey: candidate.eventKey,
-            },
-        },
-    });
-
-    if (existing) {
-        return null;
-    }
-
-    return prisma.alertNotification.create({
-        data: {
-            walletAddress,
-            kind: candidate.kind,
-            severity: candidate.severity,
-            title: candidate.title,
-            message: candidate.message,
-            eventKey: candidate.eventKey,
-            tokenMint: candidate.tokenMint,
-            actionUrl: candidate.actionUrl,
-            imageUrl: candidate.imageUrl,
-        },
-    });
-}
-
-async function sendBrowserPush(
-    preference: AlertPreferenceRecord,
-    notifications: AlertNotificationRecord[],
-    subscriptions: PushSubscriptionRecord[]
-) {
-    const pushConfig = getPushConfig();
-    if (!pushConfig.configured || !preference.browserPushEnabled || subscriptions.length === 0) {
-        return;
-    }
-
-    const { getConfiguredWebPush } = await import("./webpush.server");
-    const webpush = getConfiguredWebPush({
-        subject: pushConfig.subject!,
-        publicKey: pushConfig.publicKey!,
-        privateKey: pushConfig.privateKey!,
-    });
-
-    const top = notifications[0];
-    const payload = JSON.stringify({
-        title:
-            notifications.length > 1
-                ? `${notifications.length} new BagScan alerts`
-                : top.title,
-        body:
-            notifications.length > 1
-                ? notifications
-                    .slice(0, 3)
-                    .map((item) => item.title)
-                    .join(" | ")
-                : top.message,
-        url: top.actionUrl || PUSH_ACTION_FALLBACK,
-        tag: `bagscan-alerts-${preference.walletAddress}`,
-    });
-
-    await Promise.allSettled(
-        subscriptions.map(async (subscription) => {
+    await Promise.all(
+        subs.map(async (sub) => {
             try {
                 await webpush.sendNotification(
                     {
-                        endpoint: subscription.endpoint,
-                        expirationTime: subscription.expirationTime ? Number(subscription.expirationTime) : null,
-                        keys: {
-                            p256dh: subscription.p256dh,
-                            auth: subscription.auth,
-                        },
-                    } satisfies WebPushSubscriptionPayload,
-                    payload
+                        endpoint: sub.endpoint,
+                        keys: { p256dh: sub.p256dh, auth: sub.auth },
+                    },
+                    JSON.stringify({ title, body, url: `/token/${tokenAddress}` })
                 );
-            } catch (error) {
-                const statusCode =
-                    typeof error === "object" && error !== null && "statusCode" in error
-                        ? Number((error as WebPushSendError).statusCode)
-                        : undefined;
-
-                if (statusCode === 404 || statusCode === 410) {
-                    await prisma.pushSubscription.delete({
-                        where: { endpoint: subscription.endpoint },
-                    }).catch(() => undefined);
-                } else {
-                    console.error("[alerts] browser push error:", error);
-                }
+            } catch {
+                // Gone/expired endpoints are dropped rather than retried forever.
+                await prisma.rhPushSubscription
+                    .delete({ where: { endpoint: sub.endpoint } })
+                    .catch(() => undefined);
             }
         })
     );
-
-    await prisma.alertNotification.updateMany({
-        where: {
-            id: { in: notifications.map((item) => item.id) },
-        },
-        data: {
-            deliveredPushAt: new Date(),
-        },
-    });
 }
 
-async function sendTelegram(
-    preference: AlertPreferenceRecord,
-    notifications: AlertNotificationRecord[]
-) {
-    const telegramConfig = getTelegramConfig();
-    if (
-        !telegramConfig.configured ||
-        !preference.telegramEnabled ||
-        !preference.telegramChatId ||
-        notifications.length === 0
-    ) {
-        return;
-    }
+async function deliverTelegram(chatId: string, title: string, body: string, tokenAddress: string) {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) return;
 
-    const top = notifications[0];
-    const body =
-        notifications.length > 1
-            ? notifications
-                .slice(0, 4)
-                .map((item, index) => `${index + 1}. ${item.title}\n${item.message}`)
-                .join("\n\n")
-            : `${top.title}\n${top.message}`;
-
-    const response = await fetch(`https://api.telegram.org/bot${telegramConfig.botToken}/sendMessage`, {
+    const text = `*${title}*\n${body}\n\n[View token](${rhExplorerTokenUrl(tokenAddress)})`;
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
-            chat_id: preference.telegramChatId,
-            text: `BagScan Alerts\n\n${body}`,
+            chat_id: chatId,
+            text,
+            parse_mode: "Markdown",
             disable_web_page_preview: true,
         }),
-    });
-
-    if (!response.ok) {
-        const raw = await response.text().catch(() => "");
-        console.error("[alerts] telegram error:", response.status, raw);
-        return;
-    }
-
-    await prisma.alertNotification.updateMany({
-        where: {
-            id: { in: notifications.map((item) => item.id) },
-        },
-        data: {
-            deliveredTelegramAt: new Date(),
-        },
-    });
+        signal: AbortSignal.timeout(10_000),
+    }).catch(() => undefined);
 }
 
-async function deliverNotifications(
-    preference: AlertPreferenceRecord,
-    notifications: AlertNotificationRecord[]
-) {
-    if (notifications.length === 0) return;
-    const subscriptions =
-        preference.browserPushEnabled
-            ? await prisma.pushSubscription.findMany({
-                where: { walletAddress: preference.walletAddress },
-            })
-            : [];
-
-    await Promise.allSettled([
-        sendBrowserPush(preference, notifications, subscriptions),
-        sendTelegram(preference, notifications),
-    ]);
-}
-
-export async function evaluateAlertsForWallet(walletAddress: string, force = false) {
-    const preference = await getOrCreatePreference(walletAddress);
-    const access = await getAlertAccess(walletAddress);
-
-    if (!access.eligible) {
-        await prisma.alertPreference.update({
-            where: { walletAddress },
-            data: { lastEvaluatedAt: new Date() },
-        });
-        return { preference, created: [] as AlertNotificationRecord[] };
-    }
-
-    if (!hasAnyDeliveryEnabled(preference)) {
-        return { preference, created: [] as AlertNotificationRecord[] };
-    }
-
-    if (
-        !force &&
-        preference.lastEvaluatedAt &&
-        Date.now() - preference.lastEvaluatedAt.getTime() < ALERT_EVALUATION_INTERVAL_MS
-    ) {
-        return { preference, created: [] as AlertNotificationRecord[] };
-    }
-
-    const [alphaFeed, portfolio] = await Promise.all([
-        generateAlphaFeed(),
-        getPortfolioForWallet(walletAddress),
-    ]);
-
-    const candidates: AlertCandidate[] = [];
-
-    if (preference.alphaCriticalEnabled) {
-        candidates.push(...buildAlphaCriticalCandidates(alphaFeed.tokens));
-    }
-
-    if (preference.alphaHotEnabled) {
-        candidates.push(...buildAlphaHotCandidates(alphaFeed.tokens));
-    }
-
-    if (preference.portfolioProfitEnabled) {
-        candidates.push(...buildProfitCandidates(portfolio.holdings, preference.profitThresholdPercent));
-    }
-
-    if (preference.portfolioDrawdownEnabled) {
-        candidates.push(...buildDrawdownCandidates(portfolio.holdings, preference.drawdownThresholdPercent));
-    }
-
-    if (
-        preference.feesEnabled &&
-        portfolio.summary.claimableFeesSol >= preference.claimableFeesThresholdSol
-    ) {
-        candidates.push(
-            buildFeeClaimCandidate(walletAddress, portfolio.summary.claimableFeesSol)
-        );
-    }
-
-    const created = (
-        await Promise.all(candidates.map((candidate) => createNotificationIfMissing(walletAddress, candidate)))
-    ).filter((item): item is AlertNotificationRecord => item !== null);
-
-    await prisma.alertPreference.update({
-        where: { walletAddress },
-        data: { lastEvaluatedAt: new Date() },
-    });
-
-    if (created.length > 0) {
-        await deliverNotifications(preference, created);
-    }
-
-    return { preference, created };
-}
-
-export async function getAlertState(walletAddress: string, evaluate = true): Promise<AlertStateResponse> {
-    if (evaluate) {
-        await evaluateAlertsForWallet(walletAddress);
-    } else {
-        await getOrCreatePreference(walletAddress);
-    }
-
-    const [preference, notifications, unreadCount, access] = await Promise.all([
-        prisma.alertPreference.findUniqueOrThrow({
-            where: { walletAddress },
-        }),
-        prisma.alertNotification.findMany({
-            where: { walletAddress },
-            orderBy: { createdAt: "desc" },
-            take: DEFAULT_NOTIFICATION_LIMIT,
-        }),
-        prisma.alertNotification.count({
-            where: {
-                walletAddress,
-                readAt: null,
-            },
-        }),
-        getAlertAccess(walletAddress),
-    ]);
-
-    const pushConfig = getPushConfig();
-    const telegramConfig = getTelegramConfig();
-
-    return {
-        wallet: walletAddress,
-        unreadCount,
-        preference: mapPreference(preference),
-        notifications: notifications.map(mapNotification),
-        config: {
-            access,
-            browserPushConfigured: pushConfig.configured,
-            telegramConfigured: telegramConfig.configured,
-            vapidPublicKey: pushConfig.publicKey,
-            requiresSecureOrigin: true,
-            backgroundRuntimeEnabled: process.env.ENABLE_INTERNAL_ALERTS_RUNTIME !== "false",
-        },
+/**
+ * Evaluate every watched token once and fan the resulting alerts out to the
+ * wallets watching them. Safe to call repeatedly — snapshots make each state
+ * change fire once.
+ */
+export async function runAlertsEvaluation(): Promise<AlertsRunSummary> {
+    const summary: AlertsRunSummary = {
+        tokensScanned: 0,
+        alertsCreated: 0,
+        watchersNotified: 0,
+        errors: 0,
     };
-}
 
-export async function updateAlertPreference(
-    walletAddress: string,
-    input: AlertPreferenceUpdateInput
-) {
-    const current = await getOrCreatePreference(walletAddress);
-    const nextTelegramEnabled = input.telegramEnabled ?? current.telegramEnabled;
-    const nextTelegramChatId =
-        input.telegramChatId === undefined
-            ? current.telegramChatId
-            : input.telegramChatId?.trim() || null;
+    const watches = await prisma.rhWatch.findMany({ include: { subscriber: true } });
+    if (watches.length === 0) return summary;
 
-    if (nextTelegramEnabled && !nextTelegramChatId) {
-        throw new Error("Telegram alerts require a Telegram chat ID");
+    const byToken = new Map<string, typeof watches>();
+    for (const watch of watches) {
+        const list = byToken.get(watch.tokenAddress) ?? [];
+        list.push(watch);
+        byToken.set(watch.tokenAddress, list);
     }
 
-    if (input.profitThresholdPercent !== undefined && input.profitThresholdPercent <= 0) {
-        throw new Error("Profit threshold must be greater than 0");
-    }
-
-    if (input.drawdownThresholdPercent !== undefined && input.drawdownThresholdPercent >= 0) {
-        throw new Error("Drawdown threshold must be below 0");
-    }
-
-    if (input.claimableFeesThresholdSol !== undefined && input.claimableFeesThresholdSol < 0) {
-        throw new Error("Claimable SOL threshold cannot be negative");
-    }
-
-    return prisma.alertPreference.update({
-        where: { walletAddress },
-        data: {
-            inAppEnabled: input.inAppEnabled,
-            browserPushEnabled: input.browserPushEnabled,
-            telegramEnabled: input.telegramEnabled,
-            alphaHotEnabled: input.alphaHotEnabled,
-            alphaCriticalEnabled: input.alphaCriticalEnabled,
-            portfolioProfitEnabled: input.portfolioProfitEnabled,
-            portfolioDrawdownEnabled: input.portfolioDrawdownEnabled,
-            feesEnabled: input.feesEnabled,
-            profitThresholdPercent: input.profitThresholdPercent,
-            drawdownThresholdPercent: input.drawdownThresholdPercent,
-            claimableFeesThresholdSol: input.claimableFeesThresholdSol,
-            telegramChatId:
-                input.telegramChatId === undefined
-                    ? undefined
-                    : nextTelegramChatId,
-        },
-    });
-}
-
-export async function markAlertsRead(
-    walletAddress: string,
-    input: { ids?: string[]; all?: boolean }
-) {
-    const where = input.all
-        ? { walletAddress, readAt: null }
-        : { walletAddress, id: { in: input.ids ?? [] } };
-
-    await prisma.alertNotification.updateMany({
-        where,
-        data: {
-            readAt: new Date(),
-        },
-    });
-}
-
-export async function savePushSubscription(
-    walletAddress: string,
-    subscription: SerializedPushSubscription,
-    userAgent?: string | null
-) {
-    const p256dh = subscription.keys?.p256dh;
-    const auth = subscription.keys?.auth;
-
-    if (!subscription.endpoint || !p256dh || !auth) {
-        throw new Error("Incomplete push subscription payload");
-    }
-
-    await prisma.pushSubscription.upsert({
-        where: {
-            endpoint: subscription.endpoint,
-        },
-        create: {
-            walletAddress,
-            endpoint: subscription.endpoint,
-            p256dh,
-            auth,
-            expirationTime:
-                subscription.expirationTime === null || subscription.expirationTime === undefined
-                    ? null
-                    : String(subscription.expirationTime),
-            userAgent: userAgent ?? null,
-        },
-        update: {
-            walletAddress,
-            p256dh,
-            auth,
-            expirationTime:
-                subscription.expirationTime === null || subscription.expirationTime === undefined
-                    ? null
-                    : String(subscription.expirationTime),
-            userAgent: userAgent ?? null,
-        },
-    });
-}
-
-export async function deletePushSubscription(walletAddress: string, endpoint: string) {
-    await prisma.pushSubscription.deleteMany({
-        where: {
-            walletAddress,
-            endpoint,
-        },
-    });
-}
-
-export async function logoutAlertSessionData(walletAddress: string) {
-    await prisma.pushSubscription.deleteMany({
-        where: { walletAddress },
-    });
-}
-
-async function runAlertsCronInternal(limit = 100) {
-    const preferences = await prisma.alertPreference.findMany({
-        orderBy: [
-            { lastEvaluatedAt: "asc" },
-            { createdAt: "asc" },
-        ],
-        take: limit,
-    });
-
-    let createdCount = 0;
-
-    const walletGapMs = getCronWalletGapMs();
-
-    for (let index = 0; index < preferences.length; index += 1) {
-        const preference = preferences[index];
+    for (const [tokenAddress, tokenWatches] of byToken) {
         try {
-            // Do not pass force=true: it bypasses ALERT_EVALUATION_INTERVAL_MS and hammers
-            // Solana RPC for every wallet on each tick (429 storm on serverless).
-            const result = await evaluateAlertsForWallet(preference.walletAddress, false);
-            createdCount += result.created.length;
+            const detail = await getRhToken(tokenAddress);
+            if (!detail) continue;
+            summary.tokensScanned += 1;
+
+            const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const trades = await getRhTrades(tokenAddress, 100)
+                .then((r) => r.trades ?? [])
+                .catch(() => []);
+            const recent = trades.filter((t) => t.timestamp * 1000 >= since);
+
+            let volumeEth7d = 0;
+            let largestTradeEth = 0;
+            let lastTradeAt: Date | undefined;
+            for (const trade of recent) {
+                const eth = parseWeiToEth(trade.ethWei) ?? 0;
+                volumeEth7d += eth;
+                if (eth > largestTradeEth) largestTradeEth = eth;
+            }
+            if (recent[0]) lastTradeAt = new Date(recent[0].timestamp * 1000);
+
+            const previous = await prisma.rhTokenState.findUnique({ where: { tokenAddress } });
+            const priceEth = parseRhFixed18(detail.state.priceEthPerToken);
+
+            // Only alert on whale trades newer than the last evaluation.
+            const lastSeenTrade = previous?.lastTradeAt?.getTime() ?? 0;
+            const freshLargest = recent
+                .filter((t) => t.timestamp * 1000 > lastSeenTrade)
+                .reduce((max, t) => Math.max(max, parseWeiToEth(t.ethWei) ?? 0), 0);
+
+            const { alerts, nextCurveBand } = diffToken(
+                previous
+                    ? {
+                          migrated: previous.migrated,
+                          bondingProgressPct: previous.bondingProgressPct,
+                          priceEth: previous.priceEth,
+                          lastCurveBand: previous.lastCurveBand,
+                      }
+                    : null,
+                {
+                    symbol: detail.token.symbol,
+                    migrated: detail.state.migrated,
+                    bondingProgressPct: detail.state.bondingProgressPct,
+                    priceEth,
+                    volumeEth7d,
+                    largestTradeEth: freshLargest,
+                }
+            );
+
+            await prisma.rhTokenState.upsert({
+                where: { tokenAddress },
+                create: {
+                    tokenAddress,
+                    symbol: detail.token.symbol,
+                    name: detail.token.name,
+                    image: detail.token.metadata?.image ?? null,
+                    migrated: detail.state.migrated,
+                    bondingProgressPct: detail.state.bondingProgressPct,
+                    priceEth,
+                    volumeEth7d,
+                    lastTradeAt,
+                    lastCurveBand: nextCurveBand,
+                },
+                update: {
+                    symbol: detail.token.symbol,
+                    name: detail.token.name,
+                    image: detail.token.metadata?.image ?? null,
+                    migrated: detail.state.migrated,
+                    bondingProgressPct: detail.state.bondingProgressPct,
+                    priceEth,
+                    volumeEth7d,
+                    lastTradeAt,
+                    lastCurveBand: nextCurveBand,
+                },
+            });
+
+            // A first sighting only establishes the baseline — no backfilled noise.
+            if (!previous || alerts.length === 0) continue;
+
+            for (const watch of tokenWatches) {
+                const enabled = alerts.filter((alert) => {
+                    switch (alert.rule) {
+                        case "curve":
+                            return watch.curveEnabled;
+                        case "grad":
+                            return watch.gradEnabled;
+                        case "volume":
+                            return watch.volumeEnabled;
+                        case "price":
+                            return (
+                                watch.priceMovePct != null &&
+                                Math.abs(Number(alert.valueLabel?.replace("%", "") ?? 0)) >= watch.priceMovePct
+                            );
+                        case "whale":
+                            return watch.whaleTradeEth != null && freshLargest >= watch.whaleTradeEth;
+                    }
+                });
+
+                if (enabled.length === 0) continue;
+                summary.watchersNotified += 1;
+
+                for (const alert of enabled) {
+                    await prisma.rhAlertNotification.create({
+                        data: {
+                            wallet: watch.wallet,
+                            tokenAddress,
+                            kind: alert.kind,
+                            severity: alert.severity,
+                            title: alert.title,
+                            body: alert.body,
+                            valueLabel: alert.valueLabel,
+                        },
+                    });
+                    summary.alertsCreated += 1;
+
+                    if (watch.subscriber.pushEnabled) {
+                        await deliverPush(watch.wallet, alert.title, alert.body, tokenAddress);
+                    }
+                    if (watch.subscriber.telegramEnabled && watch.subscriber.telegramChatId) {
+                        await deliverTelegram(
+                            watch.subscriber.telegramChatId,
+                            alert.title,
+                            alert.body,
+                            tokenAddress
+                        );
+                    }
+                }
+            }
         } catch (error) {
-            console.error(`[alerts] cron evaluation failed for ${preference.walletAddress}:`, error);
-        }
-
-        if (walletGapMs > 0 && index < preferences.length - 1) {
-            await sleep(walletGapMs);
+            summary.errors += 1;
+            console.error(`[alerts] token ${tokenAddress} failed:`, error);
         }
     }
 
-    const telegramBroadcasts = await runTelegramBroadcastCron().catch((error) => {
-        console.error("[alerts] telegram broadcast cron failed:", error);
-        return {
-            processedUpdates: 0,
-            activeTargets: 0,
-            broadcastsSent: 0,
-        };
-    });
-
-    return {
-        walletsProcessed: preferences.length,
-        createdCount,
-        telegramBroadcasts,
-    };
-}
-
-export async function runAlertsCron(limit = 100) {
-    const locked = await withPgAdvisoryLock(ALERTS_CRON_LOCK_KEY, () =>
-        runAlertsCronInternal(limit)
-    );
-
-    if (!locked.acquired) {
-        return {
-            walletsProcessed: 0,
-            createdCount: 0,
-            telegramBroadcasts: {
-                processedUpdates: 0,
-                activeTargets: 0,
-                broadcastsSent: 0,
-            },
-            skipped: true,
-            reason: "locked",
-        };
-    }
-
-    return {
-        ...locked.result,
-        skipped: false,
-    };
-}
-
-export async function sendTestAlert(
-    walletAddress: string,
-    channel: "inbox" | "push" | "telegram"
-) {
-    const preference = await getOrCreatePreference(walletAddress);
-    const notification = await prisma.alertNotification.create({
-        data: {
-            walletAddress,
-            kind: PrismaAlertKind.system,
-            severity:
-                channel === "inbox"
-                    ? PrismaAlertSeverity.info
-                    : PrismaAlertSeverity.hot,
-            title: `BagScan ${channel.toUpperCase()} test`,
-            message:
-                channel === "inbox"
-                    ? "Your in-app notification center is working."
-                    : channel === "push"
-                        ? "Your browser push channel is armed and receiving alerts."
-                        : "Your Telegram channel is connected and receiving alerts.",
-            eventKey: `system-test:${channel}:${Date.now()}`,
-            actionUrl: "/alpha",
-        },
-    });
-
-    if (channel === "push") {
-        if (!getPushConfig().configured) {
-            throw new Error("Browser push is not configured on the server");
-        }
-        if (!preference.browserPushEnabled) {
-            throw new Error("Enable browser push first");
-        }
-
-        const subscriptions = await prisma.pushSubscription.findMany({
-            where: { walletAddress },
-        });
-        if (subscriptions.length === 0) {
-            throw new Error("No browser push subscription found for this wallet");
-        }
-
-        await sendBrowserPush(preference, [notification], subscriptions);
-    }
-
-    if (channel === "telegram") {
-        if (!getTelegramConfig().configured) {
-            throw new Error("Telegram is not configured on the server");
-        }
-        if (!preference.telegramEnabled) {
-            throw new Error("Enable Telegram alerts first");
-        }
-        if (!preference.telegramChatId) {
-            throw new Error("Add a Telegram chat ID first");
-        }
-
-        await sendTelegram(preference, [notification]);
-    }
-
-    return {
-        message:
-            channel === "inbox"
-                ? "Test alert created in your inbox."
-                : channel === "push"
-                    ? "Test push sent to this browser."
-                    : "Test alert sent to Telegram.",
-    };
+    return summary;
 }

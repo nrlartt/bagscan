@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Share_Tech_Mono } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import { DiscoverySearchProvider } from "@/components/bagscan/DiscoverySearchContext";
-import { NetworkProvider } from "@/components/bagscan/NetworkContext";
 import { BagScanShell } from "@/components/bagscan/BagScanShell";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from "@/lib/site";
 import "./globals.css";
@@ -22,13 +21,12 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
   keywords: [
-    "Bags",
-    "bags.fm",
-    "Solana",
     "Robinhood Chain",
-    "token discovery",
+    "chain 4663",
     "bonding curve",
-    "memecoin launch",
+    "token discovery",
+    "curve trading",
+    "on-chain alerts",
     "BagScan",
   ],
   alternates: { canonical: "/" },
@@ -55,7 +53,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#0b0e11",
+  themeColor: "#070907",
 };
 
 export default function RootLayout({
@@ -67,14 +65,12 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${shareTechMono.className} min-h-screen antialiased`}>
         <Providers>
-          <NetworkProvider>
-            <DiscoverySearchProvider>
-              <div className="crt-scanlines" />
-              <div className="crt-flicker" />
+          <DiscoverySearchProvider>
+            <div className="crt-scanlines" />
+            <div className="crt-flicker" />
 
-              <BagScanShell>{children}</BagScanShell>
-            </DiscoverySearchProvider>
-          </NetworkProvider>
+            <BagScanShell>{children}</BagScanShell>
+          </DiscoverySearchProvider>
         </Providers>
       </body>
     </html>

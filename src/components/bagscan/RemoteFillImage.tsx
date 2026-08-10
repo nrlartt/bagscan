@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 export const REMOTE_IMAGE_SIZES_GRID =
     "(max-width: 639px) 100vw, (max-width: 1023px) 50vw, (max-width: 1535px) 33vw, 25vw";
 
-/** 2-column grids (e.g. featured hero on Bags) through `lg`. */
+/** 2-column grids (e.g. a featured hero) through `lg`. */
 export const REMOTE_IMAGE_SIZES_GRID_2COL =
     "(max-width: 1023px) 50vw, (max-width: 1535px) 33vw, 25vw";
 

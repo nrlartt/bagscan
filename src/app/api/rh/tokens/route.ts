@@ -1,9 +1,9 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getEthUsdPrice, getRhToken, getRhTokens } from "@/lib/bags/rh-client";
-import { rhTokenListItemToNormalized } from "@/lib/bags/rh-mappers";
-import { isEvmAddress } from "@/lib/networks";
+import { getEthUsdPrice, getRhToken, getRhTokens } from "@/lib/rh/client";
+import { rhTokenDetailToView, rhTokenListItemToView } from "@/lib/rh/mappers";
+import { isEvmAddress } from "@/lib/rh/chain";
 
 function jsonOk(data: unknown) {
     return NextResponse.json(data, {
@@ -23,21 +23,20 @@ export async function GET(req: NextRequest) {
 
         const ethUsd = await getEthUsdPrice();
 
+        // A full contract address is an exact lookup, not a text search.
         if (search && isEvmAddress(search)) {
             const detail = await getRhToken(search);
             if (!detail) {
                 return jsonOk({
                     success: true,
                     data: [],
-                    meta: { total: 0, page: 1, pageSize, totalPages: 0, tab: "search", chain: "robinhood" },
+                    meta: { total: 0, page: 1, pageSize, totalPages: 0, tab: "search" },
                 });
             }
-            const { rhTokenDetailToNormalized } = await import("@/lib/bags/rh-mappers");
-            const token = rhTokenDetailToNormalized(detail, ethUsd);
             return jsonOk({
                 success: true,
-                data: [token],
-                meta: { total: 1, page: 1, pageSize: 1, totalPages: 1, tab: "search", chain: "robinhood" },
+                data: [rhTokenDetailToView(detail, ethUsd)],
+                meta: { total: 1, page: 1, pageSize: 1, totalPages: 1, tab: "search" },
             });
         }
 
@@ -50,15 +49,17 @@ export async function GET(req: NextRequest) {
             orderDirection: "desc",
         });
 
-        let items = response.items.map((item) => rhTokenListItemToNormalized(item, ethUsd));
+        let items = response.items.map((item) => rhTokenListItemToView(item, ethUsd));
 
+        // Name/symbol search only filters the current page — the upstream index
+        // has no text search, and the UI says so.
         if (search.length >= 2) {
             const q = search.toLowerCase();
             items = items.filter(
                 (t) =>
                     t.name?.toLowerCase().includes(q) ||
                     t.symbol?.toLowerCase().includes(q) ||
-                    t.tokenMint.toLowerCase().includes(q)
+                    t.address.toLowerCase().includes(q)
             );
         }
 
@@ -74,7 +75,6 @@ export async function GET(req: NextRequest) {
                 pageSize,
                 totalPages,
                 tab: migrated === true ? "graduated" : migrated === false ? "bonding" : "all",
-                chain: "robinhood",
                 totalTruncated: response.totalTruncated,
             },
         });

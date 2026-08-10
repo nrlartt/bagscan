@@ -7,8 +7,8 @@ export default function robots(): MetadataRoute.Robots {
             {
                 userAgent: "*",
                 allow: "/",
-                // Server surfaces and gated/private betas stay out of the index.
-                disallow: ["/api/", "/partner/", "/talk"],
+                // Server surfaces and wallet-scoped pages stay out of the index.
+                disallow: ["/api/", "/alerts"],
             },
         ],
         sitemap: `${SITE_URL}/sitemap.xml`,

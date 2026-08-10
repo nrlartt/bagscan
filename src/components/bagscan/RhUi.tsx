@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { RH_THEME } from "./NetworkIcons";
+import { RH_THEME } from "@/lib/rh/chain";
 
 /** Clamp a raw curve percentage into 0–100 (the API can return >100 right at migration). */
 export function rhClampPct(progress?: number | null): number | null {

@@ -1,105 +1,66 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
-import {
-    deletePushSubscription,
-    savePushSubscription,
-} from "@/lib/alerts/engine";
-import { AlertAccessError, ensureAlertAccess } from "@/lib/alerts/access";
-import { requireAlertSessionWallet } from "@/lib/alerts/auth";
+import { prisma } from "@/lib/db";
+import { getSessionWallet } from "@/lib/alerts/session";
 
-interface PushSubscriptionPayload {
+interface SerializedSubscription {
     endpoint?: string;
-    expirationTime?: number | null;
-    keys?: {
-        p256dh?: string;
-        auth?: string;
-    };
+    keys?: { p256dh?: string; auth?: string };
 }
 
-interface SaveBody {
-    subscription?: PushSubscriptionPayload;
-}
-
-interface DeleteBody {
-    endpoint?: string;
-}
-
-export async function POST(request: NextRequest) {
-    const wallet = requireAlertSessionWallet(request);
+export async function POST(req: NextRequest) {
+    const wallet = await getSessionWallet();
     if (!wallet) {
-        return NextResponse.json(
-            { success: false, error: "Alert session required" },
-            { status: 401 }
-        );
-    }
-
-    const body = (await request.json().catch(() => ({}))) as SaveBody;
-    if (!body.subscription) {
-        return NextResponse.json(
-            { success: false, error: "Missing push subscription payload" },
-            { status: 400 }
-        );
+        return NextResponse.json({ success: false, error: "Sign in to manage alerts" }, { status: 401 });
     }
 
     try {
-        await ensureAlertAccess(wallet);
-        await savePushSubscription(
-            wallet,
-            body.subscription,
-            request.headers.get("user-agent")
-        );
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        if (error instanceof AlertAccessError) {
+        const { subscription } = (await req.json()) as { subscription?: SerializedSubscription };
+        const endpoint = subscription?.endpoint;
+        const p256dh = subscription?.keys?.p256dh;
+        const auth = subscription?.keys?.auth;
+
+        if (!endpoint || !p256dh || !auth) {
             return NextResponse.json(
-                { success: false, error: error.message, data: error.access },
-                { status: error.status }
+                { success: false, error: "Incomplete push subscription" },
+                { status: 400 }
             );
         }
-        return NextResponse.json(
-            {
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-            },
-            { status: 400 }
-        );
+
+        await prisma.rhSubscriber.upsert({
+            where: { wallet },
+            create: { wallet, pushEnabled: true },
+            update: { pushEnabled: true },
+        });
+
+        await prisma.rhPushSubscription.upsert({
+            where: { endpoint },
+            create: { endpoint, wallet, p256dh, auth },
+            update: { wallet, p256dh, auth },
+        });
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error("[api/alerts/push-subscription] error:", error);
+        return NextResponse.json({ success: false, error: "Failed to save subscription" }, { status: 500 });
     }
 }
 
-export async function DELETE(request: NextRequest) {
-    const wallet = requireAlertSessionWallet(request);
+export async function DELETE(req: NextRequest) {
+    const wallet = await getSessionWallet();
     if (!wallet) {
-        return NextResponse.json(
-            { success: false, error: "Alert session required" },
-            { status: 401 }
-        );
+        return NextResponse.json({ success: false, error: "Sign in to manage alerts" }, { status: 401 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as DeleteBody;
-    const endpoint = body.endpoint?.trim();
+    const endpoint = req.nextUrl.searchParams.get("endpoint");
     if (!endpoint) {
-        return NextResponse.json(
-            { success: false, error: "Missing subscription endpoint" },
-            { status: 400 }
-        );
+        return NextResponse.json({ success: false, error: "Missing endpoint" }, { status: 400 });
     }
 
-    try {
-        await ensureAlertAccess(wallet);
-        await deletePushSubscription(wallet, endpoint);
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        if (error instanceof AlertAccessError) {
-            return NextResponse.json(
-                { success: false, error: error.message, data: error.access },
-                { status: error.status }
-            );
-        }
-        return NextResponse.json(
-            {
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-            },
-            { status: 400 }
-        );
-    }
+    await prisma.rhPushSubscription
+        .deleteMany({ where: { endpoint, wallet } })
+        .catch(() => undefined);
+
+    return NextResponse.json({ success: true });
 }

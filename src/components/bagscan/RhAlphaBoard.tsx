@@ -6,7 +6,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
     Activity,
     AlertTriangle,
-    ExternalLink,
     Flame,
     RefreshCw,
     Rocket,
@@ -21,12 +20,11 @@ import {
     formatTokenPrice,
     shortenAddress,
 } from "@/lib/utils";
-import { BAGSCAN_NETWORKS } from "@/lib/networks";
 import { RemoteFillImage } from "./RemoteFillImage";
 import { ErrorState } from "./States";
 import { RhBondingBar, rhFormatPct, rhTimeAgoShort } from "./RhUi";
-import { NetworkIcon, RH_THEME } from "./NetworkIcons";
-import type { RhAlphaFeed, RhAlphaSeverity, RhAlphaToken } from "@/lib/bags/rh-alpha";
+import { RhLogo } from "./RhLogo";
+import type { RhAlphaFeed, RhAlphaSeverity, RhAlphaToken } from "@/lib/rh/alpha";
 
 type RhAlphaFilter = "all" | "curve" | "graduated" | "risk";
 
@@ -284,7 +282,7 @@ export function RhAlphaBoard() {
                             <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-[#00C805]/25 bg-[#00C805]/[0.08]">
                                 <Zap className="h-4 w-4 text-[#00C805]" />
                             </span>
-                            <NetworkIcon network="robinhood" size={16} />
+                            <RhLogo size={16} />
                             <span className="text-[10px] tracking-[0.2em] text-[#00C805]/70">
                                 ROBINHOOD ALPHA · CHAIN 4663
                             </span>
@@ -322,16 +320,6 @@ export function RhAlphaBoard() {
                                 <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
                                 REFRESH
                             </button>
-                            <a
-                                href={BAGSCAN_NETWORKS.robinhood.launchUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-[10px] font-semibold tracking-[0.12em] text-black transition-opacity hover:opacity-90"
-                                style={{ backgroundColor: RH_THEME.green }}
-                            >
-                                LAUNCH
-                                <ExternalLink className="h-3 w-3 opacity-60" />
-                            </a>
                         </div>
                     </div>
                 </div>

@@ -7,7 +7,7 @@ A **504** from APISIX / OpenResty means the gateway did not get a timely respons
 1. **Is the Node process running?** Check host logs (Railway, VPS, k8s, etc.) for crash loops, OOM, or failed `npm run build`.
 2. **Environment variables** on the server (not only local `.env`):
    - `DATABASE_URL` (PostgreSQL / Supabase)
-   - `BAGS_API_KEY`
+   - `RH_INDEXER_API_KEY`
    - `PORT` (must match what APISIX upstream expects, often `3000`)
 3. **Health probe** after deploy:
    ```bash

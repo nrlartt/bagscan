@@ -9,26 +9,26 @@ import { ErrorState } from "./States";
 import { DetailSkeleton } from "./Skeletons";
 import { RemoteFillImage } from "./RemoteFillImage";
 import {
-    cn,
     copyToClipboard,
     formatCurrency,
     formatCompactDecimal,
     formatTokenPrice,
     shortenAddress,
-    getValuationMetric,
 } from "@/lib/utils";
-import { BAGSCAN_NETWORKS } from "@/lib/networks";
-import { NetworkIcon } from "./NetworkIcons";
+import { rhExplorerTokenUrl } from "@/lib/rh/chain";
+import { RhLogo } from "./RhLogo";
 import { RhBondingBar, RhStatPill, rhFormatPct, rhTimeAgoShort } from "./RhUi";
-import type { NormalizedToken } from "@/lib/bags/types";
-import type { RhTokenState } from "@/lib/bags/rh-types";
-import { parseRhFixed18, parseWeiToEth } from "@/lib/bags/rh-mappers";
+import type { RhTokenState } from "@/lib/rh/api-types";
+import type { RhTokenView } from "@/lib/rh/token";
+import { parseRhFixed18, parseWeiToEth } from "@/lib/rh/mappers";
+import { RhTradeWidget } from "./RhTradeWidget";
 
 interface RhTokenDetailResponse {
     success: boolean;
     data: {
-        token: NormalizedToken;
+        token: RhTokenView;
         state: RhTokenState;
+        ethUsd?: number;
     };
 }
 
@@ -66,12 +66,11 @@ export function RhTokenDetailView({ address }: { address: string }) {
     const token = data.data.token;
     const state = data.data.state;
     const priceEth = parseRhFixed18(state.priceEthPerToken);
-    const valuation = getValuationMetric(token);
+    const fdv = token.fdvUsd;
     const raisedEth = parseWeiToEth(state.totalRaisedWei);
     const thresholdEth = parseWeiToEth(state.thresholdQuoteWei);
-    const explorerUrl = BAGSCAN_NETWORKS.robinhood.explorerTokenUrl(address);
-    const bagsUrl = `https://bags.fm/token/${address}?network=robinhood`;
-    const age = rhTimeAgoShort(token.pairCreatedAt);
+    const explorerUrl = rhExplorerTokenUrl(address);
+    const age = rhTimeAgoShort(token.createdAt);
     const raisedPct =
         raisedEth != null && thresholdEth != null && thresholdEth > 0
             ? Math.min(100, (raisedEth / thresholdEth) * 100)
@@ -119,7 +118,7 @@ export function RhTokenDetailView({ address }: { address: string }) {
                                 {token.symbol ? `$${token.symbol}` : shortenAddress(address)}
                             </h1>
                             <span className="inline-flex items-center gap-1 rounded-full border border-[#00C805]/30 bg-[#00C805]/10 px-2 py-0.5 text-[9px] tracking-wider text-[#00C805]">
-                                <NetworkIcon network="robinhood" size={14} />
+                                <RhLogo size={14} />
                                 ROBINHOOD
                             </span>
                             {token.isMigrated ? (
@@ -147,12 +146,10 @@ export function RhTokenDetailView({ address }: { address: string }) {
             <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
                 <div className="min-w-0 space-y-5">
                     <div className="rounded-2xl border border-[#00C805]/15 bg-gradient-to-br from-[#0a120a] to-[#070907] p-4 sm:p-6">
-                        <p className="text-[10px] tracking-[0.16em] text-[#00C805]/55">
-                            {valuation.source === "fdv" ? "FULLY DILUTED VALUE" : "MARKET CAP"}
-                        </p>
+                        <p className="text-[10px] tracking-[0.16em] text-[#00C805]/55">FULLY DILUTED VALUE</p>
                         <p className="mt-1 text-3xl font-semibold tabular-nums text-white sm:text-4xl">
-                            {valuation.value != null && valuation.value > 0
-                                ? formatCurrency(valuation.value)
+                            {fdv != null && fdv > 0
+                                ? formatCurrency(fdv)
                                 : priceEth != null
                                   ? `${formatCompactDecimal(priceEth)} ETH`
                                   : "—"}
@@ -165,11 +162,9 @@ export function RhTokenDetailView({ address }: { address: string }) {
                                 <span>{formatCompactDecimal(priceEth, { significant: 4 })} ETH / token</span>
                             ) : null}
                         </div>
-                        {valuation.source === "fdv" ? (
-                            <p className="mt-2 text-[10px] text-white/30">
-                                Fully diluted on a 1B supply, converted at the live ETH/USD rate.
-                            </p>
-                        ) : null}
+                        <p className="mt-2 text-[10px] text-white/30">
+                            Spot price times the fixed 1B supply, converted at the live ETH/USD rate.
+                        </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -236,32 +231,15 @@ export function RhTokenDetailView({ address }: { address: string }) {
                 </div>
 
                 <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-                    <div className="rounded-2xl border border-[#00C805]/25 bg-gradient-to-b from-[#0a120a] to-[#070907] p-4 shadow-[0_0_40px_rgba(0,200,5,0.06)]">
-                        <p className="text-[10px] tracking-[0.16em] text-[#00C805]/60">TRADE</p>
-                        <p className="mt-2 text-xs leading-relaxed text-white/45">
-                            Buy or sell on Robinhood Chain through Bags. Connect an EVM wallet on bags.fm for quotes and swaps.
-                        </p>
-                        <a
-                            href={bagsUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={cn(
-                                "mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-[11px] font-semibold tracking-[0.12em] text-black",
-                                "bg-[#00C805] transition-opacity hover:opacity-90"
-                            )}
-                        >
-                            TRADE ON BAGS
-                            <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                    </div>
+                    <RhTradeWidget token={token} ethUsd={data.data.ethUsd} />
 
                     <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
                         <p className="text-[10px] tracking-[0.16em] text-white/35">CREATOR</p>
                         <div className="mt-2 flex items-center gap-2">
                             <code className="font-mono text-[11px] text-white/60">
-                                {shortenAddress(token.creatorWallet ?? "—")}
+                                {shortenAddress(token.creator ?? "—")}
                             </code>
-                            {token.creatorWallet ? <CopyButton value={token.creatorWallet} /> : null}
+                            {token.creator ? <CopyButton value={token.creator} /> : null}
                         </div>
                     </div>
 
@@ -274,15 +252,6 @@ export function RhTokenDetailView({ address }: { address: string }) {
                         >
                             <ExternalLink className="h-3.5 w-3.5" />
                             VIEW ON EXPLORER
-                        </a>
-                        <a
-                            href={bagsUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-center gap-2 rounded-xl border border-white/12 py-2.5 text-[10px] tracking-wider text-white/50 transition-colors hover:border-white/25 hover:text-white/75"
-                        >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                            VIEW ON BAGS
                         </a>
                         <button
                             type="button"

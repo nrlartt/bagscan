@@ -1,42 +1,37 @@
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from "next/server";
-import { runAlertsCron } from "@/lib/alerts/engine";
+import { timingSafeEqual } from "node:crypto";
+import { runAlertsEvaluation } from "@/lib/alerts/engine";
 
-function isAuthorized(request: NextRequest) {
-    const secret = process.env.ALERTS_CRON_SECRET;
-    if (!secret) {
-        return process.env.NODE_ENV !== "production";
-    }
+function authorized(req: NextRequest): boolean {
+    const expected = process.env.ALERTS_CRON_SECRET;
+    if (!expected) return false;
 
-    const provided =
-        request.headers.get("x-alerts-cron-secret") ||
-        request.nextUrl.searchParams.get("key");
+    const header = req.headers.get("authorization") ?? "";
+    const provided = header.startsWith("Bearer ")
+        ? header.slice(7)
+        : (req.nextUrl.searchParams.get("secret") ?? "");
 
-    return provided === secret;
+    const a = Buffer.from(provided);
+    const b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export async function GET(request: NextRequest) {
-    if (!isAuthorized(request)) {
-        return NextResponse.json(
-            { success: false, error: "Unauthorized" },
-            { status: 401 }
-        );
+/** External cron entry point: evaluates every watched token once. */
+export async function GET(req: NextRequest) {
+    if (!authorized(req)) {
+        return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-
-    const limit = Number(request.nextUrl.searchParams.get("limit") ?? 100);
 
     try {
-        const result = await runAlertsCron(
-            Number.isFinite(limit) && limit > 0 ? Math.min(limit, 250) : 100
-        );
-        return NextResponse.json({ success: true, data: result });
+        const summary = await runAlertsEvaluation();
+        return NextResponse.json({ success: true, data: summary });
     } catch (error) {
         console.error("[api/alerts/cron] error:", error);
-        return NextResponse.json(
-            {
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-            },
-            { status: 500 }
-        );
+        return NextResponse.json({ success: false, error: "Evaluation failed" }, { status: 500 });
     }
 }
+
+export const POST = GET;
